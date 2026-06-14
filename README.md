@@ -456,6 +456,10 @@ openspec/                # Committed — spec-driven workflow
 
 ## Changelog
 
+### 0.1.2
+- Fix CLI: executable bit on `bin/agent-orchestrator.js` (`agent-orchestrator: not found`)
+- Add `agent-orchestrator-kit` bin alias (matches package name for npx)
+
 ### 0.1.1
 - Added all OpenSpec skills (`openspec-*`, `spec-workflow-openspec`)
 - Added CI workflow template `.github/workflows/agent-verify.yml`

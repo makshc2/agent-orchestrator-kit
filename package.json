@@ -1,6 +1,6 @@
 {
   "name": "agent-orchestrator-kit",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Universal AI agent orchestration kit for Cursor, Claude Code, and Amp Code — spec-driven pipeline with OpenSpec integration",
   "keywords": [
     "ai-agent",
@@ -24,7 +24,8 @@
   },
   "type": "module",
   "bin": {
-    "agent-orchestrator": "./bin/agent-orchestrator.js"
+    "agent-orchestrator-kit": "bin/agent-orchestrator.js",
+    "agent-orchestrator": "bin/agent-orchestrator.js"
   },
   "files": [
     "bin/",
@@ -41,6 +42,7 @@
     "picocolors": "^1.0.0"
   },
   "scripts": {
+    "prepack": "chmod +x bin/agent-orchestrator.js",
     "test": "node --test test/*.test.js",
     "link": "npm link"
   }
