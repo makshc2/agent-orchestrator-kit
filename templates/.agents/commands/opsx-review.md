@@ -74,6 +74,13 @@ Evaluate each item. Mark ✓ or ✗:
 - [ ] ADDED/MODIFIED/REMOVED sections used correctly
 - [ ] No conflicts with main `openspec/specs/`
 
+**Vue 3** (when `project.stack: vue3` in `.agents/orchestrator.yaml`)
+- [ ] Components use `<script setup>` + Composition API (no Options API)
+- [ ] State via Pinia setup stores (`defineStore` + composable style)
+- [ ] HTTP via Axios service/composable patterns (not raw fetch scattered)
+- [ ] Tasks reference concrete component/store paths under `src/`
+- [ ] No scope creep into unrelated UI refactors
+
 ### 5. Output verdict
 
 #### If all ✓ (or only minor notes):
@@ -92,6 +99,31 @@ Evaluate each item. Mark ✓ or ✗:
 
 **Ready for implementation.** Run `/opsx:apply <name>` to proceed.
 ```
+
+Also **write review record** (gates apply when `require_spec_review: true`):
+
+Create or update `openspec/changes/<name>/review.md`:
+
+```markdown
+# Spec Review
+
+**Change:** <name>
+**Date:** <ISO date>
+**Verdict:** APPROVE
+
+## Checklist summary
+- Proposal: ✓
+- Design: ✓
+- Tasks: ✓
+- Delta specs: ✓
+
+## Notes
+<optional notes>
+```
+
+For **REQUEST CHANGES**, write the same file with `Verdict: REQUEST CHANGES` and issues list.
+
+This is the **only file** you may write during review (not `src/`, not `tasks.md` checkboxes).
 
 #### If any ✗:
 
@@ -119,7 +151,7 @@ Fix the above, then re-run `/opsx:review <name>`.
 ## Guardrails
 
 - **Never** edit source code, `src/`, or `tasks.md` checkboxes
-- **Never** create new files (only read)
+- **May write only** `openspec/changes/<name>/review.md` (verdict record for apply gate)
 - **Never** run apply commands
 - Ask for clarification only if a critical artifact is missing or unreadable
 - If proposal is ambiguous on scope, flag as ✗ — do not assume intent

@@ -14,18 +14,69 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
 
-      - run: npm ci
+      - name: Detect package manager
+        id: pm
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            echo "manager=pnpm" >> "$GITHUB_OUTPUT"
+          elif [ -f yarn.lock ]; then
+            echo "manager=yarn" >> "$GITHUB_OUTPUT"
+          else
+            echo "manager=npm" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Enable corepack (pnpm)
+        if: steps.pm.outputs.manager == 'pnpm'
+        run: corepack enable
+
+      - name: Install dependencies (npm)
+        if: steps.pm.outputs.manager == 'npm'
+        run: npm ci
+
+      - name: Install dependencies (yarn)
+        if: steps.pm.outputs.manager == 'yarn'
+        run: yarn install --frozen-lockfile
+
+      - name: Install dependencies (pnpm)
+        if: steps.pm.outputs.manager == 'pnpm'
+        run: pnpm install --frozen-lockfile
 
       - name: OpenSpec validate
         run: npx openspec validate --all --strict
 
-      - name: Lint
+      - name: Lint (npm)
+        if: steps.pm.outputs.manager == 'npm'
         run: npm run lint --if-present
 
-      - name: Build
+      - name: Lint (yarn)
+        if: steps.pm.outputs.manager == 'yarn'
+        run: yarn lint
+
+      - name: Lint (pnpm)
+        if: steps.pm.outputs.manager == 'pnpm'
+        run: pnpm run lint
+
+      - name: Build (npm)
+        if: steps.pm.outputs.manager == 'npm'
         run: npm run build --if-present
 
-      - name: Test
+      - name: Build (yarn)
+        if: steps.pm.outputs.manager == 'yarn'
+        run: yarn build
+
+      - name: Build (pnpm)
+        if: steps.pm.outputs.manager == 'pnpm'
+        run: pnpm run build
+
+      - name: Test (npm)
+        if: steps.pm.outputs.manager == 'npm'
         run: npm test --if-present
+
+      - name: Test (yarn)
+        if: steps.pm.outputs.manager == 'yarn'
+        run: yarn test
+
+      - name: Test (pnpm)
+        if: steps.pm.outputs.manager == 'pnpm'
+        run: pnpm test

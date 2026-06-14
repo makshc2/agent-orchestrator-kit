@@ -20,6 +20,19 @@ Implement tasks from an OpenSpec change.
 
    Always announce: "Using change: <name>" and how to override (e.g., `/opsx:apply <other>`).
 
+1.5. **Check review gate**
+
+   Read `.agents/orchestrator.yaml` → `pipeline.require_spec_review`.
+
+   If `true` (default for generic/vue3/node):
+   - Look for `openspec/changes/<name>/review.md` with `Verdict: APPROVE`
+   - OR explicit **APPROVE ✓** from `/opsx:review <name>` in this session (user pasted verdict)
+   - OR Memory MCP entity `Change:<name>` with `status: spec-approved`
+   - If none found → **STOP**. Tell user:
+     > "Spec review required. Run `/opsx:review <name>` in a separate read-only session, then start a new apply session after **Approve ✓`."
+
+   If `false` (mvp profile) or user confirms quick/demo mode → proceed.
+
 2. **Check status to understand the schema**
    ```bash
    openspec status --change "<name>" --json

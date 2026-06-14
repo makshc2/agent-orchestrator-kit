@@ -38,6 +38,8 @@ npm i -D @fission-ai/openspec
 npx openspec init
 ```
 
+> **Important:** `agent-orchestrator-kit init` does **not** install OpenSpec automatically. Install OpenSpec first (or ensure it exists in the repo), then run kit init.
+
 ### Install the kit
 
 ```bash
@@ -50,6 +52,7 @@ With a stack profile:
 npx agent-orchestrator-kit init --profile vue3
 npx agent-orchestrator-kit init --profile node
 npx agent-orchestrator-kit init --profile generic
+npx agent-orchestrator-kit init --profile mvp    # demos / spikes — no review gate
 ```
 
 With options:
@@ -347,6 +350,7 @@ npx agent-orchestrator-kit update
 | `generic` | Any | Orchestration + OpenSpec skills only |
 | `vue3` | Vue 3 + Vite + JS | + `npx frontend-agent-skills install` |
 | `node` | Node.js | + `npx frontend-agent-skills install --category javascript` |
+| `mvp` | Vue 3 demo/spike | + frontend-agent-skills; use `/opsx:quick`, no review gate |
 
 For `vue3`, after kit init also run:
 
@@ -422,7 +426,7 @@ Amp will run this skill as a subagent when invoked.
 
 ```bash
 npx agent-orchestrator-kit init [options]
-  --profile <name>   Stack profile: generic | vue3 | node | python
+  --profile <name>   Stack profile: generic | vue3 | node | mvp
   --lang <code>      Agent language: en | uk | ...
   --name <name>      Project name (default: directory name)
   --force            Overwrite existing files
@@ -465,6 +469,19 @@ openspec/                # Committed — spec-driven workflow
 ```
 
 ## Changelog
+
+### 0.1.3
+- Fix gitignore dedup (exact line match, not substring)
+- Add `.claude` to gitignore on init
+- `sync --target amp` — explicit Amp handling + settings.json bootstrap
+- OpenSpec + frontend-agent-skills hints in init next steps
+- Profile validation with warning for unknown profiles
+- CI workflow: auto-detect npm / yarn / pnpm
+- Package manager detection → updates verifier commands in orchestrator.yaml
+- `openspec/config.yaml.example` from vue3/mvp profiles
+- Review gate: `review.md` + apply checks `require_spec_review`
+- Vue 3 checklist in `/opsx:review`
+- New `/opsx:quick` command and **mvp** profile for demos/spikes
 
 ### 0.1.2
 - Fix CLI: executable bit on `bin/agent-orchestrator.js` (`agent-orchestrator: not found`)

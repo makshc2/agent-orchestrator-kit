@@ -1,0 +1,17 @@
+schema: spec-driven
+
+context: |
+  Проєкт: {{PROJECT_NAME}} — MVP / demo / hypothesis testing.
+  Стек: Vue 3 (Composition API, <script setup>), Pinia, Vite, Axios.
+  Мова агента: {{LANG}}.
+  Режим: швидкі ітерації — proposal + tasks достатньо; delta specs опційні.
+
+rules:
+  proposal:
+    - Коротко: проблема, scope, non-goals (≤ 15 рядків)
+    - Acceptance criteria — 3–5 перевірних пунктів
+  tasks:
+    - 3–7 атомарних задач
+    - Останній пункт: build + lint
+  specs:
+    - Опційно для MVP — пропускай якщо change тривіальний

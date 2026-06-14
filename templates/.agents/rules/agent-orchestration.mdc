@@ -10,17 +10,18 @@ This project uses a spec-driven 5-role pipeline. Read `.agents/orchestrator.yaml
 ## Role Commands
 - `/opsx:explore` → read-only thinking, no code
 - `/opsx:propose <name>` → creates `openspec/changes/<name>/` artifacts only
-- `/opsx:review <name>` → read-only spec review, outputs Approve or Request Changes
-- `/opsx:apply <name>` → writes `src/`, marks `tasks.md [x]`
+- `/opsx:review <name>` → read-only spec review, writes `review.md`, outputs Approve or Request Changes
+- `/opsx:apply <name>` → writes `src/`, marks `tasks.md [x]` (blocked if no review when `require_spec_review: true`)
+- `/opsx:quick <name>` → MVP: propose + apply in one session (when `require_spec_review: false`)
 - `/opsx:archive` → merges delta specs, moves change to archive
 
 ## Session Rules
-- One active change at a time
-- Each role = new chat session
+- One active change at a time (unless mvp profile: up to 3)
+- Each role = new chat session (except `/opsx:quick` combines propose+apply)
 - No code in explore or review sessions
-- No apply without explicit **Approve** from review
+- No apply without review when `pipeline.require_spec_review: true` — check `review.md` or Approve in context
 - After apply: build + lint before PR
-- After merge: always run `/opsx:archive`
+- After merge: run `/opsx:archive` (when `archive_after_merge: true`)
 
 ## Never
 - Mix propose and apply in one session

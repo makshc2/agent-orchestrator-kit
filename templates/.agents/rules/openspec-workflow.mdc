@@ -5,7 +5,7 @@ alwaysApply: true
 
 # OpenSpec Workflow (/opsx)
 
-`/opsx:explore`, `/opsx:propose`, `/opsx:apply`, `/opsx:archive`, `/opsx:sync`, `/opsx:review` — AI workflow commands, not source code.
+`/opsx:explore`, `/opsx:propose`, `/opsx:apply`, `/opsx:archive`, `/opsx:sync`, `/opsx:review`, `/opsx:quick` — AI workflow commands, not source code.
 
 ## File Locations
 
@@ -22,8 +22,9 @@ alwaysApply: true
 
 - `/opsx:explore` → skill `openspec-explore` (thinking only)
 - `/opsx:propose <name>` → skill `openspec-propose`
-- `/opsx:review <name>` → command `opsx-review` (read-only)
+- `/opsx:review <name>` → command `opsx-review` (read-only, writes review.md)
 - `/opsx:apply` → skill `openspec-apply-change`
+- `/opsx:quick <name>` → command `opsx-quick` (mvp: propose + apply)
 - `/opsx:archive` → skill `openspec-archive-change`
 - `/opsx:sync` → skill `openspec-sync-specs`
 

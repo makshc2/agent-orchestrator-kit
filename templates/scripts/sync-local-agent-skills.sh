@@ -71,7 +71,7 @@ GITIGNORE=".gitignore"
 CHANGED=0
 
 for line in ".cursor" ".cursor/memory.json" ".amp/settings.json" ".claude"; do
-  if ! grep -qF "$line" "$GITIGNORE" 2>/dev/null; then
+  if ! grep -qxF "$line" "$GITIGNORE" 2>/dev/null; then
     echo "$line" >> "$GITIGNORE"
     ok "Added '$line' to .gitignore"
     CHANGED=1

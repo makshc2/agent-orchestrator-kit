@@ -4,7 +4,7 @@ description: >
   Spec-driven AI agent pipeline orchestration built on OpenSpec. Load when deciding which
   role/command to use, how to handoff between phases, which model to pick, or when a session
   should stop and a new one start. Commands: /opsx:explore, /opsx:propose, /opsx:review,
-  /opsx:apply, /opsx:archive.
+  /opsx:apply, /opsx:archive, /opsx:quick.
 disable-model-invocation: false
 allowed-tools: Bash, Read
 ---
@@ -20,7 +20,12 @@ is the primary source of wasted tokens and failed implementations.
 explore → propose → review → apply → verify → archive
 ```
 
-Read `.agents/orchestrator.yaml` for project-specific config (language, flags, MCP).
+**MVP profile** (`require_spec_review: false`):
+```
+explore → quick (propose+apply) → verify → archive (optional)
+```
+
+Read `.agents/orchestrator.yaml` for project-specific config (language, flags, MCP, review gate).
 
 ## Roles & Commands
 
@@ -28,9 +33,10 @@ Read `.agents/orchestrator.yaml` for project-specific config (language, flags, M
 |------|---------|------|------------|----------------|
 | Explorer | `/opsx:explore` | read-only | fast | chat only |
 | Architect | `/opsx:propose <name>` | specs-only | strong | `openspec/changes/` |
-| Spec Reviewer | `/opsx:review <name>` | read-only | medium | Approve / Request Changes |
+| Spec Reviewer | `/opsx:review <name>` | read-only | medium | `review.md`, Approve / Request Changes |
 | Implementer | `/opsx:apply <name>` | code | strong | `src/`, `tasks.md [x]` |
-| Verifier | CI scripts | — | — | exit codes |
+| Quick (MVP) | `/opsx:quick <name>` | specs+code | strong | `openspec/changes/` + `src/` |
+| Verifier | CI / local scripts | — | — | exit codes |
 
 ## Handoff Protocol
 
@@ -60,7 +66,12 @@ openspec status --change "<name>"                # applyRequires artifacts all d
 ```
 
 ### review → apply
-Exit Reviewer only when verdict is explicit **APPROVE ✓**.
+Exit Reviewer only when verdict is explicit **APPROVE ✓** and `review.md` written.
+
+Before apply, check `.agents/orchestrator.yaml`:
+- `require_spec_review: true` → apply MUST find `review.md` with `Verdict: APPROVE` or Approve in session
+- `require_spec_review: false` → apply allowed directly (mvp / quick mode)
+
 If Request Changes — fix artifacts, re-run `/opsx:review`.
 
 ### apply → verify
@@ -80,8 +91,8 @@ After PR merged + CI green:
 
 **Start of each session:**
 1. Announce role: "Starting Spec Reviewer session for change: <name>"
-2. Check `openspec list` — confirm max 1 active change
-3. Read `orchestrator.yaml` for project config
+2. Check `openspec list` — confirm active change limit (`max_active_changes` in orchestrator.yaml)
+3. Read `orchestrator.yaml` for project config and review gate
 
 **During session:**
 - Stay in role — do not drift into next phase
@@ -121,7 +132,8 @@ At start of new session: read relevant entities to restore context without re-ex
 
 - [ ] explore session closed before propose started
 - [ ] `openspec validate --strict` passed before review
-- [ ] explicit **Approve** received before apply
+- [ ] explicit **Approve** received before apply (when `require_spec_review: true`)
+- [ ] `review.md` with `Verdict: APPROVE` exists (when review required)
 - [ ] all tasks `[x]` + build OK before PR
 - [ ] `/opsx:archive` run after merge
 

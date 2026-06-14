@@ -1,0 +1,21 @@
+schema: spec-driven
+
+context: |
+  Проєкт: {{PROJECT_NAME}} — Vue 3 SPA.
+  Стек: Vue 3 (Composition API, <script setup>), Pinia, Vue Router, Axios, Vite.
+  Мова агента: {{LANG}}.
+  Код: production-ready, без Options API, без зайвих коментарів.
+
+rules:
+  proposal:
+    - Пиши українською (якщо agent_language: uk)
+    - Завжди включай Non-goals та Acceptance criteria
+  design:
+    - Посилайся на існуючі патерни в src/
+    - Описуй зміни на рівні компонентів, stores, API
+  tasks:
+    - Розбивай на задачі до ~2 годин
+    - Останній пункт: build + lint без помилок
+  specs:
+    - Delta format: ADDED / MODIFIED / REMOVED
+    - Кожна вимога — мінімум один Scenario

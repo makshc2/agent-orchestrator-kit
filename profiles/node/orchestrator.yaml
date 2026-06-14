@@ -6,6 +6,8 @@ project:
   stack: node
   agent_language: "{{LANG}}"
 
+package_manager: npm
+
 pipeline:
   require_spec_review: true
   max_active_changes: 1
