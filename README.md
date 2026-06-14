@@ -111,7 +111,7 @@ your-project/
 | What | How |
 |------|-----|
 | OpenSpec CLI | `npm i -D @fission-ai/openspec && npx openspec init` |
-| Stack skills (Vue, etc.) | `npx vue-cursor-skills install` for vue3 profile |
+| Stack skills (Vue, JS, Vite) | `npx frontend-agent-skills install` for vue3 profile |
 | Project conventions | Create `.agents/project-conventions/SKILL.md` manually |
 | Domain specs | Live in `openspec/specs/` per project |
 
@@ -345,16 +345,26 @@ npx agent-orchestrator-kit update
 | Profile | Stack | Extra (separate install) |
 |---------|-------|--------------------------|
 | `generic` | Any | Orchestration + OpenSpec skills only |
-| `vue3` | Vue 3 + Vite | + `npx vue-cursor-skills install` |
-| `node` | Node.js | + your JS skills as needed |
+| `vue3` | Vue 3 + Vite + JS | + `npx frontend-agent-skills install` |
+| `node` | Node.js | + `npx frontend-agent-skills install --category javascript` |
 
 For `vue3`, after kit init also run:
 
 ```bash
-npx vue-cursor-skills install
-rsync -a .cursor/skills/ .agents/skills/
+# Amp (primary — installs directly to .agents/skills/)
+npx frontend-agent-skills install --agent amp --yes
+
+# Cursor + Claude Code users — sync local IDE dirs
 ./scripts/sync-local-agent-skills.sh
 ```
+
+Or install for all IDEs at once:
+
+```bash
+npx frontend-agent-skills install --agent all --yes
+```
+
+> **Migrating from `vue-cursor-skills`?** Renamed to `frontend-agent-skills` v2 — same package, old CLI alias still works.
 
 ## Memory MCP — Shared State Between Sessions
 

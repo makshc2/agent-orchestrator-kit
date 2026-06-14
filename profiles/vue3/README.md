@@ -1,14 +1,32 @@
 # Vue 3 Profile
 
-After `agent-orchestrator-kit init --profile vue3`, also install Vue-specific skills:
+After `agent-orchestrator-kit init --profile vue3`, install stack skills from [frontend-agent-skills](https://www.npmjs.com/package/frontend-agent-skills):
 
 ```bash
-npx vue-cursor-skills install
-rsync -a --delete .cursor/skills/ .agents/skills/
+# Amp — installs directly to .agents/skills/ (no rsync needed)
+npx frontend-agent-skills install --agent amp --yes
+
+# Cursor / Claude Code — sync local IDE dirs after install
 ./scripts/sync-local-agent-skills.sh
 ```
 
-This adds: `vue-core`, `vue-pinia`, `vue-router`, `vue-axios`, `vue-architecture`, `vue-composables`, `vite`, and debug skills.
+Or install for all IDEs at once:
+
+```bash
+npx frontend-agent-skills install --agent all --yes
+```
+
+Selective install:
+
+```bash
+npx frontend-agent-skills install --agent amp --category vue --yes
+npx frontend-agent-skills install --agent amp --category javascript --yes
+npx frontend-agent-skills list
+```
+
+This adds Vue skills (`vue-core`, `vue-pinia`, `vue-router`, `vue-axios`, `vue-architecture`, `vue-composables`, `vue-debug`, …), `vite`, and JavaScript skills (`javascript-core`, `javascript-dom`, `javascript-debug`, …).
+
+> **Migrating from `vue-cursor-skills`?** Renamed in v2.0.0 — same skills, clearer name. Old CLI alias still works.
 
 ## Recommended OpenSpec config.yaml additions
 

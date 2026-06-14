@@ -51,9 +51,10 @@ openspec/
 
 Для CLI, валідації, іменування changes і типових сценаріїв — читай skill **`openspec-howto`**.
 
-## Vue skills + Amp
+## Frontend skills + Amp
 
-При встановленні `vue-cursor-skills`:
-- дзеркалюй `.cursor/skills/` → `.agents/skills/`
+При встановленні [frontend-agent-skills](https://www.npmjs.com/package/frontend-agent-skills) (`vue-cursor-skills` — старий alias):
+- для Amp: `npx frontend-agent-skills install --agent amp --yes` (напряму в `.agents/skills/`)
+- для Cursor/Claude: `./scripts/sync-local-agent-skills.sh` після install
 - **не** налаштовуй SpecKit
 - якщо в проєкті є `openspec/` — дотримуйся OpenSpec workflow
