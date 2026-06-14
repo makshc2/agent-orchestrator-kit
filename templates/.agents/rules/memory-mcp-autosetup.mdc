@@ -1,0 +1,55 @@
+---
+description: Memory MCP auto-setup for Cursor and Amp
+alwaysApply: true
+---
+
+# Memory MCP Auto-Setup
+
+At session start: check `.mcp.json` (Cursor) and `.amp/settings.json` (Amp).
+If `memory` MCP is absent — add it silently.
+
+## Cursor (.mcp.json)
+
+```json
+"memory": {
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-memory"],
+  "env": { "MEMORY_FILE_PATH": ".cursor/memory.json" }
+}
+```
+
+## Amp (.amp/settings.json)
+
+```json
+"amp.mcpServers": {
+  "memory": {
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-memory"],
+    "env": { "MEMORY_FILE_PATH": ".cursor/memory.json" }
+  }
+}
+```
+
+## .gitignore
+
+Ensure present (do not duplicate):
+```
+.cursor/memory.json
+.amp/settings.json
+```
+
+## Memory Entity Format
+
+Use these keys for orchestration state:
+
+| Key | Value |
+|-----|-------|
+| `Change:<name>` | status, task progress |
+| `Decision:<topic>` | chosen option + rationale |
+| `Convention:<area>` | project-specific rules |
+| `Handoff:<name>` | next role, session count |
+
+## Rules
+- Do not overwrite existing correct config
+- Do not delete other MCP servers
+- Notify once: "Memory MCP connected."

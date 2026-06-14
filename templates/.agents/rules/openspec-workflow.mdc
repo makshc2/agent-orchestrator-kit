@@ -1,0 +1,39 @@
+---
+description: OpenSpec /opsx workflow — commands and file locations
+alwaysApply: true
+---
+
+# OpenSpec Workflow (/opsx)
+
+`/opsx:explore`, `/opsx:propose`, `/opsx:apply`, `/opsx:archive`, `/opsx:sync`, `/opsx:review` — AI workflow commands, not source code.
+
+## File Locations
+
+| What | Where |
+|------|-------|
+| Commands | `.agents/commands/opsx-*.md` |
+| Skills | `.agents/skills/` |
+| Specs (source of truth) | `openspec/specs/` |
+| Active changes | `openspec/changes/` |
+| Project config | `openspec/config.yaml` |
+| Orchestration config | `.agents/orchestrator.yaml` |
+
+## Command → Skill Mapping
+
+- `/opsx:explore` → skill `openspec-explore` (thinking only)
+- `/opsx:propose <name>` → skill `openspec-propose`
+- `/opsx:review <name>` → command `opsx-review` (read-only)
+- `/opsx:apply` → skill `openspec-apply-change`
+- `/opsx:archive` → skill `openspec-archive-change`
+- `/opsx:sync` → skill `openspec-sync-specs`
+
+## CLI (read-only)
+
+```bash
+openspec list
+openspec validate <name> --strict --type change
+openspec status --change "<name>" --json
+openspec instructions apply --change "<name>" --json
+```
+
+Do NOT search for opsx in `src/` — nothing there.

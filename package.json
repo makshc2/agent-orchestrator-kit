@@ -1,0 +1,48 @@
+{
+  "name": "agent-orchestrator-kit",
+  "version": "0.1.0",
+  "description": "Universal AI agent orchestration kit for Cursor, Claude Code, and Amp Code — spec-driven pipeline with OpenSpec integration",
+  "keywords": [
+    "ai-agent",
+    "cursor",
+    "claude-code",
+    "amp-code",
+    "openspec",
+    "sdd",
+    "agent-orchestration",
+    "developer-tools"
+  ],
+  "author": "Maksim Shevyakov <makshc2>",
+  "license": "MIT",
+  "homepage": "https://github.com/makshc2/agent-orchestrator-kit#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/makshc2/agent-orchestrator-kit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/makshc2/agent-orchestrator-kit/issues"
+  },
+  "type": "module",
+  "bin": {
+    "agent-orchestrator": "./bin/agent-orchestrator.js"
+  },
+  "files": [
+    "bin/",
+    "templates/",
+    "profiles/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "commander": "^12.0.0",
+    "picocolors": "^1.0.0",
+    "prompts": "^2.4.2"
+  },
+  "scripts": {
+    "test": "node --test",
+    "link": "npm link"
+  }
+}

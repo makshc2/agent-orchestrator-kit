@@ -1,0 +1,29 @@
+---
+description: Agent orchestration roles and pipeline rules
+alwaysApply: true
+---
+
+# Agent Orchestration Rules
+
+This project uses a spec-driven 5-role pipeline. Read `.agents/orchestrator.yaml` for config.
+
+## Role Commands
+- `/opsx:explore` → read-only thinking, no code
+- `/opsx:propose <name>` → creates `openspec/changes/<name>/` artifacts only
+- `/opsx:review <name>` → read-only spec review, outputs Approve or Request Changes
+- `/opsx:apply <name>` → writes `src/`, marks `tasks.md [x]`
+- `/opsx:archive` → merges delta specs, moves change to archive
+
+## Session Rules
+- One active change at a time
+- Each role = new chat session
+- No code in explore or review sessions
+- No apply without explicit **Approve** from review
+- After apply: build + lint before PR
+- After merge: always run `/opsx:archive`
+
+## Never
+- Mix propose and apply in one session
+- Edit `src/` during explore or review
+- Skip spec review before apply
+- Leave changes un-archived after merge

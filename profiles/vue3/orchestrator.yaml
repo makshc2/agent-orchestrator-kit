@@ -1,0 +1,59 @@
+version: 1
+kit_version: "{{KIT_VERSION}}"
+
+project:
+  name: "{{PROJECT_NAME}}"
+  stack: vue3
+  agent_language: "{{LANG}}"
+
+pipeline:
+  require_spec_review: true
+  max_active_changes: 1
+  archive_after_merge: true
+
+roles:
+  explorer:
+    command: /opsx:explore
+    mode: read-only
+    model_hint: fast
+  architect:
+    command: /opsx:propose
+    mode: specs-only
+    model_hint: strong
+  spec_reviewer:
+    command: /opsx:review
+    mode: read-only
+    model_hint: medium
+  implementer:
+    command: /opsx:apply
+    mode: code
+    model_hint: strong
+    notes: "Use vue-core, vue-pinia, vue-axios, vue-router skills during apply"
+  verifier:
+    type: ci
+    gates:
+      - openspec-validate-strict
+      - lint
+      - build
+
+handoff:
+  explore_to_propose: decision_brief
+  propose_to_review: validate_strict
+  review_to_apply: explicit_approve
+  apply_to_verify: all_tasks_checked
+
+memory:
+  enabled: true
+  file: .cursor/memory.json
+
+mcp:
+  baseline:
+    - memory
+  optional:
+    - github
+    - browser
+
+verifier:
+  lint_command: "npm run lint"
+  build_command: "npm run build"
+  test_command: "npm test"
