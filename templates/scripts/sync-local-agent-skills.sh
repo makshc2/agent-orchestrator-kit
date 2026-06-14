@@ -56,9 +56,12 @@ fi
 # ── Amp Code ───────────────────────────────────────────────────────────
 echo ""
 info "Amp Code reads .agents/ directly — no sync needed"
-if [ ! -f .amp/settings.json ]; then
-  warn ".amp/settings.json missing — add Memory MCP manually (see README)"
-  warn "  {\"amp.mcpServers\":{\"memory\":{\"command\":\"npx\",\"args\":[\"-y\",\"@modelcontextprotocol/server-memory\"],\"env\":{\"MEMORY_FILE_PATH\":\".cursor/memory.json\"}}}}"
+mkdir -p .amp
+if [ ! -f .amp/settings.json ] && [ -f .agents/amp.settings.json.example ]; then
+  cp .agents/amp.settings.json.example .amp/settings.json
+  ok ".amp/settings.json created from example"
+elif [ ! -f .amp/settings.json ]; then
+  warn ".amp/settings.json missing — copy from .agents/amp.settings.json.example"
 fi
 
 # ── .gitignore check ───────────────────────────────────────────────────

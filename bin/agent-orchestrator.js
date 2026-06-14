@@ -10,6 +10,25 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const KIT_ROOT = join(__dirname, '..');
 const KIT_VERSION = JSON.parse(readFileSync(join(KIT_ROOT, 'package.json'), 'utf-8')).version;
 
+const KIT_SKILL_DIRS = [
+  'agent-orchestration',
+  'openspec-howto',
+  'openspec-explore',
+  'openspec-propose',
+  'openspec-apply-change',
+  'openspec-archive-change',
+  'openspec-sync-specs',
+  'spec-workflow-openspec',
+];
+
+const KIT_MANAGED_PATHS = [
+  '.agents/commands',
+  '.agents/rules',
+  ...KIT_SKILL_DIRS.map((s) => `.agents/skills/${s}`),
+  '.github/workflows/agent-verify.yml',
+  'scripts/sync-local-agent-skills.sh',
+];
+
 const log = {
   info: (msg) => console.log(pc.cyan('  →'), msg),
   ok: (msg) => console.log(pc.green('  ✓'), msg),
@@ -107,6 +126,19 @@ program
       execSync(`chmod +x ${join(projectDir, 'scripts', 'sync-local-agent-skills.sh')}`);
     } catch {}
 
+    log.title('Installing CI workflow');
+    const githubWorkflow = join(templateDir, '.github', 'workflows', 'agent-verify.yml');
+    const githubDest = join(projectDir, '.github', 'workflows', 'agent-verify.yml');
+    if (existsSync(githubWorkflow)) {
+      if (!opts.force && existsSync(githubDest)) {
+        log.warn('skip (exists): .github/workflows/agent-verify.yml');
+      } else {
+        mkdirSync(dirname(githubDest), { recursive: true });
+        copyFileSync(githubWorkflow, githubDest);
+        log.ok('.github/workflows/agent-verify.yml');
+      }
+    }
+
     log.title('Installing root files');
     for (const f of ['AGENTS.md', 'CLAUDE.md']) {
       const src = resolveTemplate(f, opts.profile);
@@ -142,7 +174,7 @@ ${pc.bold('Next steps:')}
   1. Review ${pc.cyan('AGENTS.md')} and ${pc.cyan('.agents/orchestrator.yaml')}
   2. Sync to your IDE:
      ${pc.cyan('./scripts/sync-local-agent-skills.sh')}
-  3. Install Memory MCP in .mcp.json (Cursor) / .amp/settings.json (Amp)
+  3. Copy MCP config: .mcp.json (Cursor) / .amp/settings.json (Amp) from *.example files
   4. Start your first change:
      ${pc.cyan('/opsx:explore')}
 `);
@@ -157,26 +189,16 @@ program
 
     log.title(`agent-orchestrator update  v${KIT_VERSION}`);
 
-    const KIT_FILES = [
-      '.agents/commands',
-      '.agents/rules',
-      '.agents/skills/agent-orchestration',
-    ];
-
-    for (const rel of KIT_FILES) {
+    for (const rel of KIT_MANAGED_PATHS) {
       const src = join(templateDir, rel);
       const dest = join(projectDir, rel);
-      if (existsSync(src)) {
+      if (!existsSync(src)) continue;
+      if (statSync(src).isDirectory()) {
         copyDir(src, dest, { overwrite: true });
-      }
-    }
-
-    for (const f of ['scripts/sync-local-agent-skills.sh']) {
-      const src = join(templateDir, f);
-      const dest = join(projectDir, f);
-      if (existsSync(src)) {
+      } else {
+        mkdirSync(dirname(dest), { recursive: true });
         copyFileSync(src, dest);
-        log.ok(f);
+        log.ok(rel);
       }
     }
 
