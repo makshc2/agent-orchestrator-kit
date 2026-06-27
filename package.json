@@ -1,6 +1,6 @@
 {
   "name": "agent-orchestrator-kit",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Universal AI agent orchestration kit for Cursor, Claude Code, and Amp Code — spec-driven pipeline with OpenSpec integration",
   "keywords": [
     "ai-agent",
@@ -17,7 +17,7 @@
   "homepage": "https://github.com/makshc2/agent-orchestrator-kit#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/makshc2/agent-orchestrator-kit.git"
+    "url": "git+https://github.com/makshc2/agent-orchestrator-kit.git"
   },
   "bugs": {
     "url": "https://github.com/makshc2/agent-orchestrator-kit/issues"
@@ -49,5 +49,8 @@
     "link": "npm link",
     "release:check": "npm test && npm pack --dry-run",
     "release:tag": "git tag v$(node -p \"require('./package.json').version\")"
+  },
+  "devDependencies": {
+    "@fission-ai/openspec": "^1.4.1"
   }
 }

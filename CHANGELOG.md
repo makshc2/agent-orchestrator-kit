@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.4] - 2026-06-27
+
+### Added
+- **Kit repo CI** — `.github/workflows/agent-verify.yml` (npm ci → OpenSpec validate → test)
+- **OpenSpec devDependency** — `@fission-ai/openspec` for local and CI validation
+
 ## [0.1.3] - 2026-06-14
 
 ### Added
@@ -43,6 +49,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Initial release: 5-role orchestration pipeline, `/opsx:*` commands, IDE sync
 
+[0.1.4]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.1.0...v0.1.1
