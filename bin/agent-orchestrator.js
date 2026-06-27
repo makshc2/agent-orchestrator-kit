@@ -28,8 +28,12 @@ const KIT_MANAGED_PATHS = [
   '.agents/rules',
   ...KIT_SKILL_DIRS.map((s) => `.agents/skills/${s}`),
   '.github/workflows/agent-verify.yml',
+  '.gitlab/agent-verify.yml',
   'scripts/sync-local-agent-skills.sh',
 ];
+
+const VALID_CI_PROVIDERS = ['gitlab', 'github', 'none'];
+const VERIFY_OPENSPEC_SCRIPT = 'npx openspec validate --all --strict';
 
 const GITIGNORE_LINES = ['.cursor', '.cursor/memory.json', '.amp/settings.json', '.claude'];
 
@@ -146,6 +150,79 @@ function installOpenspecConfigExample(projectDir, profile, vars, force) {
   }
 }
 
+function resolveCiProvider(ci) {
+  if (VALID_CI_PROVIDERS.includes(ci)) return ci;
+  log.warn(`Unknown --ci value "${ci}". Valid: ${VALID_CI_PROVIDERS.join(', ')}. Using github.`);
+  return 'github';
+}
+
+function injectVerifyScripts(projectDir, { pm }) {
+  const pkgPath = join(projectDir, 'package.json');
+  if (!existsSync(pkgPath)) {
+    log.warn('skip script injection: no package.json');
+    return;
+  }
+
+  const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+  if (!pkg.scripts) pkg.scripts = {};
+
+  if (pkg.scripts['verify:openspec']) {
+    log.warn('skip (exists): verify:openspec script');
+  } else {
+    pkg.scripts['verify:openspec'] = VERIFY_OPENSPEC_SCRIPT;
+    log.ok('verify:openspec script added');
+  }
+
+  const runCmd = `${pm} run verify:openspec`;
+  const existingPrebuild = pkg.scripts.prebuild;
+
+  if (existingPrebuild && existingPrebuild.includes('verify:openspec')) {
+    log.warn('skip (exists): prebuild already chains verify:openspec');
+  } else if (existingPrebuild) {
+    pkg.scripts.prebuild = `${runCmd} && ${existingPrebuild}`;
+    log.ok('prebuild script chained');
+  } else {
+    pkg.scripts.prebuild = runCmd;
+    log.ok('prebuild script added');
+  }
+
+  writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+}
+
+function installCi(projectDir, templateDir, ci, force) {
+  if (ci === 'none') {
+    log.info('CI install skipped (--ci none)');
+    return;
+  }
+
+  if (ci === 'github') {
+    const githubWorkflow = join(templateDir, '.github', 'workflows', 'agent-verify.yml');
+    const githubDest = join(projectDir, '.github', 'workflows', 'agent-verify.yml');
+    if (!existsSync(githubWorkflow)) return;
+    if (!force && existsSync(githubDest)) {
+      log.warn('skip (exists): .github/workflows/agent-verify.yml');
+      return;
+    }
+    mkdirSync(dirname(githubDest), { recursive: true });
+    copyFileSync(githubWorkflow, githubDest);
+    log.ok('.github/workflows/agent-verify.yml');
+    return;
+  }
+
+  if (ci === 'gitlab') {
+    const gitlabFragment = join(templateDir, '.gitlab', 'agent-verify.yml');
+    const gitlabDest = join(projectDir, '.gitlab', 'agent-verify.yml');
+    if (!existsSync(gitlabFragment)) return;
+    if (!force && existsSync(gitlabDest)) {
+      log.warn('skip (exists): .gitlab/agent-verify.yml');
+      return;
+    }
+    mkdirSync(dirname(gitlabDest), { recursive: true });
+    copyFileSync(gitlabFragment, gitlabDest);
+    log.ok('.gitlab/agent-verify.yml');
+  }
+}
+
 function patchOrchestratorVerifier(projectDir, pm) {
   const orchPath = join(projectDir, '.agents', 'orchestrator.yaml');
   if (!existsSync(orchPath)) return;
@@ -168,7 +245,7 @@ function patchOrchestratorVerifier(projectDir, pm) {
   writeFileSync(orchPath, content);
 }
 
-function printNextSteps(profile, projectDir) {
+function printNextSteps(profile, projectDir, ci = 'github') {
   const pm = detectPackageManager(projectDir);
   const openspecReady = hasOpenSpec(projectDir);
   const lines = [`${pc.bold('Next steps:')}`];
@@ -206,6 +283,11 @@ function printNextSteps(profile, projectDir) {
     lines.push(`  ${pc.dim(`Detected package manager: ${pm} (verifier commands updated in orchestrator.yaml)`)}`);
   }
 
+  if (ci === 'gitlab') {
+    lines.push(`  ${pc.dim(`GitLab verify: ${pm} run build triggers prebuild → verify:openspec automatically`)}`);
+    lines.push(`  ${pc.dim('Optional dev CI: include local .gitlab/agent-verify.yml (see kit templates/.gitlab-ci.starter.yml.example)')}`);
+  }
+
   console.log('\n' + lines.join('\n') + '\n');
 }
 
@@ -236,17 +318,20 @@ program
   .option('--lang <lang>', 'Agent response language (en | uk | ...)', 'en')
   .option('--name <name>', 'Project name (defaults to directory name)')
   .option('--force', 'Overwrite existing files', false)
+  .option('--ci <provider>', 'CI provider: gitlab | github | none', 'github')
   .action((opts) => {
     const projectDir = process.cwd();
     const projectName = opts.name || basename(projectDir);
     const profile = resolveProfile(opts.profile);
     const pm = detectPackageManager(projectDir);
+    const ci = resolveCiProvider(opts.ci);
 
     log.title(`agent-orchestrator init  v${KIT_VERSION}`);
     log.info(`Project: ${projectName}`);
     log.info(`Profile: ${profile}`);
     log.info(`Language: ${opts.lang}`);
     log.info(`Package manager: ${pm}`);
+    log.info(`CI provider: ${ci}`);
 
     const templateDir = join(KIT_ROOT, 'templates');
     const profileDir = join(KIT_ROOT, 'profiles', profile);
@@ -265,16 +350,9 @@ program
     } catch {}
 
     log.title('Installing CI workflow');
-    const githubWorkflow = join(templateDir, '.github', 'workflows', 'agent-verify.yml');
-    const githubDest = join(projectDir, '.github', 'workflows', 'agent-verify.yml');
-    if (existsSync(githubWorkflow)) {
-      if (!opts.force && existsSync(githubDest)) {
-        log.warn('skip (exists): .github/workflows/agent-verify.yml');
-      } else {
-        mkdirSync(dirname(githubDest), { recursive: true });
-        copyFileSync(githubWorkflow, githubDest);
-        log.ok('.github/workflows/agent-verify.yml');
-      }
+    installCi(projectDir, templateDir, ci, opts.force);
+    if (ci === 'gitlab') {
+      injectVerifyScripts(projectDir, { pm });
     }
 
     log.title('Installing root files');
@@ -311,7 +389,7 @@ program
 
     log.title('Done');
     log.ok(`agent-orchestrator-kit v${KIT_VERSION} installed`);
-    printNextSteps(profile, projectDir);
+    printNextSteps(profile, projectDir, ci);
   });
 
 program

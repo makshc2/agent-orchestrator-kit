@@ -64,6 +64,24 @@ npx agent-orchestrator-kit init \
   --lang uk
 ```
 
+For GitLab-hosted projects (verify via `prebuild` hook — no GitHub Actions):
+
+```bash
+npx agent-orchestrator-kit init --ci gitlab
+```
+
+This installs `.gitlab/agent-verify.yml`, injects `verify:openspec` and PM-aware `prebuild` into `package.json`. When DevOps runs `npm run build` (or yarn/pnpm build), npm lifecycle runs `prebuild` first → `npx openspec validate --all --strict` executes automatically.
+
+Optional dev-controlled CI before DevOps setup: copy `templates/.gitlab-ci.starter.yml.example` from the kit to `.gitlab-ci.yml` and adjust stages as needed.
+
+Skip CI files entirely:
+
+```bash
+npx agent-orchestrator-kit init --ci none
+```
+
+Default remains GitHub Actions (`--ci github`).
+
 ### Sync to local IDEs
 
 After init (and after every update):
@@ -80,7 +98,8 @@ This copies `.agents/` to your local IDE directories (not committed to git).
 your-project/
 ├── AGENTS.md
 ├── CLAUDE.md
-├── .github/workflows/agent-verify.yml   # CI: openspec validate + lint + build
+├── .github/workflows/agent-verify.yml   # CI (default --ci github)
+├── .gitlab/agent-verify.yml             # CI fragment (--ci gitlab)
 ├── .agents/
 │   ├── orchestrator.yaml
 │   ├── mcp.json.example                 # Cursor MCP template
@@ -106,7 +125,7 @@ your-project/
 | Orchestration | 5-role pipeline, `AGENTS.md`, `orchestrator.yaml`, review command |
 | OpenSpec skills | All 7 skills for `/opsx:*` workflow |
 | IDE sync | Cursor + Claude Code sync script |
-| CI | `agent-verify.yml` (openspec validate, lint, build, test) |
+| CI | `agent-verify.yml` — GitHub (default) or GitLab fragment + `prebuild` hook |
 | MCP templates | Memory MCP for Cursor and Amp |
 
 ### Not included (install separately)
@@ -285,7 +304,7 @@ npm run lint    # must pass
 
 ### Role 5: Verifier — CI (automatic)
 
-Installed at `.github/workflows/agent-verify.yml`:
+**GitHub (default `--ci github`):** installed at `.github/workflows/agent-verify.yml`:
 
 ```yaml
 - run: npx openspec validate --all --strict
@@ -293,6 +312,17 @@ Installed at `.github/workflows/agent-verify.yml`:
 - run: npm run build --if-present
 - run: npm test --if-present
 ```
+
+**GitLab (`--ci gitlab`):** verify runs through the package manager build lifecycle — no GitHub Actions:
+
+```json
+"verify:openspec": "npx openspec validate --all --strict",
+"prebuild": "npm run verify:openspec"
+```
+
+When CI or a developer runs `npm run build`, npm executes `prebuild` first. DevOps pipelines that already call `npm run build` get OpenSpec validate with zero config changes.
+
+Optional: include `.gitlab/agent-verify.yml` in `.gitlab-ci.yml` for full lint/build/test verify before DevOps owns the root CI file. See kit `templates/.gitlab-ci.starter.yml.example`.
 
 Blocks merge if any gate fails.
 
@@ -429,6 +459,7 @@ npx agent-orchestrator-kit init [options]
   --profile <name>   Stack profile: generic | vue3 | node | mvp
   --lang <code>      Agent language: en | uk | ...
   --name <name>      Project name (default: directory name)
+  --ci <provider>    CI provider: gitlab | github | none (default: github)
   --force            Overwrite existing files
 
 npx agent-orchestrator-kit update
@@ -469,6 +500,16 @@ openspec/                # Committed — spec-driven workflow
 ```
 
 ## Changelog
+
+### 0.1.5
+- `init --ci gitlab|github|none` — GitLab verify via prebuild hook + CI fragment
+- PM-aware `verify:openspec` / `prebuild` injection for GitLab projects
+- `.gitlab/agent-verify.yml` template + starter example
+- `update` refreshes GitLab fragment; docs for GitLab verifier path
+
+### 0.1.4
+- Kit repo CI — `.github/workflows/agent-verify.yml`
+- OpenSpec devDependency for local and CI validation
 
 ### 0.1.3
 - Fix gitignore dedup (exact line match, not substring)

@@ -24,6 +24,8 @@ Never mix phases in one chat — this is the single most important rule.
 | Implementer | `/opsx:apply <name>` | writes `src/` | strong |
 | Verifier | CI (automatic) | scripts only | — |
 
+Verifier runs on **GitHub Actions** (default) or **GitLab** via `prebuild` → `verify:openspec` when using `init --ci gitlab`. GitLab projects do not use `.github/workflows/`.
+
 ## Hard Rules
 
 - **One active change per developer** at a time.

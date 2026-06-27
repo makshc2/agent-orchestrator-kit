@@ -173,6 +173,196 @@ test('CI workflow supports yarn and pnpm detection', () => {
   assert.match(workflow, /pnpm-lock.yaml/);
 });
 
+function readPkg(dir) {
+  return JSON.parse(readFileSync(join(dir, 'package.json'), 'utf-8'));
+}
+
+test('init --ci gitlab creates GitLab fragment, not GitHub workflow', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-gitlab-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'gitlab-test', scripts: {} }, null, 2));
+    runInit(dir, '--ci gitlab --profile generic --name GitLabTest --lang en');
+
+    assert.ok(existsSync(join(dir, '.gitlab/agent-verify.yml')));
+    assert.ok(!existsSync(join(dir, '.github/workflows/agent-verify.yml')));
+    assert.ok(!existsSync(join(dir, '.gitlab-ci.yml')));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('init --ci gitlab injects verify:openspec and prebuild', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-gitlab-scripts-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'gitlab-scripts', scripts: {} }, null, 2));
+    runInit(dir, '--ci gitlab --profile generic --name Scripts --lang en');
+
+    const pkg = readPkg(dir);
+    assert.equal(pkg.scripts['verify:openspec'], 'npx openspec validate --all --strict');
+    assert.equal(pkg.scripts.prebuild, 'npm run verify:openspec');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('init --ci gitlab chains existing prebuild', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-gitlab-chain-'));
+  try {
+    writeFileSync(
+      join(dir, 'package.json'),
+      JSON.stringify({ name: 'chain', scripts: { prebuild: 'node scripts/check.js' } }, null, 2),
+    );
+    runInit(dir, '--ci gitlab --profile generic --name Chain --lang en');
+
+    const pkg = readPkg(dir);
+    assert.equal(pkg.scripts.prebuild, 'npm run verify:openspec && node scripts/check.js');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('GitLab fragment contains PM detection', () => {
+  const fragment = readFileSync(join(KIT_ROOT, 'templates/.gitlab/agent-verify.yml'), 'utf-8');
+  assert.match(fragment, /\.agent-verify-base/);
+  assert.match(fragment, /agent-verify:/);
+  assert.match(fragment, /pnpm-lock\.yaml/);
+  assert.match(fragment, /yarn\.lock/);
+  assert.match(fragment, /npm ci/);
+  assert.match(fragment, /openspec validate --all --strict/);
+});
+
+test('init --ci github default keeps backward compat without script injection', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-github-default-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'github-default', scripts: {} }, null, 2));
+    runInit(dir, '--profile generic --name GitHubDefault --lang en');
+
+    assert.ok(existsSync(join(dir, '.github/workflows/agent-verify.yml')));
+    assert.ok(!existsSync(join(dir, '.gitlab/agent-verify.yml')));
+    const pkg = readPkg(dir);
+    assert.equal(pkg.scripts['verify:openspec'], undefined);
+    assert.equal(pkg.scripts.prebuild, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('init --ci gitlab + update refreshes GitLab fragment', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-gitlab-update-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'gitlab-update', scripts: {} }, null, 2));
+    runInit(dir, '--ci gitlab --profile generic --name UpdateGitLab --lang en');
+
+    writeFileSync(join(dir, '.gitlab/agent-verify.yml'), '# stale\n');
+    execSync(`node "${CLI}" update`, { cwd: dir, stdio: 'pipe' });
+
+    const fragment = readFileSync(join(dir, '.gitlab/agent-verify.yml'), 'utf-8');
+    assert.match(fragment, /\.agent-verify-base/);
+    assert.doesNotMatch(fragment, /# stale/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('init --ci none skips CI files and script injection', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-ci-none-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'ci-none', scripts: {} }, null, 2));
+    runInit(dir, '--ci none --profile generic --name None --lang en');
+
+    assert.ok(!existsSync(join(dir, '.github/workflows/agent-verify.yml')));
+    assert.ok(!existsSync(join(dir, '.gitlab/agent-verify.yml')));
+    const pkg = readPkg(dir);
+    assert.equal(pkg.scripts['verify:openspec'], undefined);
+    assert.equal(pkg.scripts.prebuild, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('init --ci gitlab --force skips duplicate prebuild chain', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-gitlab-force-'));
+  try {
+    writeFileSync(
+      join(dir, 'package.json'),
+      JSON.stringify(
+        {
+          name: 'force',
+          scripts: {
+            'verify:openspec': 'npx openspec validate --all --strict',
+            prebuild: 'npm run verify:openspec && node scripts/check.js',
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    const out = execSync(`node "${CLI}" init --ci gitlab --force --profile generic --name Force --lang en`, {
+      cwd: dir,
+      stdio: 'pipe',
+      encoding: 'utf-8',
+    });
+    assert.match(out, /prebuild already chains verify:openspec/);
+
+    const pkg = readPkg(dir);
+    assert.equal(pkg.scripts.prebuild, 'npm run verify:openspec && node scripts/check.js');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('init --ci gitlab with yarn lockfile uses yarn in prebuild', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-gitlab-yarn-'));
+  try {
+    writeFileSync(join(dir, 'yarn.lock'), '');
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'yarn-gitlab', scripts: {} }, null, 2));
+    runInit(dir, '--ci gitlab --profile generic --name YarnGitLab --lang en');
+
+    const pkg = readPkg(dir);
+    assert.equal(pkg.scripts.prebuild, 'yarn run verify:openspec');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('init --ci gitlab next steps mention prebuild verify path', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-gitlab-next-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'next-gitlab', scripts: {} }, null, 2));
+    const out = execSync(`node "${CLI}" init --ci gitlab --profile generic --name NextGitLab --lang en`, {
+      cwd: dir,
+      stdio: 'pipe',
+      encoding: 'utf-8',
+    });
+    assert.match(out, /prebuild.*verify:openspec/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('GitLab starter example includes local fragment', () => {
+  const starter = readFileSync(join(KIT_ROOT, 'templates/.gitlab-ci.starter.yml.example'), 'utf-8');
+  assert.match(starter, /local: '\.gitlab\/agent-verify\.yml'/);
+  assert.match(starter, /extends: \.agent-verify-base/);
+});
+
+test('init --ci gitlab npm run build runs prebuild verify hook', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-gitlab-build-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'build-hook', scripts: { build: 'echo build-ok' } }, null, 2));
+    runInit(dir, '--ci gitlab --profile generic --name BuildHook --lang en');
+
+    const pkg = readPkg(dir);
+    pkg.scripts['verify:openspec'] = 'node -e "require(\'fs\').writeFileSync(\'verify-ran\',\'1\')"';
+    writeFileSync(join(dir, 'package.json'), JSON.stringify(pkg, null, 2) + '\n');
+
+    execSync('npm run build', { cwd: dir, stdio: 'pipe' });
+    assert.ok(existsSync(join(dir, 'verify-ran')));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('opsx-apply documents review gate', () => {
   const apply = readFileSync(join(KIT_ROOT, 'templates/.agents/commands/opsx-apply.md'), 'utf-8');
   assert.match(apply, /require_spec_review/);

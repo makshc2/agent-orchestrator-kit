@@ -1,0 +1,36 @@
+.agent-verify-base:
+  image: node:20
+  before_script:
+    - |
+      if [ -f pnpm-lock.yaml ]; then
+        export PM=pnpm
+        corepack enable
+        pnpm install --frozen-lockfile
+      elif [ -f yarn.lock ]; then
+        export PM=yarn
+        yarn install --frozen-lockfile
+      else
+        export PM=npm
+        npm ci
+      fi
+  script:
+    - npx openspec validate --all --strict
+    - |
+      run_pm_script() {
+        local name=$1
+        if [ "$PM" = "npm" ]; then
+          npm run "$name" --if-present
+        elif node -e "process.exit(require('./package.json').scripts?.['${name}'] ? 0 : 1)"; then
+          $PM run "$name"
+        fi
+      }
+      run_pm_script lint
+      run_pm_script build
+      run_pm_script test
+
+agent-verify:
+  extends: .agent-verify-base
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH == "develop"

@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.5] - 2026-06-27
+
+### Added
+- **`init --ci gitlab|github|none`** — CI provider flag (default: `github`)
+- **GitLab verify** — `.gitlab/agent-verify.yml` fragment with multi-PM detect (npm/yarn/pnpm)
+- **PM-aware prebuild hook** — `verify:openspec` + `prebuild` injection on `--ci gitlab` (zero DevOps config via `npm run build`)
+- **Starter example** — `templates/.gitlab-ci.starter.yml.example` for early push before DevOps owns root CI
+- **OpenSpec specs** — `gitlab-consumer-verify`, `kit-ci-verify` synced to `openspec/specs/`
+
+### Changed
+- **`update`** refreshes `.gitlab/agent-verify.yml` via `KIT_MANAGED_PATHS`
+- **README + AGENTS.md** — GitLab verifier path documented (prebuild hook, not GitHub Actions)
+- **`printNextSteps`** — GitLab hints for `--ci gitlab` users
+
 ## [0.1.4] - 2026-06-27
 
 ### Added
@@ -49,6 +63,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Initial release: 5-role orchestration pipeline, `/opsx:*` commands, IDE sync
 
+[0.1.5]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.1.1...v0.1.2
