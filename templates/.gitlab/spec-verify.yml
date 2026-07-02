@@ -1,0 +1,47 @@
+# ──────────────────────────────────────────────────────────────
+# AI Spec Verifier — blocking gate on merge requests.
+# Verifies that changed src/ code complies with openspec/specs/
+# via Amp CLI, posts a PASS / BLOCKED comment to the MR, and
+# fails the pipeline on a BLOCKED verdict.
+#
+# Installed by agent-orchestrator-kit (init --ci gitlab --spec-verify).
+# Include from .gitlab-ci.yml:
+#   include:
+#     - local: '.gitlab/spec-verify.yml'
+#
+# Required CI/CD variables (Settings → CI/CD → Variables):
+#   AMP_API_KEY           — Amp API key (masked, protected)
+#   GITLAB_VERIFIER_TOKEN — Project token with api scope (masked)
+# ──────────────────────────────────────────────────────────────
+.spec-verify-base:
+  image: node:20
+  script:
+    - apt-get update -qq && apt-get install -y -qq python3 curl git > /dev/null
+    - npm install -g @sourcegraph/amp@latest
+    - chmod +x scripts/verify-specs.sh scripts/post-mr-verdict.sh
+    - bash scripts/verify-specs.sh
+    - bash scripts/post-mr-verdict.sh
+    # Evaluate verdict — exit 1 if verifier says fail
+    - |
+      PASS=$(python3 -c "import json; v=json.load(open('artifacts/verdict.json')); print(str(v.get('pass',True)).lower())")
+      if [ "$PASS" != "true" ]; then
+        echo "Spec verifier found errors. See MR comment for details."
+        exit 1
+      fi
+      echo "Spec verification passed."
+  artifacts:
+    paths:
+      - artifacts/verdict.json
+      - artifacts/verifier-prompt.md
+    expire_in: 7 days
+    when: always
+
+spec-verify:
+  extends: .spec-verify-base
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - "src/**/*"
+  # Phase 1 (warning-only rollout): uncomment the next line to let
+  # the pipeline stay green while the team builds trust in verdicts.
+  # allow_failure: true

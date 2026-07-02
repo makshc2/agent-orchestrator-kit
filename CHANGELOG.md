@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.6] - 2026-07-02
+
+### Added
+- **`init --spec-verify`** — opt-in AI Spec Verifier for GitLab consumers: on MRs changing `src/`, an Amp agent verifies code against `openspec/specs/`, posts PASS/BLOCKED to the MR, and fails the pipeline on BLOCKED
+- **Templates** — `.gitlab/spec-verify.yml` (blocking job, commented Phase 1 `allow_failure` fallback), `scripts/verify-specs.sh` (stack-agnostic prompt with project context from `openspec/config.yaml`, graceful skips, secret-safe), `scripts/post-mr-verdict.sh` (GitLab MR comment)
+- **Orchestrator gate** — `spec-verify-blocking` auto-added to `roles.verifier.gates` (idempotent)
+- **OpenSpec spec** — `spec-verify-consumer`
+
+### Changed
+- **`update`** refreshes spec-verify files via `KIT_OPTIN_PATHS` — only in projects that already installed them
+- **README / AGENTS.md template** — AI Spec Verifier documented (install, CI variables, verdict schema, Phase 1 rollout)
+
 ## [0.1.5] - 2026-06-27
 
 ### Added

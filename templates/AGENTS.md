@@ -26,6 +26,8 @@ Never mix phases in one chat — this is the single most important rule.
 
 Verifier runs on **GitHub Actions** (default) or **GitLab** via `prebuild` → `verify:openspec` when using `init --ci gitlab`. GitLab projects do not use `.github/workflows/`.
 
+With `init --ci gitlab --spec-verify`, an **AI Spec Verifier** also runs on MRs changing `src/`: an Amp agent checks the changed code against `openspec/specs/` and a **BLOCKED verdict fails the pipeline** (gate `spec-verify-blocking` in `.agents/orchestrator.yaml`).
+
 ## Hard Rules
 
 - **One active change per developer** at a time.

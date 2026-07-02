@@ -1,5 +1,7 @@
 include:
   - local: '.gitlab/agent-verify.yml'
+  # AI Spec Verifier (opt-in — installed via init --ci gitlab --spec-verify):
+  # - local: '.gitlab/spec-verify.yml'
 
 agent-verify:
   extends: .agent-verify-base

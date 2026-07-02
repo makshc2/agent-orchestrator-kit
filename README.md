@@ -100,6 +100,7 @@ your-project/
 ├── CLAUDE.md
 ├── .github/workflows/agent-verify.yml   # CI (default --ci github)
 ├── .gitlab/agent-verify.yml             # CI fragment (--ci gitlab)
+├── .gitlab/spec-verify.yml              # AI Spec Verifier (--spec-verify, opt-in)
 ├── .agents/
 │   ├── orchestrator.yaml
 │   ├── mcp.json.example                 # Cursor MCP template
@@ -115,7 +116,8 @@ your-project/
 │       ├── openspec-archive-change/
 │       ├── openspec-sync-specs/
 │       └── spec-workflow-openspec/
-└── scripts/sync-local-agent-skills.sh
+├── scripts/sync-local-agent-skills.sh
+└── scripts/verify-specs.sh + post-mr-verdict.sh   # (--spec-verify, opt-in)
 ```
 
 ### Included in kit
@@ -126,6 +128,7 @@ your-project/
 | OpenSpec skills | All 7 skills for `/opsx:*` workflow |
 | IDE sync | Cursor + Claude Code sync script |
 | CI | `agent-verify.yml` — GitHub (default) or GitLab fragment + `prebuild` hook |
+| AI Spec Verifier | `spec-verify.yml` + verifier scripts — GitLab opt-in (`--spec-verify`) |
 | MCP templates | Memory MCP for Cursor and Amp |
 
 ### Not included (install separately)
@@ -326,6 +329,41 @@ Optional: include `.gitlab/agent-verify.yml` in `.gitlab-ci.yml` for full lint/b
 
 Blocks merge if any gate fails.
 
+#### AI Spec Verifier (GitLab, opt-in)
+
+```bash
+npx agent-orchestrator-kit init --ci gitlab --spec-verify
+```
+
+Installs an AI verification layer on top of the deterministic gates: on every merge request that changes `src/`, an Amp agent reads `openspec/specs/`, checks the changed code against every relevant requirement, posts a **PASS / BLOCKED** comment to the MR, and **fails the pipeline on BLOCKED** — specs become an enforceable merge contract, not just documentation.
+
+Installed files:
+
+| File | Purpose |
+|------|---------|
+| `.gitlab/spec-verify.yml` | CI fragment — hidden `.spec-verify-base` + blocking `spec-verify` job (MR + `src/**/*` only) |
+| `scripts/verify-specs.sh` | Collects changed files + specs, builds prompt (project context from `openspec/config.yaml`), calls `amp -x`, writes `artifacts/verdict.json` |
+| `scripts/post-mr-verdict.sh` | Posts the verdict as an MR comment via GitLab API |
+
+The flag also adds `spec-verify-blocking` to `roles.verifier.gates` in `.agents/orchestrator.yaml`.
+
+Setup after install:
+
+1. Include the fragment from `.gitlab-ci.yml`:
+
+```yaml
+include:
+  - local: '.gitlab/spec-verify.yml'
+```
+
+2. Add CI/CD variables (Settings → CI/CD → Variables, masked): `AMP_API_KEY`, `GITLAB_VERIFIER_TOKEN` (project access token with `api` scope).
+
+Verdict schema (`artifacts/verdict.json`): `pass`, `score` (0–100), `summary`, `findings[]` with `severity` (`error` fails the job), `spec`, `requirement`, `message`, `file`. The script degrades gracefully — no `src/` changes, no specs, missing `amp` CLI, or missing `AMP_API_KEY` produce a skipped passing verdict and never block the pipeline. Secrets are never logged; `.env`/key/token files are excluded from prompts.
+
+**Warning-only rollout (Phase 1):** uncomment `allow_failure: true` in `.gitlab/spec-verify.yml` to keep the pipeline green while the team builds trust in verdicts, then remove it to enforce blocking (Phase 2).
+
+`update` refreshes the three spec-verify files only in projects that already installed them — the feature stays opt-in.
+
 ---
 
 ### Archive — `/opsx:archive`
@@ -460,6 +498,7 @@ npx agent-orchestrator-kit init [options]
   --lang <code>      Agent language: en | uk | ...
   --name <name>      Project name (default: directory name)
   --ci <provider>    CI provider: gitlab | github | none (default: github)
+  --spec-verify      Install AI Spec Verifier blocking gate (GitLab only)
   --force            Overwrite existing files
 
 npx agent-orchestrator-kit update
@@ -500,6 +539,12 @@ openspec/                # Committed — spec-driven workflow
 ```
 
 ## Changelog
+
+### 0.1.6
+- `init --ci gitlab --spec-verify` — opt-in AI Spec Verifier: blocking MR gate via Amp CLI
+- Templates: `.gitlab/spec-verify.yml`, `scripts/verify-specs.sh`, `scripts/post-mr-verdict.sh`
+- `spec-verify-blocking` gate auto-added to `roles.verifier.gates`
+- `update` refreshes spec-verify files only where already installed
 
 ### 0.1.5
 - `init --ci gitlab|github|none` — GitLab verify via prebuild hook + CI fragment

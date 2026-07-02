@@ -363,6 +363,126 @@ test('init --ci gitlab npm run build runs prebuild verify hook', () => {
   }
 });
 
+test('init --ci gitlab --spec-verify installs verifier files and gate', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-specverify-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'sv', scripts: {} }, null, 2));
+    runInit(dir, '--ci gitlab --spec-verify --profile generic --name SV --lang en');
+
+    assert.ok(existsSync(join(dir, '.gitlab/spec-verify.yml')));
+    assert.ok(existsSync(join(dir, 'scripts/verify-specs.sh')));
+    assert.ok(existsSync(join(dir, 'scripts/post-mr-verdict.sh')));
+
+    const orch = readFileSync(join(dir, '.agents/orchestrator.yaml'), 'utf-8');
+    assert.match(orch, /- openspec-validate-strict\n\s*- spec-verify-blocking/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('init --ci gitlab without flag does not install spec-verify files', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-specverify-off-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'sv-off', scripts: {} }, null, 2));
+    runInit(dir, '--ci gitlab --profile generic --name SVOff --lang en');
+
+    assert.ok(!existsSync(join(dir, '.gitlab/spec-verify.yml')));
+    assert.ok(!existsSync(join(dir, 'scripts/verify-specs.sh')));
+    assert.ok(!existsSync(join(dir, 'scripts/post-mr-verdict.sh')));
+    const orch = readFileSync(join(dir, '.agents/orchestrator.yaml'), 'utf-8');
+    assert.doesNotMatch(orch, /spec-verify-blocking/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('init --ci github --spec-verify warns and skips verifier install', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-specverify-gh-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'sv-gh', scripts: {} }, null, 2));
+    const out = execSync(`node "${CLI}" init --ci github --spec-verify --profile generic --name SVGH --lang en`, {
+      cwd: dir,
+      stdio: 'pipe',
+      encoding: 'utf-8',
+    });
+    assert.match(out, /--spec-verify requires --ci gitlab/);
+    assert.ok(!existsSync(join(dir, '.gitlab/spec-verify.yml')));
+    assert.ok(!existsSync(join(dir, 'scripts/verify-specs.sh')));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('spec-verify fragment is blocking with src rules and artifacts', () => {
+  const fragment = readFileSync(join(KIT_ROOT, 'templates/.gitlab/spec-verify.yml'), 'utf-8');
+  assert.match(fragment, /\.spec-verify-base/);
+  assert.match(fragment, /spec-verify:/);
+  assert.match(fragment, /src\/\*\*\/\*/);
+  assert.match(fragment, /artifacts\/verdict\.json/);
+  assert.doesNotMatch(fragment, /^\s*allow_failure: true/m);
+  assert.match(fragment, /#\s*allow_failure: true/);
+});
+
+test('update refreshes spec-verify files only when installed', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-specverify-update-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'sv-up', scripts: {} }, null, 2));
+    runInit(dir, '--ci gitlab --spec-verify --profile generic --name SVUp --lang en');
+
+    writeFileSync(join(dir, '.gitlab/spec-verify.yml'), '# stale\n');
+    writeFileSync(join(dir, 'scripts/verify-specs.sh'), '# stale\n');
+    execSync(`node "${CLI}" update`, { cwd: dir, stdio: 'pipe' });
+
+    assert.match(readFileSync(join(dir, '.gitlab/spec-verify.yml'), 'utf-8'), /\.spec-verify-base/);
+    assert.match(readFileSync(join(dir, 'scripts/verify-specs.sh'), 'utf-8'), /SPEC VERIFIER/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('update does not create spec-verify files when not opted in', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-specverify-noopt-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'sv-no', scripts: {} }, null, 2));
+    runInit(dir, '--ci gitlab --profile generic --name SVNo --lang en');
+    execSync(`node "${CLI}" update`, { cwd: dir, stdio: 'pipe' });
+
+    assert.ok(!existsSync(join(dir, '.gitlab/spec-verify.yml')));
+    assert.ok(!existsSync(join(dir, 'scripts/verify-specs.sh')));
+    assert.ok(!existsSync(join(dir, 'scripts/post-mr-verdict.sh')));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('spec-verify gate patch is idempotent on repeated init', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-specverify-idem-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'sv-idem', scripts: {} }, null, 2));
+    runInit(dir, '--ci gitlab --spec-verify --profile generic --name SVIdem --lang en');
+    runInit(dir, '--ci gitlab --spec-verify --profile generic --name SVIdem --lang en');
+
+    const orch = readFileSync(join(dir, '.agents/orchestrator.yaml'), 'utf-8');
+    const count = (orch.match(/spec-verify-blocking/g) || []).length;
+    assert.equal(count, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('verifier script templates are stack-agnostic and secret-safe', () => {
+  const verify = readFileSync(join(KIT_ROOT, 'templates/scripts/verify-specs.sh'), 'utf-8');
+  assert.doesNotMatch(verify, /Vue 3/);
+  assert.match(verify, /openspec\/config\.yaml/);
+  assert.match(verify, /AMP_API_KEY/);
+  assert.doesNotMatch(verify, /echo.*\$AMP_API_KEY/);
+  assert.match(verify, /\*\.pem/);
+
+  const post = readFileSync(join(KIT_ROOT, 'templates/scripts/post-mr-verdict.sh'), 'utf-8');
+  assert.match(post, /GITLAB_VERIFIER_TOKEN/);
+  assert.doesNotMatch(post, /echo.*\$\{?GITLAB_VERIFIER_TOKEN/);
+});
+
 test('opsx-apply documents review gate', () => {
   const apply = readFileSync(join(KIT_ROOT, 'templates/.agents/commands/opsx-apply.md'), 'utf-8');
   assert.match(apply, /require_spec_review/);

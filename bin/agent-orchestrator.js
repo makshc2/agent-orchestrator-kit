@@ -32,6 +32,13 @@ const KIT_MANAGED_PATHS = [
   'scripts/sync-local-agent-skills.sh',
 ];
 
+// Opt-in files: refreshed by `update` only when already present in the project
+const KIT_OPTIN_PATHS = [
+  '.gitlab/spec-verify.yml',
+  'scripts/verify-specs.sh',
+  'scripts/post-mr-verdict.sh',
+];
+
 const VALID_CI_PROVIDERS = ['gitlab', 'github', 'none'];
 const VERIFY_OPENSPEC_SCRIPT = 'npx openspec validate --all --strict';
 
@@ -223,6 +230,41 @@ function installCi(projectDir, templateDir, ci, force) {
   }
 }
 
+function installSpecVerify(projectDir, templateDir, force) {
+  for (const rel of KIT_OPTIN_PATHS) {
+    const src = join(templateDir, rel);
+    const dest = join(projectDir, rel);
+    if (!existsSync(src)) continue;
+    if (!force && existsSync(dest)) {
+      log.warn(`skip (exists): ${rel}`);
+      continue;
+    }
+    mkdirSync(dirname(dest), { recursive: true });
+    copyFileSync(src, dest);
+    log.ok(rel);
+  }
+  try {
+    execSync(`chmod +x ${join(projectDir, 'scripts', 'verify-specs.sh')} ${join(projectDir, 'scripts', 'post-mr-verdict.sh')}`);
+  } catch {}
+}
+
+function patchOrchestratorSpecVerify(projectDir) {
+  const orchPath = join(projectDir, '.agents', 'orchestrator.yaml');
+  if (!existsSync(orchPath)) return;
+
+  let content = readFileSync(orchPath, 'utf-8');
+  if (content.includes('spec-verify-blocking')) return;
+
+  const anchor = /^(\s*)- openspec-validate-strict\s*$/m;
+  if (!anchor.test(content)) {
+    log.warn('could not add spec-verify-blocking gate: openspec-validate-strict anchor not found in orchestrator.yaml');
+    return;
+  }
+  content = content.replace(anchor, '$1- openspec-validate-strict\n$1- spec-verify-blocking');
+  writeFileSync(orchPath, content);
+  log.ok('spec-verify-blocking gate added to orchestrator.yaml');
+}
+
 function patchOrchestratorVerifier(projectDir, pm) {
   const orchPath = join(projectDir, '.agents', 'orchestrator.yaml');
   if (!existsSync(orchPath)) return;
@@ -245,7 +287,7 @@ function patchOrchestratorVerifier(projectDir, pm) {
   writeFileSync(orchPath, content);
 }
 
-function printNextSteps(profile, projectDir, ci = 'github') {
+function printNextSteps(profile, projectDir, ci = 'github', specVerify = false) {
   const pm = detectPackageManager(projectDir);
   const openspecReady = hasOpenSpec(projectDir);
   const lines = [`${pc.bold('Next steps:')}`];
@@ -288,6 +330,13 @@ function printNextSteps(profile, projectDir, ci = 'github') {
     lines.push(`  ${pc.dim('Optional dev CI: include local .gitlab/agent-verify.yml (see kit templates/.gitlab-ci.starter.yml.example)')}`);
   }
 
+  if (specVerify) {
+    lines.push(`  ${pc.bold('AI Spec Verifier:')}`);
+    lines.push(`    - include ${pc.cyan(".gitlab/spec-verify.yml")} from your .gitlab-ci.yml`);
+    lines.push(`    - add CI/CD variables: ${pc.cyan('AMP_API_KEY')}, ${pc.cyan('GITLAB_VERIFIER_TOKEN')} (masked)`);
+    lines.push(`    - BLOCKED verdict fails the MR pipeline (uncomment allow_failure for warning-only rollout)`);
+  }
+
   console.log('\n' + lines.join('\n') + '\n');
 }
 
@@ -319,6 +368,7 @@ program
   .option('--name <name>', 'Project name (defaults to directory name)')
   .option('--force', 'Overwrite existing files', false)
   .option('--ci <provider>', 'CI provider: gitlab | github | none', 'github')
+  .option('--spec-verify', 'Install AI Spec Verifier blocking gate (GitLab only)', false)
   .action((opts) => {
     const projectDir = process.cwd();
     const projectName = opts.name || basename(projectDir);
@@ -344,7 +394,10 @@ program
     }
 
     log.title('Installing scripts/');
-    copyDir(join(templateDir, 'scripts'), join(projectDir, 'scripts'), { overwrite: opts.force });
+    copyDir(join(templateDir, 'scripts'), join(projectDir, 'scripts'), {
+      overwrite: opts.force,
+      skip: ['verify-specs.sh', 'post-mr-verdict.sh'],
+    });
     try {
       execSync(`chmod +x ${join(projectDir, 'scripts', 'sync-local-agent-skills.sh')}`);
     } catch {}
@@ -353,6 +406,15 @@ program
     installCi(projectDir, templateDir, ci, opts.force);
     if (ci === 'gitlab') {
       injectVerifyScripts(projectDir, { pm });
+    }
+
+    const specVerify = Boolean(opts.specVerify) && ci === 'gitlab';
+    if (opts.specVerify && ci !== 'gitlab') {
+      log.warn('--spec-verify requires --ci gitlab — skipping AI Spec Verifier install');
+    }
+    if (specVerify) {
+      log.title('Installing AI Spec Verifier (opt-in)');
+      installSpecVerify(projectDir, templateDir, opts.force);
     }
 
     log.title('Installing root files');
@@ -380,6 +442,9 @@ program
       patchOrchestratorVerifier(projectDir, pm);
       log.ok('.agents/orchestrator.yaml');
     }
+    if (specVerify) {
+      patchOrchestratorSpecVerify(projectDir);
+    }
 
     log.title('OpenSpec config template');
     installOpenspecConfigExample(projectDir, profile, vars, opts.force);
@@ -389,7 +454,7 @@ program
 
     log.title('Done');
     log.ok(`agent-orchestrator-kit v${KIT_VERSION} installed`);
-    printNextSteps(profile, projectDir, ci);
+    printNextSteps(profile, projectDir, ci, specVerify);
   });
 
 program
@@ -412,6 +477,14 @@ program
         copyFileSync(src, dest);
         log.ok(rel);
       }
+    }
+
+    for (const rel of KIT_OPTIN_PATHS) {
+      const src = join(templateDir, rel);
+      const dest = join(projectDir, rel);
+      if (!existsSync(src) || !existsSync(dest)) continue;
+      copyFileSync(src, dest);
+      log.ok(`${rel} (opt-in)`);
     }
 
     log.ok(`Updated to v${KIT_VERSION}`);
