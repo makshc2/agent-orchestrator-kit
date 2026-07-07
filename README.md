@@ -631,6 +631,9 @@ openspec/                # Committed — spec-driven workflow
 
 ## Changelog
 
+### 0.1.8
+- README — Quickstart (new vs existing project) and upgrade guide for adopting `status`, `gate-check`, and GitHub Spec Verifier
+
 ### 0.1.7
 - `agent-orchestrator status` — dashboard for active OpenSpec changes: task progress, review verdict, archive readiness
 - `agent-orchestrator gate-check` — deterministic review-gate check (exit non-zero without an approved `review.md`); wired into both `agent-verify.yml` CI fragments

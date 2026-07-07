@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.8] - 2026-07-07
+
+### Changed
+- **README** — Quickstart block (new vs existing project) and upgrade guide for `status` / `gate-check` / GitHub Spec Verifier adoption
+
 ## [0.1.7] - 2026-07-07
 
 ### Added
@@ -89,6 +94,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Initial release: 5-role orchestration pipeline, `/opsx:*` commands, IDE sync
 
+[0.1.8]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.1.6...v0.1.7
 [0.1.5]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.1.3...v0.1.4
