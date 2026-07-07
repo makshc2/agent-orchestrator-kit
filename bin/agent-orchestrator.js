@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { program } from 'commander';
 import pc from 'picocolors';
-import { readFileSync, existsSync, mkdirSync, copyFileSync, readdirSync, statSync, writeFileSync } from 'fs';
+import { readFileSync, existsSync, mkdirSync, copyFileSync, readdirSync, statSync, writeFileSync, rmSync } from 'fs';
 import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
@@ -32,12 +32,25 @@ const KIT_MANAGED_PATHS = [
   'scripts/sync-local-agent-skills.sh',
 ];
 
-// Opt-in files: refreshed by `update` only when already present in the project
-const KIT_OPTIN_PATHS = [
+// Opt-in AI Spec Verifier files, per CI provider. `scripts/verify-specs.sh` is
+// shared — it is stack- and CI-agnostic already.
+const GITLAB_SPEC_VERIFY_PATHS = [
   '.gitlab/spec-verify.yml',
   'scripts/verify-specs.sh',
   'scripts/post-mr-verdict.sh',
 ];
+const GITHUB_SPEC_VERIFY_PATHS = [
+  '.github/workflows/spec-verify.yml',
+  'scripts/verify-specs.sh',
+  'scripts/post-pr-verdict-github.sh',
+];
+
+// Opt-in files: refreshed by `update` only when already present in the project
+const KIT_OPTIN_PATHS = [...new Set([...GITLAB_SPEC_VERIFY_PATHS, ...GITHUB_SPEC_VERIFY_PATHS])];
+
+function specVerifyPathsFor(ci) {
+  return ci === 'github' ? GITHUB_SPEC_VERIFY_PATHS : GITLAB_SPEC_VERIFY_PATHS;
+}
 
 const VALID_CI_PROVIDERS = ['gitlab', 'github', 'none'];
 const VERIFY_OPENSPEC_SCRIPT = 'npx openspec validate --all --strict';
@@ -53,10 +66,11 @@ const log = {
 };
 
 function copyDir(src, dest, opts = {}) {
-  const { overwrite = true, skip = [] } = opts;
+  const { overwrite = true, skip = [], delete: deleteStale = false } = opts;
   if (!existsSync(src)) return;
   mkdirSync(dest, { recursive: true });
-  for (const entry of readdirSync(src)) {
+  const srcEntries = readdirSync(src);
+  for (const entry of srcEntries) {
     if (skip.includes(entry)) continue;
     const srcPath = join(src, entry);
     const destPath = join(dest, entry);
@@ -69,6 +83,17 @@ function copyDir(src, dest, opts = {}) {
       }
       copyFileSync(srcPath, destPath);
       log.ok(destPath.replace(process.cwd() + '/', ''));
+    }
+  }
+
+  // Remove entries that exist in dest but no longer exist in src (e.g. skills
+  // removed by a kit `update`), keeping .cursor/.claude in sync with .agents/.
+  if (deleteStale && existsSync(dest)) {
+    for (const entry of readdirSync(dest)) {
+      if (skip.includes(entry) || srcEntries.includes(entry)) continue;
+      const destPath = join(dest, entry);
+      rmSync(destPath, { recursive: true, force: true });
+      log.warn(`removed stale: ${destPath.replace(process.cwd() + '/', '')}`);
     }
   }
 }
@@ -126,6 +151,59 @@ function pmCommands(pm) {
 
 function hasOpenSpec(projectDir) {
   return existsSync(join(projectDir, 'openspec', 'config.yaml'));
+}
+
+function listActiveChanges(projectDir) {
+  const changesDir = join(projectDir, 'openspec', 'changes');
+  if (!existsSync(changesDir)) return [];
+  return readdirSync(changesDir)
+    .filter((name) => name !== 'archive' && statSync(join(changesDir, name)).isDirectory())
+    .sort();
+}
+
+function parseTasksProgress(changeDir) {
+  const tasksPath = join(changeDir, 'tasks.md');
+  if (!existsSync(tasksPath)) return null;
+  const content = readFileSync(tasksPath, 'utf-8');
+  const total = (content.match(/^\s*- \[[ xX]\]/gm) || []).length;
+  const done = (content.match(/^\s*- \[[xX]\]/gm) || []).length;
+  return { total, done };
+}
+
+function parseReviewVerdict(changeDir) {
+  const reviewPath = join(changeDir, 'review.md');
+  if (!existsSync(reviewPath)) return null;
+  const content = readFileSync(reviewPath, 'utf-8');
+  const match = content.match(/\*\*Verdict:\*\*\s*(.+)/);
+  return match ? match[1].trim() : 'unknown';
+}
+
+function readPipelineConfig(projectDir) {
+  const orchPath = join(projectDir, '.agents', 'orchestrator.yaml');
+  if (!existsSync(orchPath)) return null;
+  const content = readFileSync(orchPath, 'utf-8');
+  const requireReviewMatch = content.match(/require_spec_review:\s*(true|false)/);
+  const maxActiveMatch = content.match(/max_active_changes:\s*(\d+)/);
+  return {
+    requireSpecReview: requireReviewMatch ? requireReviewMatch[1] === 'true' : true,
+    maxActiveChanges: maxActiveMatch ? parseInt(maxActiveMatch[1], 10) : null,
+  };
+}
+
+// Returns true/false when the diff is known, or null when it could not be
+// determined (no git repo, invalid base ref, shallow clone, etc.) — callers
+// must treat null as "skip gracefully", never as "block".
+function gitDiffTouchesGlob(projectDir, base, srcGlob) {
+  try {
+    const out = execSync(`git diff --name-only ${base}...HEAD -- "${srcGlob}"`, {
+      cwd: projectDir,
+      stdio: ['ignore', 'pipe', 'ignore'],
+      encoding: 'utf-8',
+    });
+    return out.trim().length > 0;
+  } catch {
+    return null;
+  }
 }
 
 function installOpenspecConfigExample(projectDir, profile, vars, force) {
@@ -230,8 +308,9 @@ function installCi(projectDir, templateDir, ci, force) {
   }
 }
 
-function installSpecVerify(projectDir, templateDir, force) {
-  for (const rel of KIT_OPTIN_PATHS) {
+function installSpecVerify(projectDir, templateDir, force, ci) {
+  const paths = specVerifyPathsFor(ci);
+  for (const rel of paths) {
     const src = join(templateDir, rel);
     const dest = join(projectDir, rel);
     if (!existsSync(src)) continue;
@@ -243,8 +322,9 @@ function installSpecVerify(projectDir, templateDir, force) {
     copyFileSync(src, dest);
     log.ok(rel);
   }
+  const scripts = paths.filter((rel) => rel.startsWith('scripts/')).map((rel) => join(projectDir, rel));
   try {
-    execSync(`chmod +x ${join(projectDir, 'scripts', 'verify-specs.sh')} ${join(projectDir, 'scripts', 'post-mr-verdict.sh')}`);
+    execSync(`chmod +x ${scripts.join(' ')}`);
   } catch {}
 }
 
@@ -332,9 +412,15 @@ function printNextSteps(profile, projectDir, ci = 'github', specVerify = false) 
 
   if (specVerify) {
     lines.push(`  ${pc.bold('AI Spec Verifier:')}`);
-    lines.push(`    - include ${pc.cyan(".gitlab/spec-verify.yml")} from your .gitlab-ci.yml`);
-    lines.push(`    - add CI/CD variables: ${pc.cyan('AMP_API_KEY')}, ${pc.cyan('GITLAB_VERIFIER_TOKEN')} (masked)`);
-    lines.push(`    - BLOCKED verdict fails the MR pipeline (uncomment allow_failure for warning-only rollout)`);
+    if (ci === 'gitlab') {
+      lines.push(`    - include ${pc.cyan(".gitlab/spec-verify.yml")} from your .gitlab-ci.yml`);
+      lines.push(`    - add CI/CD variables: ${pc.cyan('AMP_API_KEY')}, ${pc.cyan('GITLAB_VERIFIER_TOKEN')} (masked)`);
+      lines.push(`    - BLOCKED verdict fails the MR pipeline (uncomment allow_failure for warning-only rollout)`);
+    } else if (ci === 'github') {
+      lines.push(`    - workflow ${pc.cyan('.github/workflows/spec-verify.yml')} runs automatically on pull_request`);
+      lines.push(`    - add repo secret: ${pc.cyan('AMP_API_KEY')} (Settings → Secrets and variables → Actions)`);
+      lines.push(`    - BLOCKED verdict fails the PR pipeline (remove continue-on-error for warning-only rollout)`);
+    }
   }
 
   console.log('\n' + lines.join('\n') + '\n');
@@ -368,7 +454,7 @@ program
   .option('--name <name>', 'Project name (defaults to directory name)')
   .option('--force', 'Overwrite existing files', false)
   .option('--ci <provider>', 'CI provider: gitlab | github | none', 'github')
-  .option('--spec-verify', 'Install AI Spec Verifier blocking gate (GitLab only)', false)
+  .option('--spec-verify', 'Install AI Spec Verifier blocking gate (GitLab or GitHub)', false)
   .action((opts) => {
     const projectDir = process.cwd();
     const projectName = opts.name || basename(projectDir);
@@ -408,13 +494,13 @@ program
       injectVerifyScripts(projectDir, { pm });
     }
 
-    const specVerify = Boolean(opts.specVerify) && ci === 'gitlab';
-    if (opts.specVerify && ci !== 'gitlab') {
-      log.warn('--spec-verify requires --ci gitlab — skipping AI Spec Verifier install');
+    const specVerify = Boolean(opts.specVerify) && (ci === 'gitlab' || ci === 'github');
+    if (opts.specVerify && !specVerify) {
+      log.warn('--spec-verify requires --ci gitlab or --ci github — skipping AI Spec Verifier install');
     }
     if (specVerify) {
       log.title('Installing AI Spec Verifier (opt-in)');
-      installSpecVerify(projectDir, templateDir, opts.force);
+      installSpecVerify(projectDir, templateDir, opts.force, ci);
     }
 
     log.title('Installing root files');
@@ -506,8 +592,8 @@ program
 
     if (syncCursor) {
       log.info('Syncing .agents/ → .cursor/');
-      copyDir(join(projectDir, '.agents', 'skills'), join(projectDir, '.cursor', 'skills'), { overwrite: true });
-      copyDir(join(projectDir, '.agents', 'rules'), join(projectDir, '.cursor', 'rules'), { overwrite: true });
+      copyDir(join(projectDir, '.agents', 'skills'), join(projectDir, '.cursor', 'skills'), { overwrite: true, delete: true });
+      copyDir(join(projectDir, '.agents', 'rules'), join(projectDir, '.cursor', 'rules'), { overwrite: true, delete: true });
 
       const mcpExample = join(projectDir, '.agents', 'mcp.json.example');
       const mcpDest = join(projectDir, '.mcp.json');
@@ -519,7 +605,7 @@ program
 
     if (syncClaude) {
       log.info('Syncing .agents/ → .claude/');
-      copyDir(join(projectDir, '.agents', 'skills'), join(projectDir, '.claude', 'skills'), { overwrite: true });
+      copyDir(join(projectDir, '.agents', 'skills'), join(projectDir, '.claude', 'skills'), { overwrite: true, delete: true });
 
       const claudeMd = join(projectDir, 'CLAUDE.md');
       const claudeDir = join(projectDir, '.claude');
@@ -538,6 +624,100 @@ program
 
     log.ok('Sync complete');
     log.warn('.cursor/, .claude/, .amp/ are local only — not committed to git');
+  });
+
+program
+  .command('status')
+  .description('Show status of active OpenSpec changes (tasks progress, review verdict, archive readiness)')
+  .action(() => {
+    const projectDir = process.cwd();
+    log.title('agent-orchestrator status');
+
+    const changes = listActiveChanges(projectDir);
+    if (changes.length === 0) {
+      log.info('No active changes');
+      return;
+    }
+
+    for (const name of changes) {
+      const changeDir = join(projectDir, 'openspec', 'changes', name);
+      const progress = parseTasksProgress(changeDir);
+      const verdict = parseReviewVerdict(changeDir);
+      const progressStr = progress ? `${progress.done}/${progress.total} tasks` : 'no tasks.md';
+      const verdictStr = verdict || 'none';
+      const readyToArchive = Boolean(progress && progress.total > 0 && progress.done === progress.total);
+
+      console.log(`\n${pc.bold(name)}`);
+      console.log(`  tasks:  ${progressStr}`);
+      console.log(`  review: ${verdictStr}`);
+      if (readyToArchive) log.ok('ready to archive');
+    }
+    console.log('');
+  });
+
+program
+  .command('gate-check [change-name]')
+  .description('Deterministically check the review gate before apply/merge (exit non-zero if unmet)')
+  .option('--src-glob <glob>', 'source path filter used to detect code changes', 'src/')
+  .option('--base <ref>', 'git ref to diff against', 'HEAD~1')
+  .action((changeName, opts) => {
+    const projectDir = process.cwd();
+    log.title('agent-orchestrator gate-check');
+
+    const config = readPipelineConfig(projectDir);
+    if (!config) {
+      log.info('.agents/orchestrator.yaml not found — nothing to gate');
+      return;
+    }
+
+    if (!config.requireSpecReview) {
+      log.ok('review not required (pipeline.require_spec_review: false)');
+      return;
+    }
+
+    const touchesSrc = gitDiffTouchesGlob(projectDir, opts.base, opts.srcGlob);
+    if (touchesSrc === false) {
+      log.ok(`no changes under ${opts.srcGlob} — nothing to gate`);
+      return;
+    }
+    if (touchesSrc === null) {
+      log.warn('could not compute git diff — skipping gate-check');
+      return;
+    }
+
+    const changes = listActiveChanges(projectDir);
+    if (config.maxActiveChanges && changes.length > config.maxActiveChanges) {
+      log.warn(`${changes.length} active changes exceed pipeline.max_active_changes (${config.maxActiveChanges})`);
+    }
+
+    let target = changeName;
+    if (!target) {
+      if (changes.length === 0) {
+        log.warn(`${opts.srcGlob} changed but no active OpenSpec change found — cannot verify review gate`);
+        return;
+      }
+      target = changes
+        .map((name) => ({ name, mtime: statSync(join(projectDir, 'openspec', 'changes', name)).mtimeMs }))
+        .sort((a, b) => b.mtime - a.mtime)[0].name;
+      log.info(`auto-selected change: ${target} (override: gate-check <name>)`);
+    }
+
+    const changeDir = join(projectDir, 'openspec', 'changes', target);
+    if (!existsSync(changeDir)) {
+      log.err(`change not found: ${target}`);
+      process.exitCode = 1;
+      return;
+    }
+
+    const verdict = parseReviewVerdict(changeDir);
+    if (verdict && /^APPROVE/i.test(verdict)) {
+      log.ok(`review gate passed — ${target}: APPROVE`);
+      return;
+    }
+
+    log.err(`review gate failed — change "${target}" has ${verdict ? `verdict "${verdict}"` : 'no review.md'}`);
+    log.err(`Run /opsx:review ${target} and get an explicit APPROVE before apply/merge.`);
+    process.exitCode = 1;
   });
 
 program.parse();

@@ -1,5 +1,7 @@
 .agent-verify-base:
   image: node:20
+  variables:
+    GIT_DEPTH: 0
   before_script:
     - |
       if [ -f pnpm-lock.yaml ]; then
@@ -15,6 +17,7 @@
       fi
   script:
     - npx openspec validate --all --strict
+    - npx agent-orchestrator-kit gate-check --base "${CI_MERGE_REQUEST_DIFF_BASE_SHA:-HEAD~1}"
     - |
       run_pm_script() {
         local name=$1

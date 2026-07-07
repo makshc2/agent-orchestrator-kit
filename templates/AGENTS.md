@@ -26,7 +26,9 @@ Never mix phases in one chat — this is the single most important rule.
 
 Verifier runs on **GitHub Actions** (default) or **GitLab** via `prebuild` → `verify:openspec` when using `init --ci gitlab`. GitLab projects do not use `.github/workflows/`.
 
-With `init --ci gitlab --spec-verify`, an **AI Spec Verifier** also runs on MRs changing `src/`: an Amp agent checks the changed code against `openspec/specs/` and a **BLOCKED verdict fails the pipeline** (gate `spec-verify-blocking` in `.agents/orchestrator.yaml`).
+With `init --ci gitlab --spec-verify` or `init --ci github --spec-verify`, an **AI Spec Verifier** also runs on MRs/PRs changing `src/`: an Amp agent checks the changed code against `openspec/specs/` and a **BLOCKED verdict fails the pipeline** (gate `spec-verify-blocking` in `.agents/orchestrator.yaml`).
+
+Both CI fragments also run `agent-orchestrator-kit gate-check` — a deterministic check that fails the pipeline when `src/` changed but the active change has no `review.md` with `Verdict: APPROVE` (when `require_spec_review: true`). Run `agent-orchestrator-kit status` at the start of any session to see task progress, review verdict, and archive readiness for every active change without querying `openspec` per change.
 
 ## Hard Rules
 
@@ -42,9 +44,9 @@ With `init --ci gitlab --spec-verify`, an **AI Spec Verifier** also runs on MRs 
 |------------|------|
 | explore → propose | Decision brief written; change name chosen |
 | propose → review | `openspec validate --strict` passes ✓ |
-| review → apply | Reviewer writes explicit **Approve** |
+| review → apply | Reviewer writes explicit **Approve** — enforced in CI by `gate-check` |
 | apply → verify | All `tasks.md` checkboxes `[x]`; local build OK |
-| verify → archive | CI green; PR merged |
+| verify → archive | CI green; PR merged — check `agent-orchestrator status` for "ready to archive" |
 
 ## Context to Pin per Role
 

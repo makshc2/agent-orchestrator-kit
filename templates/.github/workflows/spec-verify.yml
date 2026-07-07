@@ -1,0 +1,82 @@
+name: spec-verify
+
+# ──────────────────────────────────────────────────────────────
+# AI Spec Verifier — blocking gate on pull requests.
+# Verifies that changed src/ code complies with openspec/specs/
+# via Amp CLI, posts a PASS / BLOCKED comment to the PR, and
+# fails the pipeline on a BLOCKED verdict.
+#
+# Installed by agent-orchestrator-kit (init --ci github --spec-verify).
+#
+# Required repo secret (Settings → Secrets and variables → Actions):
+#   AMP_API_KEY — Amp API key
+# GITHUB_TOKEN is provided automatically by Actions.
+#
+# Phase 1 (warning-only rollout): uncomment `continue-on-error: true` on the
+# "Evaluate verdict" step below, then remove it once the team trusts the
+# verdicts (Phase 2, blocking by default).
+# ──────────────────────────────────────────────────────────────
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  spec-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Amp CLI
+        run: npm install -g @sourcegraph/amp@latest
+
+      - name: Make scripts executable
+        run: chmod +x scripts/verify-specs.sh scripts/post-pr-verdict-github.sh
+
+      - name: Run spec verifier
+        env:
+          AMP_API_KEY: ${{ secrets.AMP_API_KEY }}
+          # verify-specs.sh is shared with the GitLab variant and reads this
+          # variable name as the diff base — reused as-is, not GitHub-specific.
+          CI_MERGE_REQUEST_DIFF_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: bash scripts/verify-specs.sh
+
+      - name: Post PR comment
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/post-pr-verdict-github.sh
+
+      - name: Upload verifier artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spec-verify-artifacts
+          path: |
+            artifacts/verdict.json
+            artifacts/verifier-prompt.md
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Evaluate verdict
+        # Phase 1 (warning-only rollout): uncomment the next line to let the
+        # pipeline stay green while the team builds trust in verdicts.
+        # continue-on-error: true
+        run: |
+          PASS=$(python3 -c "import json; v=json.load(open('artifacts/verdict.json')); print(str(v.get('pass', True)).lower())")
+          if [ "$PASS" != "true" ]; then
+            echo "Spec verifier found errors. See PR comment for details."
+            exit 1
+          fi
+          echo "Spec verification passed."

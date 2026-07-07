@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.7] - 2026-07-07
+
+### Added
+- **`agent-orchestrator status`** — dashboard for active OpenSpec changes: task progress (`N/M`), review verdict, `ready to archive` flag
+- **`agent-orchestrator gate-check`** — deterministic review-gate check; exits non-zero when `src/` changed without an approved `review.md` (`require_spec_review: true`); warns (non-blocking) when active changes exceed `max_active_changes`; graceful no-op without `.agents/orchestrator.yaml`, when review isn't required, or when the diff can't be computed
+- **GitHub AI Spec Verifier** — `init --ci github --spec-verify` installs `.github/workflows/spec-verify.yml` + `scripts/post-pr-verdict-github.sh` (via `gh pr comment`), reusing the existing stack-agnostic `scripts/verify-specs.sh`
+- **OpenSpec specs** — `orchestrator-cli-controls`, `github-spec-verify`
+
+### Changed
+- **`sync`** (CLI) now removes stale skills/rules no longer present in `.agents/skills|rules` — matches `sync-local-agent-skills.sh` (`rsync --delete`); does not touch `memory.json`, `.mcp.json`, `CLAUDE.md`, `settings.json`
+- **`agent-verify.yml`** (both GitHub and GitLab fragments) now run `gate-check` as part of verify
+- **`--spec-verify`** — no longer GitLab-only; valid with `--ci gitlab` or `--ci github`
+- **README / AGENTS.md / agent-orchestration skill** — document `status`, `gate-check`, and GitHub Spec Verifier parity
+
 ## [0.1.6] - 2026-07-02
 
 ### Added
@@ -75,6 +89,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Initial release: 5-role orchestration pipeline, `/opsx:*` commands, IDE sync
 
+[0.1.7]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.1.6...v0.1.7
 [0.1.5]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.1.2...v0.1.3

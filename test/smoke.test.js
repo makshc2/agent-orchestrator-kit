@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -396,21 +396,68 @@ test('init --ci gitlab without flag does not install spec-verify files', () => {
   }
 });
 
-test('init --ci github --spec-verify warns and skips verifier install', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'aok-specverify-gh-'));
+test('init --ci none --spec-verify warns and skips verifier install', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-specverify-none-'));
   try {
-    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'sv-gh', scripts: {} }, null, 2));
-    const out = execSync(`node "${CLI}" init --ci github --spec-verify --profile generic --name SVGH --lang en`, {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'sv-none', scripts: {} }, null, 2));
+    const out = execSync(`node "${CLI}" init --ci none --spec-verify --profile generic --name SVNone --lang en`, {
       cwd: dir,
       stdio: 'pipe',
       encoding: 'utf-8',
     });
-    assert.match(out, /--spec-verify requires --ci gitlab/);
+    assert.match(out, /--spec-verify requires --ci gitlab or --ci github/);
     assert.ok(!existsSync(join(dir, '.gitlab/spec-verify.yml')));
+    assert.ok(!existsSync(join(dir, '.github/workflows/spec-verify.yml')));
     assert.ok(!existsSync(join(dir, 'scripts/verify-specs.sh')));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('init --ci github --spec-verify installs GitHub verifier files and gate', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-specverify-github-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'sv-gh', scripts: {} }, null, 2));
+    runInit(dir, '--ci github --spec-verify --profile generic --name SVGH --lang en');
+
+    assert.ok(existsSync(join(dir, '.github/workflows/spec-verify.yml')));
+    assert.ok(existsSync(join(dir, 'scripts/verify-specs.sh')));
+    assert.ok(existsSync(join(dir, 'scripts/post-pr-verdict-github.sh')));
+    assert.ok(!existsSync(join(dir, '.gitlab/spec-verify.yml')));
+    assert.ok(!existsSync(join(dir, 'scripts/post-mr-verdict.sh')));
+
+    const orch = readFileSync(join(dir, '.agents/orchestrator.yaml'), 'utf-8');
+    assert.match(orch, /- openspec-validate-strict\n\s*- spec-verify-blocking/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('update refreshes GitHub spec-verify files only when installed', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-specverify-github-update-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'sv-gh-up', scripts: {} }, null, 2));
+    runInit(dir, '--ci github --spec-verify --profile generic --name SVGHUp --lang en');
+
+    writeFileSync(join(dir, '.github/workflows/spec-verify.yml'), '# stale\n');
+    writeFileSync(join(dir, 'scripts/post-pr-verdict-github.sh'), '# stale\n');
+    execSync(`node "${CLI}" update`, { cwd: dir, stdio: 'pipe' });
+
+    assert.match(readFileSync(join(dir, '.github/workflows/spec-verify.yml'), 'utf-8'), /spec-verify/);
+    assert.match(readFileSync(join(dir, 'scripts/post-pr-verdict-github.sh'), 'utf-8'), /gh pr comment/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('GitHub spec-verify workflow is blocking with src paths and artifacts', () => {
+  const workflow = readFileSync(join(KIT_ROOT, 'templates/.github/workflows/spec-verify.yml'), 'utf-8');
+  assert.match(workflow, /spec-verify:/);
+  assert.match(workflow, /src\/\*\*/);
+  assert.match(workflow, /pull-requests: write/);
+  assert.match(workflow, /artifacts\/verdict\.json/);
+  assert.doesNotMatch(workflow, /^\s*continue-on-error: true/m);
+  assert.match(workflow, /#\s*continue-on-error: true/);
 });
 
 test('spec-verify fragment is blocking with src rules and artifacts', () => {
@@ -481,6 +528,12 @@ test('verifier script templates are stack-agnostic and secret-safe', () => {
   const post = readFileSync(join(KIT_ROOT, 'templates/scripts/post-mr-verdict.sh'), 'utf-8');
   assert.match(post, /GITLAB_VERIFIER_TOKEN/);
   assert.doesNotMatch(post, /echo.*\$\{?GITLAB_VERIFIER_TOKEN/);
+
+  const postGithub = readFileSync(join(KIT_ROOT, 'templates/scripts/post-pr-verdict-github.sh'), 'utf-8');
+  assert.match(postGithub, /GH_TOKEN/);
+  assert.match(postGithub, /gh pr comment/);
+  assert.doesNotMatch(postGithub, /echo.*\$\{?GH_TOKEN/);
+  assert.doesNotMatch(postGithub, /echo.*\$\{?GITHUB_TOKEN/);
 });
 
 test('opsx-apply documents review gate', () => {
@@ -493,4 +546,198 @@ test('opsx-review writes review.md and vue3 checklist', () => {
   const review = readFileSync(join(KIT_ROOT, 'templates/.agents/commands/opsx-review.md'), 'utf-8');
   assert.match(review, /review\.md/);
   assert.match(review, /Vue 3/);
+});
+
+function initGit(dir) {
+  execSync('git init -q', { cwd: dir });
+  execSync('git config user.email "test@example.com"', { cwd: dir });
+  execSync('git config user.name "Test"', { cwd: dir });
+  execSync('git add -A && git commit -q -m "initial"', { cwd: dir });
+}
+
+function runCli(dir, args) {
+  return execSync(`node "${CLI}" ${args}`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' });
+}
+
+test('status reports no active changes', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-status-empty-'));
+  try {
+    runInit(dir, '--profile generic --name StatusEmpty --lang en');
+    const out = runCli(dir, 'status');
+    assert.match(out, /No active changes/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('status shows task progress and review verdict', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-status-'));
+  try {
+    runInit(dir, '--profile generic --name Status --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'tasks.md'), '- [x] 1.1 done\n- [ ] 1.2 pending\n- [x] 1.3 done\n');
+    writeFileSync(join(changeDir, 'review.md'), '# Spec Review\n\n**Verdict:** APPROVE\n');
+
+    const out = runCli(dir, 'status');
+    assert.match(out, /add-thing/);
+    assert.match(out, /2\/3 tasks/);
+    assert.match(out, /APPROVE/);
+    assert.doesNotMatch(out, /ready to archive/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('status marks a fully-completed change as ready to archive', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-status-ready-'));
+  try {
+    runInit(dir, '--profile generic --name StatusReady --lang en');
+    const changeDir = join(dir, 'openspec/changes/done-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'tasks.md'), '- [x] 1.1 done\n- [x] 1.2 done\n');
+
+    const out = runCli(dir, 'status');
+    assert.match(out, /done-thing/);
+    assert.match(out, /2\/2 tasks/);
+    assert.match(out, /ready to archive/);
+    assert.match(out, /review: none/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('gate-check fails without an approved review when src/ changed', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-gate-fail-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'gate-fail', scripts: {} }, null, 2));
+    runInit(dir, '--profile generic --name GateFail --lang en');
+    initGit(dir);
+
+    mkdirSync(join(dir, 'src'), { recursive: true });
+    writeFileSync(join(dir, 'src/index.js'), 'console.log(1);\n');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'tasks.md'), '- [x] 1.1 done\n');
+    execSync('git add -A && git commit -q -m "add src"', { cwd: dir });
+
+    assert.throws(() => runCli(dir, 'gate-check --base HEAD~1'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('gate-check passes with an approved review.md', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-gate-pass-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'gate-pass', scripts: {} }, null, 2));
+    runInit(dir, '--profile generic --name GatePass --lang en');
+    initGit(dir);
+
+    mkdirSync(join(dir, 'src'), { recursive: true });
+    writeFileSync(join(dir, 'src/index.js'), 'console.log(1);\n');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'tasks.md'), '- [x] 1.1 done\n');
+    writeFileSync(join(changeDir, 'review.md'), '**Verdict:** APPROVE\n');
+    execSync('git add -A && git commit -q -m "add src"', { cwd: dir });
+
+    const out = runCli(dir, 'gate-check --base HEAD~1');
+    assert.match(out, /review gate passed/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('gate-check skips when require_spec_review is false', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-gate-mvp-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'gate-mvp', scripts: {} }, null, 2));
+    runInit(dir, '--profile mvp --name GateMvp --lang en');
+    initGit(dir);
+
+    mkdirSync(join(dir, 'src'), { recursive: true });
+    writeFileSync(join(dir, 'src/index.js'), 'console.log(1);\n');
+    execSync('git add -A && git commit -q -m "add src"', { cwd: dir });
+
+    const out = runCli(dir, 'gate-check --base HEAD~1');
+    assert.match(out, /review not required/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('gate-check skips when the diff does not touch src/', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-gate-nosrc-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'gate-nosrc', scripts: {} }, null, 2));
+    runInit(dir, '--profile generic --name GateNoSrc --lang en');
+    initGit(dir);
+
+    writeFileSync(join(dir, 'README.md'), '# hello\n');
+    execSync('git add -A && git commit -q -m "docs"', { cwd: dir });
+
+    const out = runCli(dir, 'gate-check --base HEAD~1');
+    assert.match(out, /nothing to gate/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('gate-check is a no-op without .agents/orchestrator.yaml', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-gate-noconfig-'));
+  try {
+    mkdirSync(dir, { recursive: true });
+    const out = runCli(dir, 'gate-check');
+    assert.match(out, /orchestrator\.yaml not found/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('sync removes a skill directory that no longer exists in .agents/skills', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-sync-delete-'));
+  try {
+    runInit(dir, '--profile generic --name SyncDelete --lang en');
+    runCli(dir, 'sync --target cursor');
+    assert.ok(existsSync(join(dir, '.cursor/skills/openspec-howto')));
+
+    rmSync(join(dir, '.agents/skills/openspec-howto'), { recursive: true, force: true });
+    runCli(dir, 'sync --target cursor');
+
+    assert.ok(!existsSync(join(dir, '.cursor/skills/openspec-howto')));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('sync --delete does not remove unrelated generated files', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-sync-keep-'));
+  try {
+    runInit(dir, '--profile generic --name SyncKeep --lang en');
+    runCli(dir, 'sync --target cursor');
+    writeFileSync(join(dir, '.cursor/memory.json'), '{}');
+
+    runCli(dir, 'sync --target cursor');
+
+    assert.ok(existsSync(join(dir, '.cursor/memory.json')));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('sync removes a skill directory from .claude/skills too', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-sync-claude-delete-'));
+  try {
+    runInit(dir, '--profile generic --name SyncClaudeDelete --lang en');
+    runCli(dir, 'sync --target claude');
+    assert.ok(existsSync(join(dir, '.claude/skills/openspec-howto')));
+
+    rmSync(join(dir, '.agents/skills/openspec-howto'), { recursive: true, force: true });
+    runCli(dir, 'sync --target claude');
+
+    assert.ok(!existsSync(join(dir, '.claude/skills/openspec-howto')));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

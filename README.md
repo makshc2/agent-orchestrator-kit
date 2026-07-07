@@ -99,8 +99,9 @@ your-project/
 ├── AGENTS.md
 ├── CLAUDE.md
 ├── .github/workflows/agent-verify.yml   # CI (default --ci github)
+├── .github/workflows/spec-verify.yml    # AI Spec Verifier (--ci github --spec-verify, opt-in)
 ├── .gitlab/agent-verify.yml             # CI fragment (--ci gitlab)
-├── .gitlab/spec-verify.yml              # AI Spec Verifier (--spec-verify, opt-in)
+├── .gitlab/spec-verify.yml              # AI Spec Verifier (--ci gitlab --spec-verify, opt-in)
 ├── .agents/
 │   ├── orchestrator.yaml
 │   ├── mcp.json.example                 # Cursor MCP template
@@ -117,7 +118,7 @@ your-project/
 │       ├── openspec-sync-specs/
 │       └── spec-workflow-openspec/
 ├── scripts/sync-local-agent-skills.sh
-└── scripts/verify-specs.sh + post-mr-verdict.sh   # (--spec-verify, opt-in)
+└── scripts/verify-specs.sh + post-mr-verdict.sh / post-pr-verdict-github.sh   # (--spec-verify, opt-in)
 ```
 
 ### Included in kit
@@ -126,9 +127,10 @@ your-project/
 |----------|----------|
 | Orchestration | 5-role pipeline, `AGENTS.md`, `orchestrator.yaml`, review command |
 | OpenSpec skills | All 7 skills for `/opsx:*` workflow |
-| IDE sync | Cursor + Claude Code sync script |
-| CI | `agent-verify.yml` — GitHub (default) or GitLab fragment + `prebuild` hook |
-| AI Spec Verifier | `spec-verify.yml` + verifier scripts — GitLab opt-in (`--spec-verify`) |
+| IDE sync | Cursor + Claude Code sync script (`--delete` semantics — removes stale skills) |
+| CLI gates | `agent-orchestrator status` / `gate-check` — deterministic review-gate checks |
+| CI | `agent-verify.yml` — GitHub (default) or GitLab fragment + `prebuild` hook, both run `gate-check` |
+| AI Spec Verifier | `spec-verify.yml` + verifier scripts — GitLab or GitHub, opt-in (`--spec-verify`) |
 | MCP templates | Memory MCP for Cursor and Amp |
 
 ### Not included (install separately)
@@ -329,15 +331,18 @@ Optional: include `.gitlab/agent-verify.yml` in `.gitlab-ci.yml` for full lint/b
 
 Blocks merge if any gate fails.
 
-#### AI Spec Verifier (GitLab, opt-in)
+Every CI fragment (`agent-verify.yml`, GitHub and GitLab) also runs `npx agent-orchestrator-kit gate-check` — see [Deterministic gates](#deterministic-gates-status--gate-check) below. It never fails the pipeline for projects without `.agents/orchestrator.yaml`.
+
+#### AI Spec Verifier (GitLab or GitHub, opt-in)
 
 ```bash
 npx agent-orchestrator-kit init --ci gitlab --spec-verify
+npx agent-orchestrator-kit init --ci github --spec-verify
 ```
 
-Installs an AI verification layer on top of the deterministic gates: on every merge request that changes `src/`, an Amp agent reads `openspec/specs/`, checks the changed code against every relevant requirement, posts a **PASS / BLOCKED** comment to the MR, and **fails the pipeline on BLOCKED** — specs become an enforceable merge contract, not just documentation.
+Installs an AI verification layer on top of the deterministic gates: on every merge/pull request that changes `src/`, an Amp agent reads `openspec/specs/`, checks the changed code against every relevant requirement, posts a **PASS / BLOCKED** comment to the MR/PR, and **fails the pipeline on BLOCKED** — specs become an enforceable merge contract, not just documentation.
 
-Installed files:
+Installed files (GitLab):
 
 | File | Purpose |
 |------|---------|
@@ -345,9 +350,17 @@ Installed files:
 | `scripts/verify-specs.sh` | Collects changed files + specs, builds prompt (project context from `openspec/config.yaml`), calls `amp -x`, writes `artifacts/verdict.json` |
 | `scripts/post-mr-verdict.sh` | Posts the verdict as an MR comment via GitLab API |
 
+Installed files (GitHub):
+
+| File | Purpose |
+|------|---------|
+| `.github/workflows/spec-verify.yml` | Workflow triggered on `pull_request` for `src/**` — same verdict evaluation, `permissions: pull-requests: write` |
+| `scripts/verify-specs.sh` | Same script as GitLab — stack-agnostic, reused as-is |
+| `scripts/post-pr-verdict-github.sh` | Posts the verdict as a PR comment via `gh pr comment` |
+
 The flag also adds `spec-verify-blocking` to `roles.verifier.gates` in `.agents/orchestrator.yaml`.
 
-Setup after install:
+Setup after install (GitLab):
 
 1. Include the fragment from `.gitlab-ci.yml`:
 
@@ -358,11 +371,31 @@ include:
 
 2. Add CI/CD variables (Settings → CI/CD → Variables, masked): `AMP_API_KEY`, `GITLAB_VERIFIER_TOKEN` (project access token with `api` scope).
 
+Setup after install (GitHub): the workflow runs automatically on `pull_request` — just add the repo secret `AMP_API_KEY` (Settings → Secrets and variables → Actions). `GITHUB_TOKEN` is provided by Actions automatically.
+
 Verdict schema (`artifacts/verdict.json`): `pass`, `score` (0–100), `summary`, `findings[]` with `severity` (`error` fails the job), `spec`, `requirement`, `message`, `file`. The script degrades gracefully — no `src/` changes, no specs, missing `amp` CLI, or missing `AMP_API_KEY` produce a skipped passing verdict and never block the pipeline. Secrets are never logged; `.env`/key/token files are excluded from prompts.
 
-**Warning-only rollout (Phase 1):** uncomment `allow_failure: true` in `.gitlab/spec-verify.yml` to keep the pipeline green while the team builds trust in verdicts, then remove it to enforce blocking (Phase 2).
+**Warning-only rollout (Phase 1):** uncomment `allow_failure: true` (GitLab) or `continue-on-error: true` (GitHub) to keep the pipeline green while the team builds trust in verdicts, then remove it to enforce blocking (Phase 2).
 
-`update` refreshes the three spec-verify files only in projects that already installed them — the feature stays opt-in.
+`update` refreshes the spec-verify files only in projects that already installed them — the feature stays opt-in.
+
+---
+
+### Deterministic gates: `status` / `gate-check`
+
+Orchestration hard rules (review approval, one active change) used to rely entirely on the agent remembering to check them in chat. Two CLI commands make them checkable and CI-enforceable:
+
+```bash
+npx agent-orchestrator-kit status
+```
+
+Prints every active OpenSpec change with task progress (`N/M tasks`), review verdict (`APPROVE` / `REQUEST CHANGES` / `none`), and a `ready to archive` flag once all tasks are `[x]` — no more running `openspec status` per change by hand.
+
+```bash
+npx agent-orchestrator-kit gate-check [change-name] [--src-glob src/] [--base HEAD~1]
+```
+
+Fails (non-zero exit) when `pipeline.require_spec_review: true`, the diff against `--base` touches `--src-glob`, and the active change has no `review.md` with `Verdict: APPROVE`. It degrades gracefully to exit 0 (with a message, not silently) when: `.agents/orchestrator.yaml` is missing, review isn't required, the diff can't be computed (e.g. shallow clone), or nothing under `--src-glob` changed. It also warns (never fails) when active changes exceed `pipeline.max_active_changes`. Both `agent-verify.yml` fragments (GitHub and GitLab) call `gate-check` automatically.
 
 ---
 
@@ -498,15 +531,26 @@ npx agent-orchestrator-kit init [options]
   --lang <code>      Agent language: en | uk | ...
   --name <name>      Project name (default: directory name)
   --ci <provider>    CI provider: gitlab | github | none (default: github)
-  --spec-verify      Install AI Spec Verifier blocking gate (GitLab only)
+  --spec-verify      Install AI Spec Verifier blocking gate (GitLab or GitHub)
   --force            Overwrite existing files
 
 npx agent-orchestrator-kit update
   Updates kit-managed files, preserves project overlay
 
 npx agent-orchestrator-kit sync [options]
-  --target <ide>     cursor | claude | all (default: all)
-  Copies .agents/ to local IDE directories
+  --target <ide>     cursor | claude | amp | all (default: all)
+  Copies .agents/ to local IDE directories, removing skills/rules no longer
+  present in .agents/ (does not touch memory.json, .mcp.json, CLAUDE.md, etc.)
+
+npx agent-orchestrator-kit status
+  Show progress, review verdict, and archive-readiness for active changes
+
+npx agent-orchestrator-kit gate-check [change-name] [options]
+  --src-glob <glob>  Source path filter used to detect code changes (default: src/)
+  --base <ref>       Git ref to diff against (default: HEAD~1)
+  Exit non-zero when require_spec_review is true, src/ changed, and the
+  active change has no review.md with Verdict: APPROVE. Graceful no-op
+  otherwise (missing config, review not required, no relevant diff).
 ```
 
 ## Directory Reference
@@ -539,6 +583,12 @@ openspec/                # Committed — spec-driven workflow
 ```
 
 ## Changelog
+
+### 0.1.7
+- `agent-orchestrator status` — dashboard for active OpenSpec changes: task progress, review verdict, archive readiness
+- `agent-orchestrator gate-check` — deterministic review-gate check (exit non-zero without an approved `review.md`); wired into both `agent-verify.yml` CI fragments
+- `init --ci github --spec-verify` — GitHub parity for the AI Spec Verifier (`.github/workflows/spec-verify.yml`, `scripts/post-pr-verdict-github.sh`), reusing the existing stack-agnostic `verify-specs.sh`
+- `sync` (CLI) now removes skills/rules that no longer exist in `.agents/` — matches `sync-local-agent-skills.sh` (`rsync --delete`) behavior; leaves `memory.json`, `.mcp.json`, `CLAUDE.md`, `settings.json` untouched
 
 ### 0.1.6
 - `init --ci gitlab --spec-verify` — opt-in AI Spec Verifier: blocking MR gate via Amp CLI

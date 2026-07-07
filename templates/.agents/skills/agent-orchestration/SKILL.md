@@ -74,6 +74,8 @@ Before apply, check `.agents/orchestrator.yaml`:
 
 If Request Changes — fix artifacts, re-run `/opsx:review`.
 
+This is no longer only a chat convention: `agent-orchestrator-kit gate-check` runs in CI (both `agent-verify.yml` fragments) and fails the pipeline if `src/` changed without an approved `review.md` — a forgotten or skipped review is caught at merge time, not just at apply time.
+
 ### apply → verify
 Exit Implementer when:
 - All `tasks.md` boxes `[x]`
@@ -91,7 +93,7 @@ After PR merged + CI green:
 
 **Start of each session:**
 1. Announce role: "Starting Spec Reviewer session for change: <name>"
-2. Check `openspec list` — confirm active change limit (`max_active_changes` in orchestrator.yaml)
+2. Run `agent-orchestrator-kit status` (or `openspec list`) — confirm active change limit (`max_active_changes` in orchestrator.yaml) and see task/review progress for every active change at a glance
 3. Read `orchestrator.yaml` for project config and review gate
 
 **During session:**
@@ -135,7 +137,8 @@ At start of new session: read relevant entities to restore context without re-ex
 - [ ] explicit **Approve** received before apply (when `require_spec_review: true`)
 - [ ] `review.md` with `Verdict: APPROVE` exists (when review required)
 - [ ] all tasks `[x]` + build OK before PR
-- [ ] `/opsx:archive` run after merge
+- [ ] `agent-orchestrator-kit gate-check` passes locally before pushing (mirrors the CI gate)
+- [ ] `/opsx:archive` run after merge — `agent-orchestrator-kit status` shows "ready to archive"
 
 ## Anti-patterns
 

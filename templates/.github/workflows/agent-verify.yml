@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -44,6 +46,9 @@ jobs:
 
       - name: OpenSpec validate
         run: npx openspec validate --all --strict
+
+      - name: Gate check (review gate)
+        run: npx agent-orchestrator-kit gate-check --base "${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || 'HEAD~1' }}"
 
       - name: Lint (npm)
         if: steps.pm.outputs.manager == 'npm'
