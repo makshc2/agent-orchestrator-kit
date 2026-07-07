@@ -26,6 +26,28 @@ Without role separation, AI agents tend to mix thinking with implementation, ski
 
 The `AGENTS.md` / `CLAUDE.md` files tell each IDE exactly what the roles are, so you don't repeat yourself every session.
 
+## Quickstart
+
+**🆕 New project:**
+
+```bash
+npm i -D @fission-ai/openspec && npx openspec init
+npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-verify
+./scripts/sync-local-agent-skills.sh
+```
+
+See [Installation](#installation) for profile/CI options.
+
+**🔄 Already have the kit installed? Get `status` / `gate-check` / GitHub Spec Verifier (v0.1.7+):**
+
+```bash
+npx agent-orchestrator-kit@latest update
+./scripts/sync-local-agent-skills.sh
+npx agent-orchestrator-kit@latest status       # try it right away
+```
+
+See [Upgrading an existing project](#upgrading-an-existing-project-to-v017-status--gate-check--github-spec-verifier) for what changes and what stays opt-in.
+
 ## Installation
 
 ### Prerequisites
@@ -443,6 +465,31 @@ npx agent-orchestrator-kit update
 - `openspec/specs/`
 - `openspec/changes/`
 - Any project-conventions skills
+
+### Upgrading an existing project to v0.1.7 (status / gate-check / GitHub Spec Verifier)
+
+If the kit is already installed and you just want the new deterministic gates, no re-`init` needed:
+
+```bash
+npx agent-orchestrator-kit@latest update
+./scripts/sync-local-agent-skills.sh
+```
+
+What this gets you automatically:
+- `.github/workflows/agent-verify.yml` / `.gitlab/agent-verify.yml` refreshed with a `gate-check` step (fails CI if `src/` changed without an approved `review.md`)
+- `sync` (both the CLI command and the shell script) starts removing skills that no longer exist in `.agents/skills/`
+- `agent-orchestrator status` and `agent-orchestrator gate-check` are available immediately (they ship inside `bin/`, not as opt-in templates) — try `npx agent-orchestrator-kit@latest status` right away
+
+Two things `update` will **not** do for you (by design — opt-in, and it never touches your CI root file):
+
+1. **GitLab-only projects that already had `--spec-verify`** — `update` refreshes `.gitlab/spec-verify.yml` and the scripts automatically (only because they already exist in your project).
+2. **Adding GitHub Spec Verifier where you didn't have it before** — that's a new opt-in, run it once:
+   ```bash
+   npx agent-orchestrator-kit@latest init --ci github --spec-verify
+   ```
+   then add the `AMP_API_KEY` repo secret (Settings → Secrets and variables → Actions).
+
+Nothing about `update` retroactively edits your `.gitlab-ci.yml` / already-included workflows — if `gate-check` doesn't seem to run, check that your `.gitlab-ci.yml` still `include`s `.gitlab/agent-verify.yml` (GitHub Actions picks up `.github/workflows/*.yml` automatically, no include step needed).
 
 ## Profiles
 
