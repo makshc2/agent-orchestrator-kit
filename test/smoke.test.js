@@ -28,6 +28,7 @@ test('init installs orchestration and openspec skills', () => {
       'CLAUDE.md',
       '.agents/orchestrator.yaml',
       '.agents/commands/opsx-review.md',
+      '.agents/commands/opsx-design.md',
       '.agents/commands/opsx-quick.md',
       '.agents/skills/agent-orchestration/SKILL.md',
       '.agents/skills/openspec-howto/SKILL.md',
@@ -40,6 +41,11 @@ test('init installs orchestration and openspec skills', () => {
     for (const rel of expected) {
       assert.ok(existsSync(join(dir, rel)), `missing: ${rel}`);
     }
+
+    const orch = readFileSync(join(dir, '.agents/orchestrator.yaml'), 'utf-8');
+    assert.match(orch, /design_intake:/);
+    assert.match(orch, /require_design_brief:\s*false/);
+    assert.match(orch, /command:\s*\/opsx:design/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -583,7 +589,25 @@ test('status shows task progress and review verdict', () => {
     assert.match(out, /add-thing/);
     assert.match(out, /2\/3 tasks/);
     assert.match(out, /APPROVE/);
+    assert.match(out, /brief:\s*no/);
     assert.doesNotMatch(out, /ready to archive/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('status shows brief: yes when design-brief.md exists', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-status-brief-'));
+  try {
+    runInit(dir, '--profile generic --name StatusBrief --lang en');
+    const changeDir = join(dir, 'openspec/changes/ui-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'tasks.md'), '- [ ] 1.1 pending\n');
+    writeFileSync(join(changeDir, 'design-brief.md'), '# Design Brief\n');
+
+    const out = runCli(dir, 'status');
+    assert.match(out, /ui-thing/);
+    assert.match(out, /brief:\s*yes/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -690,6 +714,114 @@ test('gate-check is a no-op without .agents/orchestrator.yaml', () => {
     mkdirSync(dir, { recursive: true });
     const out = runCli(dir, 'gate-check');
     assert.match(out, /orchestrator\.yaml not found/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function enableDesignBriefGate(dir) {
+  const orchPath = join(dir, '.agents/orchestrator.yaml');
+  const orch = readFileSync(orchPath, 'utf-8');
+  writeFileSync(orchPath, orch.replace(/require_design_brief:\s*false/, 'require_design_brief: true'));
+}
+
+test('gate-check fails when require_design_brief and brief is missing', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-gate-brief-fail-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'gate-brief-fail', scripts: {} }, null, 2));
+    runInit(dir, '--profile generic --name GateBriefFail --lang en');
+    enableDesignBriefGate(dir);
+    initGit(dir);
+
+    mkdirSync(join(dir, 'src'), { recursive: true });
+    writeFileSync(join(dir, 'src/index.js'), 'console.log(1);\n');
+    const changeDir = join(dir, 'openspec/changes/add-ui');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'tasks.md'), '- [x] 1.1 done\n');
+    writeFileSync(join(changeDir, 'review.md'), '**Verdict:** APPROVE\n');
+    writeFileSync(join(changeDir, 'proposal.md'), '# Proposal\n\nUI change.\n');
+    execSync('git add -A && git commit -q -m "add src"', { cwd: dir });
+
+    assert.throws(() => runCli(dir, 'gate-check --base HEAD~1'));
+    try {
+      runCli(dir, 'gate-check --base HEAD~1');
+      assert.fail('expected gate-check to fail');
+    } catch (err) {
+      assert.match(String(err.stdout || ''), /\/opsx:design/);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('gate-check passes design brief opt-out via Design: none', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-gate-brief-optout-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'gate-brief-optout', scripts: {} }, null, 2));
+    runInit(dir, '--profile generic --name GateBriefOptOut --lang en');
+    enableDesignBriefGate(dir);
+    initGit(dir);
+
+    mkdirSync(join(dir, 'src'), { recursive: true });
+    writeFileSync(join(dir, 'src/index.js'), 'console.log(1);\n');
+    const changeDir = join(dir, 'openspec/changes/add-api');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'tasks.md'), '- [x] 1.1 done\n');
+    writeFileSync(join(changeDir, 'review.md'), '**Verdict:** APPROVE\n');
+    writeFileSync(join(changeDir, 'proposal.md'), '# Proposal\n\nDesign: none\n');
+    execSync('git add -A && git commit -q -m "add src"', { cwd: dir });
+
+    const out = runCli(dir, 'gate-check --base HEAD~1');
+    assert.match(out, /review gate passed/);
+    assert.match(out, /design brief gate passed/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('gate-check passes when design-brief.md exists', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-gate-brief-ok-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'gate-brief-ok', scripts: {} }, null, 2));
+    runInit(dir, '--profile generic --name GateBriefOk --lang en');
+    enableDesignBriefGate(dir);
+    initGit(dir);
+
+    mkdirSync(join(dir, 'src'), { recursive: true });
+    writeFileSync(join(dir, 'src/index.js'), 'console.log(1);\n');
+    const changeDir = join(dir, 'openspec/changes/add-ui');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'tasks.md'), '- [x] 1.1 done\n');
+    writeFileSync(join(changeDir, 'review.md'), '**Verdict:** APPROVE\n');
+    writeFileSync(join(changeDir, 'design-brief.md'), '# Design Brief\n');
+    execSync('git add -A && git commit -q -m "add src"', { cwd: dir });
+
+    const out = runCli(dir, 'gate-check --base HEAD~1');
+    assert.match(out, /review gate passed/);
+    assert.match(out, /design brief gate passed/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('gate-check skips design brief when require_design_brief is false', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-gate-brief-off-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'gate-brief-off', scripts: {} }, null, 2));
+    runInit(dir, '--profile generic --name GateBriefOff --lang en');
+    initGit(dir);
+
+    mkdirSync(join(dir, 'src'), { recursive: true });
+    writeFileSync(join(dir, 'src/index.js'), 'console.log(1);\n');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'tasks.md'), '- [x] 1.1 done\n');
+    writeFileSync(join(changeDir, 'review.md'), '**Verdict:** APPROVE\n');
+    execSync('git add -A && git commit -q -m "add src"', { cwd: dir });
+
+    const out = runCli(dir, 'gate-check --base HEAD~1');
+    assert.match(out, /review gate passed/);
+    assert.doesNotMatch(out, /design brief/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

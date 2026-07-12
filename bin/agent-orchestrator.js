@@ -178,14 +178,27 @@ function parseReviewVerdict(changeDir) {
   return match ? match[1].trim() : 'unknown';
 }
 
+function parseDesignBrief(changeDir) {
+  return existsSync(join(changeDir, 'design-brief.md'));
+}
+
+function hasDesignOptOut(changeDir) {
+  const proposalPath = join(changeDir, 'proposal.md');
+  if (!existsSync(proposalPath)) return false;
+  const content = readFileSync(proposalPath, 'utf-8');
+  return /^Design:\s*none/mi.test(content);
+}
+
 function readPipelineConfig(projectDir) {
   const orchPath = join(projectDir, '.agents', 'orchestrator.yaml');
   if (!existsSync(orchPath)) return null;
   const content = readFileSync(orchPath, 'utf-8');
   const requireReviewMatch = content.match(/require_spec_review:\s*(true|false)/);
+  const requireBriefMatch = content.match(/require_design_brief:\s*(true|false)/);
   const maxActiveMatch = content.match(/max_active_changes:\s*(\d+)/);
   return {
     requireSpecReview: requireReviewMatch ? requireReviewMatch[1] === 'true' : true,
+    requireDesignBrief: requireBriefMatch ? requireBriefMatch[1] === 'true' : false,
     maxActiveChanges: maxActiveMatch ? parseInt(maxActiveMatch[1], 10) : null,
   };
 }
@@ -643,6 +656,7 @@ program
       const changeDir = join(projectDir, 'openspec', 'changes', name);
       const progress = parseTasksProgress(changeDir);
       const verdict = parseReviewVerdict(changeDir);
+      const hasBrief = parseDesignBrief(changeDir);
       const progressStr = progress ? `${progress.done}/${progress.total} tasks` : 'no tasks.md';
       const verdictStr = verdict || 'none';
       const readyToArchive = Boolean(progress && progress.total > 0 && progress.done === progress.total);
@@ -650,6 +664,7 @@ program
       console.log(`\n${pc.bold(name)}`);
       console.log(`  tasks:  ${progressStr}`);
       console.log(`  review: ${verdictStr}`);
+      console.log(`  brief:  ${hasBrief ? 'yes' : 'no'}`);
       if (readyToArchive) log.ok('ready to archive');
     }
     console.log('');
@@ -670,7 +685,7 @@ program
       return;
     }
 
-    if (!config.requireSpecReview) {
+    if (!config.requireSpecReview && !config.requireDesignBrief) {
       log.ok('review not required (pipeline.require_spec_review: false)');
       return;
     }
@@ -709,15 +724,28 @@ program
       return;
     }
 
-    const verdict = parseReviewVerdict(changeDir);
-    if (verdict && /^APPROVE/i.test(verdict)) {
+    if (config.requireSpecReview) {
+      const verdict = parseReviewVerdict(changeDir);
+      if (!(verdict && /^APPROVE/i.test(verdict))) {
+        log.err(`review gate failed — change "${target}" has ${verdict ? `verdict "${verdict}"` : 'no review.md'}`);
+        log.err(`Run /opsx:review ${target} and get an explicit APPROVE before apply/merge.`);
+        process.exitCode = 1;
+        return;
+      }
       log.ok(`review gate passed — ${target}: APPROVE`);
-      return;
+    } else {
+      log.ok('review not required (pipeline.require_spec_review: false)');
     }
 
-    log.err(`review gate failed — change "${target}" has ${verdict ? `verdict "${verdict}"` : 'no review.md'}`);
-    log.err(`Run /opsx:review ${target} and get an explicit APPROVE before apply/merge.`);
-    process.exitCode = 1;
+    if (config.requireDesignBrief) {
+      if (parseDesignBrief(changeDir) || hasDesignOptOut(changeDir)) {
+        log.ok(`design brief gate passed — ${target}`);
+      } else {
+        log.err(`design brief gate failed — change "${target}" has no design-brief.md`);
+        log.err(`Run /opsx:design ${target} (or add "Design: none" to proposal.md for non-UI changes).`);
+        process.exitCode = 1;
+      }
+    }
   });
 
 program.parse();

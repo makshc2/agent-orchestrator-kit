@@ -5,7 +5,7 @@ alwaysApply: true
 
 # OpenSpec Workflow (/opsx)
 
-`/opsx:explore`, `/opsx:propose`, `/opsx:apply`, `/opsx:archive`, `/opsx:sync`, `/opsx:review`, `/opsx:quick` — AI workflow commands, not source code.
+`/opsx:explore`, `/opsx:design`, `/opsx:propose`, `/opsx:apply`, `/opsx:archive`, `/opsx:sync`, `/opsx:review`, `/opsx:quick` — AI workflow commands, not source code.
 
 ## File Locations
 
@@ -15,12 +15,14 @@ alwaysApply: true
 | Skills | `.agents/skills/` |
 | Specs (source of truth) | `openspec/specs/` |
 | Active changes | `openspec/changes/` |
+| Design brief | `openspec/changes/<name>/design-brief.md` + `assets/` |
 | Project config | `openspec/config.yaml` |
 | Orchestration config | `.agents/orchestrator.yaml` |
 
 ## Command → Skill Mapping
 
 - `/opsx:explore` → skill `openspec-explore` (thinking only)
+- `/opsx:design <name>` → command `opsx-design` (writes design-brief.md + assets/)
 - `/opsx:propose <name>` → skill `openspec-propose`
 - `/opsx:review <name>` → command `opsx-review` (read-only, writes review.md)
 - `/opsx:apply` → skill `openspec-apply-change`

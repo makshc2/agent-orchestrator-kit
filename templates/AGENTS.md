@@ -8,8 +8,10 @@ Every feature follows the same cycle regardless of stack or IDE.
 ## Pipeline
 
 ```
-explore → propose → review → apply → verify → archive
+explore → [design] → propose → review → apply → verify → archive
 ```
+
+`[design]` is optional — run `/opsx:design` when the change has UI and you need a durable design brief (Figma, screenshot, or photo). Skip for non-UI work; use `Design: none` in `proposal.md` when `require_design_brief: true`.
 
 Each phase runs in a **separate agent session** with a dedicated role, model hint, and permissions.
 Never mix phases in one chat — this is the single most important rule.
@@ -19,6 +21,7 @@ Never mix phases in one chat — this is the single most important rule.
 | Role | Command | Mode | Model hint |
 |------|---------|------|------------|
 | Explorer | `/opsx:explore` | read-only | fast |
+| Design Intake | `/opsx:design <name>` | writes `design-brief.md` + `assets/` only | strong |
 | Architect | `/opsx:propose <name>` | writes `openspec/changes/` only | strong |
 | Spec Reviewer | `/opsx:review <name>` | read-only | medium/strong |
 | Implementer | `/opsx:apply <name>` | writes `src/` | strong |
@@ -28,13 +31,13 @@ Verifier runs on **GitHub Actions** (default) or **GitLab** via `prebuild` → `
 
 With `init --ci gitlab --spec-verify` or `init --ci github --spec-verify`, an **AI Spec Verifier** also runs on MRs/PRs changing `src/`: an Amp agent checks the changed code against `openspec/specs/` and a **BLOCKED verdict fails the pipeline** (gate `spec-verify-blocking` in `.agents/orchestrator.yaml`).
 
-Both CI fragments also run `agent-orchestrator-kit gate-check` — a deterministic check that fails the pipeline when `src/` changed but the active change has no `review.md` with `Verdict: APPROVE` (when `require_spec_review: true`). Run `agent-orchestrator-kit status` at the start of any session to see task progress, review verdict, and archive readiness for every active change without querying `openspec` per change.
+Both CI fragments also run `agent-orchestrator-kit gate-check` — a deterministic check that fails the pipeline when `src/` changed but the active change has no `review.md` with `Verdict: APPROVE` (when `require_spec_review: true`), and optionally requires `design-brief.md` (when `require_design_brief: true`, unless `proposal.md` has `Design: none`). Run `agent-orchestrator-kit status` at the start of any session to see task progress, review verdict, design brief, and archive readiness for every active change without querying `openspec` per change.
 
 ## Hard Rules
 
 - **One active change per developer** at a time.
 - **No apply without spec-review approval** (explicit Approve in chat).
-- **No code edits** during explore or spec-review sessions.
+- **No code edits** during explore, design-intake, or spec-review sessions.
 - **Archive after every merge** (`/opsx:archive`).
 - **Always run local build/lint** before opening a PR.
 
@@ -42,7 +45,9 @@ Both CI fragments also run `agent-orchestrator-kit gate-check` — a determinist
 
 | Transition | Gate |
 |------------|------|
-| explore → propose | Decision brief written; change name chosen |
+| explore → design | UI change needs a brief; change name chosen |
+| explore → propose | Decision brief written; change name chosen (skip design if non-UI) |
+| design → propose | `design-brief.md` (+ `assets/`) written |
 | propose → review | `openspec validate --strict` passes ✓ |
 | review → apply | Reviewer writes explicit **Approve** — enforced in CI by `gate-check` |
 | apply → verify | All `tasks.md` checkboxes `[x]`; local build OK |
@@ -53,9 +58,10 @@ Both CI fragments also run `agent-orchestrator-kit gate-check` — a determinist
 | Role | Attach (`@`) |
 |------|-------------|
 | Explorer | `@openspec/specs/` + relevant `@src/` subtree |
-| Architect | `@openspec/config.yaml` + explore brief |
+| Design Intake | design source (Figma URL / images) + `@openspec/changes/<name>/` |
+| Architect | `@openspec/config.yaml` + explore brief (+ `@design-brief.md` if present) |
 | Reviewer | entire `@openspec/changes/<name>/` |
-| Implementer | `@openspec/changes/<name>/tasks.md` |
+| Implementer | `@openspec/changes/<name>/tasks.md` + `@openspec/changes/<name>/design-brief.md` |
 
 ## Configuration
 

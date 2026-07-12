@@ -7,6 +7,7 @@ project:
 
 pipeline:
   require_spec_review: true
+  require_design_brief: false
   max_active_changes: 1
   archive_after_merge: true
 
@@ -15,6 +16,10 @@ roles:
     command: /opsx:explore
     mode: read-only
     model_hint: fast
+  design_intake:
+    command: /opsx:design
+    mode: brief-only
+    model_hint: strong
   architect:
     command: /opsx:propose
     mode: specs-only

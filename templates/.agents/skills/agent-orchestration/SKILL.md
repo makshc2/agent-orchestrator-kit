@@ -3,7 +3,7 @@ name: agent-orchestration
 description: >
   Spec-driven AI agent pipeline orchestration built on OpenSpec. Load when deciding which
   role/command to use, how to handoff between phases, which model to pick, or when a session
-  should stop and a new one start. Commands: /opsx:explore, /opsx:propose, /opsx:review,
+  should stop and a new one start. Commands: /opsx:explore, /opsx:design, /opsx:propose, /opsx:review,
   /opsx:apply, /opsx:archive, /opsx:quick.
 disable-model-invocation: false
 allowed-tools: Bash, Read
@@ -17,13 +17,16 @@ is the primary source of wasted tokens and failed implementations.
 ## Pipeline
 
 ```
-explore → propose → review → apply → verify → archive
+explore → [design] → propose → review → apply → verify → archive
 ```
+
+`[design]` is optional (`/opsx:design`) — capture UI into `design-brief.md` + `assets/` so apply does not depend on live Figma.
 
 **MVP profile** (`require_spec_review: false`):
 ```
 explore → quick (propose+apply) → verify → archive (optional)
 ```
+In quick mode the same session may create the design brief before propose+apply.
 
 Read `.agents/orchestrator.yaml` for project-specific config (language, flags, MCP, review gate).
 
@@ -32,6 +35,7 @@ Read `.agents/orchestrator.yaml` for project-specific config (language, flags, M
 | Role | Command | Mode | Model hint | Allowed output |
 |------|---------|------|------------|----------------|
 | Explorer | `/opsx:explore` | read-only | fast | chat only |
+| Design Intake | `/opsx:design <name>` | brief-only | strong | `design-brief.md`, `assets/` |
 | Architect | `/opsx:propose <name>` | specs-only | strong | `openspec/changes/` |
 | Spec Reviewer | `/opsx:review <name>` | read-only | medium | `review.md`, Approve / Request Changes |
 | Implementer | `/opsx:apply <name>` | code | strong | `src/`, `tasks.md [x]` |
@@ -39,6 +43,19 @@ Read `.agents/orchestrator.yaml` for project-specific config (language, flags, M
 | Verifier | CI / local scripts | — | — | exit codes |
 
 ## Handoff Protocol
+
+### explore → design (optional)
+Exit Explorer into Design Intake when:
+- Change has UI and a Figma URL, export, screenshot, or photo is available
+- kebab-case change name chosen
+
+Start Design Intake with:
+```
+/opsx:design <name>
+```
+
+### design → propose
+Exit Design Intake when `design-brief.md` (+ `assets/`) is written. Non-UI changes: skip design and put `Design: none` in `proposal.md` when `require_design_brief: true`.
 
 ### explore → propose
 Exit Explorer when:
@@ -57,7 +74,6 @@ Context from explore:
 - Non-goals: ...
 - Draft acceptance: ...
 ```
-
 ### propose → review
 Exit Architect when:
 ```bash
@@ -74,7 +90,7 @@ Before apply, check `.agents/orchestrator.yaml`:
 
 If Request Changes — fix artifacts, re-run `/opsx:review`.
 
-This is no longer only a chat convention: `agent-orchestrator-kit gate-check` runs in CI (both `agent-verify.yml` fragments) and fails the pipeline if `src/` changed without an approved `review.md` — a forgotten or skipped review is caught at merge time, not just at apply time.
+This is no longer only a chat convention: `agent-orchestrator-kit gate-check` runs in CI (both `agent-verify.yml` fragments) and fails the pipeline if `src/` changed without an approved `review.md` — a forgotten or skipped review is caught at merge time, not just at apply time. When `require_design_brief: true`, the same command also requires `design-brief.md` (or `Design: none` in `proposal.md`).
 
 ### apply → verify
 Exit Implementer when:
@@ -82,6 +98,7 @@ Exit Implementer when:
 - `npm run build` (or project build cmd) exits 0
 - `npm run lint` exits 0
 - Commit ready
+- UI work followed `design-brief.md` — do **not** open live Figma MCP in the apply session
 
 ### verify → archive
 After PR merged + CI green:
@@ -93,7 +110,7 @@ After PR merged + CI green:
 
 **Start of each session:**
 1. Announce role: "Starting Spec Reviewer session for change: <name>"
-2. Run `agent-orchestrator-kit status` (or `openspec list`) — confirm active change limit (`max_active_changes` in orchestrator.yaml) and see task/review progress for every active change at a glance
+2. Run `agent-orchestrator-kit status` (or `openspec list`) — confirm active change limit (`max_active_changes` in orchestrator.yaml) and see task/review/brief progress for every active change at a glance
 3. Read `orchestrator.yaml` for project config and review gate
 
 **During session:**
@@ -111,6 +128,7 @@ After PR merged + CI green:
 | Phase | Use case | Recommended |
 |-------|----------|-------------|
 | explore | Q&A, brainstorm | fast (rush/flash) |
+| design | Vision / layout capture | strong (vision-capable) |
 | propose | Architecture decisions | strong (opus/sonnet) |
 | review | Artifact analysis | medium or strong |
 | apply complex | Multi-file refactor | strong |
@@ -146,6 +164,7 @@ At start of new session: read relevant entities to restore context without re-ex
 |-------------|--------|
 | Explore + propose in one chat | Architect has stale exploration context |
 | Apply without review | ~60% chance of rework |
+| Live Figma MCP in apply session | Token/quota loss; context not durable across sessions |
 | All tasks in one apply session | Context overload; model drifts |
 | No archive after merge | Next propose has stale domain specs |
 | Strong model on lint fixes | 5–10x cost with no quality gain |

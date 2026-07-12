@@ -5,10 +5,11 @@ alwaysApply: true
 
 # Agent Orchestration Rules
 
-This project uses a spec-driven 5-role pipeline. Read `.agents/orchestrator.yaml` for config.
+This project uses a spec-driven role pipeline. Read `.agents/orchestrator.yaml` for config.
 
 ## Role Commands
 - `/opsx:explore` → read-only thinking, no code
+- `/opsx:design <name>` → writes only `design-brief.md` + `assets/` (optional design intake)
 - `/opsx:propose <name>` → creates `openspec/changes/<name>/` artifacts only
 - `/opsx:review <name>` → read-only spec review, writes `review.md`, outputs Approve or Request Changes
 - `/opsx:apply <name>` → writes `src/`, marks `tasks.md [x]` (blocked if no review when `require_spec_review: true`)
@@ -18,13 +19,17 @@ This project uses a spec-driven 5-role pipeline. Read `.agents/orchestrator.yaml
 ## Session Rules
 - One active change at a time (unless mvp profile: up to 3)
 - Each role = new chat session (except `/opsx:quick` combines propose+apply)
-- No code in explore or review sessions
+- No code in explore, design, or review sessions
+- Design Intake may write only `openspec/changes/<name>/design-brief.md` and `assets/`
 - No apply without review when `pipeline.require_spec_review: true` — check `review.md` or Approve in context
+- When `require_design_brief: true` and the change touches UI — need `design-brief.md`, or `Design: none` in `proposal.md` for non-UI
+- Apply uses the design brief, not live Figma MCP
 - After apply: build + lint before PR
 - After merge: run `/opsx:archive` (when `archive_after_merge: true`)
 
 ## Never
 - Mix propose and apply in one session
-- Edit `src/` during explore or review
+- Edit `src/` during explore, design, or review
 - Skip spec review before apply
+- Call live Figma MCP during apply when a design brief exists
 - Leave changes un-archived after merge

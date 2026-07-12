@@ -411,13 +411,54 @@ Orchestration hard rules (review approval, one active change) used to rely entir
 npx agent-orchestrator-kit status
 ```
 
-Prints every active OpenSpec change with task progress (`N/M tasks`), review verdict (`APPROVE` / `REQUEST CHANGES` / `none`), and a `ready to archive` flag once all tasks are `[x]` — no more running `openspec status` per change by hand.
+Prints every active OpenSpec change with task progress (`N/M tasks`), review verdict (`APPROVE` / `REQUEST CHANGES` / `none`), design brief (`brief: yes/no`), and a `ready to archive` flag once all tasks are `[x]` — no more running `openspec status` per change by hand.
 
 ```bash
 npx agent-orchestrator-kit gate-check [change-name] [--src-glob src/] [--base HEAD~1]
 ```
 
-Fails (non-zero exit) when `pipeline.require_spec_review: true`, the diff against `--base` touches `--src-glob`, and the active change has no `review.md` with `Verdict: APPROVE`. It degrades gracefully to exit 0 (with a message, not silently) when: `.agents/orchestrator.yaml` is missing, review isn't required, the diff can't be computed (e.g. shallow clone), or nothing under `--src-glob` changed. It also warns (never fails) when active changes exceed `pipeline.max_active_changes`. Both `agent-verify.yml` fragments (GitHub and GitLab) call `gate-check` automatically.
+Fails (non-zero exit) when `pipeline.require_spec_review: true`, the diff against `--base` touches `--src-glob`, and the active change has no `review.md` with `Verdict: APPROVE`. When `pipeline.require_design_brief: true` and `src/` changed, it also requires `design-brief.md` (or a `Design: none` line in `proposal.md` for non-UI changes). It degrades gracefully to exit 0 (with a message, not silently) when: `.agents/orchestrator.yaml` is missing, neither review nor design brief is required, the diff can't be computed (e.g. shallow clone), or nothing under `--src-glob` changed. It also warns (never fails) when active changes exceed `pipeline.max_active_changes`. Both `agent-verify.yml` fragments (GitHub and GitLab) call `gate-check` automatically.
+
+---
+
+### Design intake: `/opsx:design`
+
+Optional phase between explore and propose (or before apply) that captures design into a durable artifact so implement sessions do not depend on live Figma MCP:
+
+```
+/opsx:design add-login-form
+```
+
+Writes only:
+- `openspec/changes/<name>/design-brief.md` — Source, Structure, Tokens, Reference images, Constraints, Confidence notes
+- `openspec/changes/<name>/assets/` — reference PNGs
+
+Source fallback: Figma MCP (one pass) → exported images → screenshots → photos. Raster sources must mark inferred values with confidence notes.
+
+**Opt-in gate** (default off — existing projects unchanged):
+
+```yaml
+pipeline:
+  require_design_brief: true   # gate-check fails without brief when src/ changed
+```
+
+Non-UI changes: add this line to `proposal.md`:
+
+```
+Design: none
+```
+
+**Existing projects after `update`:** the command file `opsx-design.md` is installed automatically. Your `orchestrator.yaml` is never overwritten — add the role and flag manually if you want the gate:
+
+```yaml
+pipeline:
+  require_design_brief: false   # set true to enforce
+roles:
+  design_intake:
+    command: /opsx:design
+    mode: brief-only
+    model_hint: strong
+```
 
 ---
 
@@ -441,6 +482,7 @@ project:
 
 pipeline:
   require_spec_review: true
+  require_design_brief: false   # opt-in: require design-brief.md when src/ changed
   max_active_changes: 1
   archive_after_merge: true
 
@@ -630,6 +672,11 @@ openspec/                # Committed — spec-driven workflow
 ```
 
 ## Changelog
+
+### 0.1.9
+- Design intake — `/opsx:design` captures design into `design-brief.md` + `assets/` (Figma / export / screenshot / photo)
+- Role `design_intake` + opt-in `pipeline.require_design_brief` (default `false`) in all profiles
+- `gate-check` enforces design brief when enabled (`Design: none` opt-out for non-UI); `status` shows `brief: yes/no`
 
 ### 0.1.8
 - README — Quickstart (new vs existing project) and upgrade guide for adopting `status`, `gate-check`, and GitHub Spec Verifier

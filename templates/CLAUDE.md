@@ -24,6 +24,7 @@ Use `/skill-name` or let Claude auto-load based on context.
 
 ```
 /opsx:explore   — think through ideas (read-only, no code)
+/opsx:design    — capture design into design-brief.md + assets/ (optional)
 /opsx:propose   — create change artifacts
 /opsx:review    — spec review (read-only, no code)
 /opsx:apply     — implement tasks
@@ -34,7 +35,8 @@ Use `/skill-name` or let Claude auto-load based on context.
 
 - Check `.agents/orchestrator.yaml` for project-specific pipeline config.
 - One active change at a time — run `openspec list` to confirm.
-- No code edits in explore or review mode.
+- No code edits in explore, design, or review mode.
+- Design Intake writes only `design-brief.md` and `assets/` — never `src/`.
 - After completing apply: run build/lint before declaring done.
 - Use `openspec validate --all --strict` to verify change artifacts.
 
@@ -43,6 +45,7 @@ Use `/skill-name` or let Claude auto-load based on context.
 | What | Where |
 |------|-------|
 | Active changes | `openspec/changes/` |
+| Design brief | `openspec/changes/<name>/design-brief.md` + `assets/` |
 | Specs (source of truth) | `openspec/specs/` |
 | Project config | `openspec/config.yaml` |
 | Orchestration config | `.agents/orchestrator.yaml` |

@@ -11,6 +11,7 @@ package_manager: npm
 
 pipeline:
   require_spec_review: false
+  require_design_brief: false
   max_active_changes: 3
   archive_after_merge: false
   quick_mode_enabled: true
@@ -20,6 +21,11 @@ roles:
     command: /opsx:explore
     mode: read-only
     model_hint: fast
+  design_intake:
+    command: /opsx:design
+    mode: brief-only
+    model_hint: strong
+    notes: "In quick mode, the same session may create the brief before propose+apply"
   architect:
     command: /opsx:propose
     mode: specs-only

@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.9] - 2026-07-12
+
+### Added
+- **Design intake** — optional `/opsx:design` phase: captures Figma / export / screenshot / photo into `design-brief.md` + `assets/` (writes only those paths)
+- **Role `design_intake`** in templates and all profiles (`generic`, `vue3`, `node`, `mvp`) with `pipeline.require_design_brief: false` (opt-in)
+- **`gate-check` design brief gate** — when `require_design_brief: true` and `src/` changed, requires `design-brief.md` or `Design: none` in `proposal.md`
+- **`status`** shows `brief: yes/no` for every active change
+- **Docs** — AGENTS.md / CLAUDE.md / rules / agent-orchestration skill / README section for design intake and manual enable after `update`
+
 ## [0.1.8] - 2026-07-07
 
 ### Changed

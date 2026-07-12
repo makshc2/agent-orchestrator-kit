@@ -3,3 +3,5 @@ node_modules/
 *.log
 .idea/
 .cursor/
+.cursor/memory.json
+.amp/settings.json
