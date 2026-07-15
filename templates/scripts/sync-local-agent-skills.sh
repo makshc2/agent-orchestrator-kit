@@ -21,17 +21,58 @@ echo ""
 echo "sync-local-agent-skills"
 echo "-----------------------"
 
+# ── Amp subagent skill wrappers ────────────────────────────────────────
+# Amp has no file-based subagents; it loads skills from .agents/skills/.
+# Generate a skill wrapper per subagent so they work in Amp too.
+if [ -d .agents/subagents ]; then
+  echo ""
+  info "Generating Amp skill wrappers from .agents/subagents/"
+
+  for old in .agents/skills/subagent-*; do
+    [ -d "$old" ] && rm -rf "$old"
+  done
+
+  for sub in .agents/subagents/*.md; do
+    [ -f "$sub" ] || continue
+    NAME="$(awk '/^---$/{c++; next} c==1 && /^name:/{sub(/^name:[ \t]*/,""); print; exit}' "$sub")"
+    DESC="$(awk '/^---$/{c++; next} c==1 && /^description:/{sub(/^description:[ \t]*/,""); print; exit}' "$sub")"
+    if [ -z "$NAME" ] || [ -z "$DESC" ]; then
+      warn "skip (no name/description): $sub"
+      continue
+    fi
+    DIR=".agents/skills/subagent-${NAME}"
+    mkdir -p "$DIR"
+    {
+      echo "---"
+      echo "name: subagent-${NAME}"
+      echo "description: ${DESC}"
+      echo "---"
+      echo ""
+      echo "<!-- AUTO-GENERATED from ${sub} — edit the source file, then re-run this script -->"
+      echo ""
+      awk '/^---$/{c++; next} c>=2{print}' "$sub"
+    } > "$DIR/SKILL.md"
+    ok "$DIR/SKILL.md"
+  done
+fi
+
 # ── Cursor ─────────────────────────────────────────────────────────────
 echo ""
 info "Syncing → .cursor/ (Cursor)"
-mkdir -p .cursor/skills .cursor/rules
+mkdir -p .cursor/skills .cursor/rules .cursor/agents
 
-rsync -a --delete .agents/skills/ .cursor/skills/
+rsync -a --delete --exclude 'subagent-*' .agents/skills/ .cursor/skills/
+rm -rf .cursor/skills/subagent-*
 ok ".cursor/skills/"
 
 for rule in .agents/rules/*.mdc; do
   [ -f "$rule" ] && cp "$rule" .cursor/rules/ && ok ".cursor/rules/$(basename "$rule")"
 done
+
+if [ -d .agents/subagents ]; then
+  rsync -a --delete .agents/subagents/ .cursor/agents/
+  ok ".cursor/agents/"
+fi
 
 if [ ! -f .mcp.json ] && [ -f .agents/mcp.json.example ]; then
   cp .agents/mcp.json.example .mcp.json
@@ -43,10 +84,16 @@ fi
 # ── Claude Code ────────────────────────────────────────────────────────
 echo ""
 info "Syncing → .claude/ (Claude Code)"
-mkdir -p .claude/skills
+mkdir -p .claude/skills .claude/agents
 
-rsync -a --delete .agents/skills/ .claude/skills/
+rsync -a --delete --exclude 'subagent-*' .agents/skills/ .claude/skills/
+rm -rf .claude/skills/subagent-*
 ok ".claude/skills/"
+
+if [ -d .agents/subagents ]; then
+  rsync -a --delete .agents/subagents/ .claude/agents/
+  ok ".claude/agents/"
+fi
 
 if [ -f CLAUDE.md ]; then
   cp CLAUDE.md .claude/CLAUDE.md
@@ -55,7 +102,7 @@ fi
 
 # ── Amp Code ───────────────────────────────────────────────────────────
 echo ""
-info "Amp Code reads .agents/ directly — no sync needed"
+info "Amp Code reads .agents/ directly — subagents exposed via skill wrappers"
 mkdir -p .amp
 if [ ! -f .amp/settings.json ] && [ -f .agents/amp.settings.json.example ]; then
   cp .agents/amp.settings.json.example .amp/settings.json

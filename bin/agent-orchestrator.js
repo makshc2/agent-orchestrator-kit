@@ -26,11 +26,16 @@ const KIT_SKILL_DIRS = [
 const KIT_MANAGED_PATHS = [
   '.agents/commands',
   '.agents/rules',
+  '.agents/subagents',
   ...KIT_SKILL_DIRS.map((s) => `.agents/skills/${s}`),
-  '.github/workflows/agent-verify.yml',
-  '.gitlab/agent-verify.yml',
   'scripts/sync-local-agent-skills.sh',
 ];
+
+// CI workflow files are provider-specific and chosen once at `init --ci`.
+// `update` must only refresh them if already present — never resurrect a
+// workflow file for a provider the project doesn't use (e.g. after switching
+// from GitHub Actions to GitLab CI and deleting the GitHub workflow).
+const CI_WORKFLOW_PATHS = ['.github/workflows/agent-verify.yml', '.gitlab/agent-verify.yml'];
 
 // Opt-in AI Spec Verifier files, per CI provider. `scripts/verify-specs.sh` is
 // shared — it is stack- and CI-agnostic already.
@@ -439,8 +444,65 @@ function printNextSteps(profile, projectDir, ci = 'github', specVerify = false) 
   console.log('\n' + lines.join('\n') + '\n');
 }
 
+// Amp has no file-based custom subagents (only skills and plugin agents), but
+// it natively loads skills from .agents/skills/ with the same description-driven
+// delegation. Each .agents/subagents/<name>.md therefore gets a committed skill
+// wrapper .agents/skills/subagent-<name>/SKILL.md so subagents work in Amp with
+// zero local setup. Wrappers are regenerated on init/update/sync and stale ones
+// are removed when their source subagent is deleted.
+const AMP_SUBAGENT_SKILL_PREFIX = 'subagent-';
+
+function listAmpSubagentWrappers(projectDir) {
+  const skillsDir = join(projectDir, '.agents', 'skills');
+  if (!existsSync(skillsDir)) return [];
+  return readdirSync(skillsDir).filter((entry) => entry.startsWith(AMP_SUBAGENT_SKILL_PREFIX));
+}
+
+function generateAmpSubagentSkills(projectDir) {
+  const subagentsDir = join(projectDir, '.agents', 'subagents');
+  const skillsDir = join(projectDir, '.agents', 'skills');
+  const expected = new Set();
+
+  if (existsSync(subagentsDir)) {
+    for (const file of readdirSync(subagentsDir).filter((f) => f.endsWith('.md'))) {
+      const content = readFileSync(join(subagentsDir, file), 'utf-8');
+      const parsed = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+      const name = parsed?.[1].match(/^name:\s*(.+)$/m)?.[1]?.trim();
+      const description = parsed?.[1].match(/^description:\s*(.+)$/m)?.[1]?.trim();
+      if (!name || !description) {
+        log.warn(`skip Amp wrapper (missing name/description frontmatter): .agents/subagents/${file}`);
+        continue;
+      }
+
+      const skillName = `${AMP_SUBAGENT_SKILL_PREFIX}${name}`;
+      expected.add(skillName);
+      mkdirSync(join(skillsDir, skillName), { recursive: true });
+      const skill = [
+        '---',
+        `name: ${skillName}`,
+        `description: ${description}`,
+        '---',
+        '',
+        `<!-- AUTO-GENERATED from .agents/subagents/${file} — edit the source file, then run: npx agent-orchestrator-kit sync -->`,
+        '',
+        parsed[2].trim(),
+        '',
+      ].join('\n');
+      writeFileSync(join(skillsDir, skillName, 'SKILL.md'), skill);
+      log.ok(`.agents/skills/${skillName}/SKILL.md (Amp wrapper)`);
+    }
+  }
+
+  for (const entry of listAmpSubagentWrappers(projectDir)) {
+    if (!expected.has(entry)) {
+      rmSync(join(projectDir, '.agents', 'skills', entry), { recursive: true, force: true });
+      log.warn(`removed stale Amp wrapper: .agents/skills/${entry}`);
+    }
+  }
+}
+
 function syncAmp(projectDir) {
-  log.info('Amp Code reads .agents/ natively — no skill sync needed');
+  log.info('Amp Code reads .agents/ natively — subagents exposed via skill wrappers');
   mkdirSync(join(projectDir, '.amp'), { recursive: true });
   const ampExample = join(projectDir, '.agents', 'amp.settings.json.example');
   const ampDest = join(projectDir, '.amp', 'settings.json');
@@ -491,6 +553,7 @@ program
     if (existsSync(join(profileDir, '.agents'))) {
       copyDir(join(profileDir, '.agents'), join(projectDir, '.agents'), { overwrite: opts.force });
     }
+    generateAmpSubagentSkills(projectDir);
 
     log.title('Installing scripts/');
     copyDir(join(templateDir, 'scripts'), join(projectDir, 'scripts'), {
@@ -578,6 +641,16 @@ program
       }
     }
 
+    generateAmpSubagentSkills(projectDir);
+
+    for (const rel of CI_WORKFLOW_PATHS) {
+      const src = join(templateDir, rel);
+      const dest = join(projectDir, rel);
+      if (!existsSync(src) || !existsSync(dest)) continue;
+      copyFileSync(src, dest);
+      log.ok(rel);
+    }
+
     for (const rel of KIT_OPTIN_PATHS) {
       const src = join(templateDir, rel);
       const dest = join(projectDir, rel);
@@ -585,6 +658,10 @@ program
       copyFileSync(src, dest);
       log.ok(`${rel} (opt-in)`);
     }
+
+    try {
+      execSync(`chmod +x ${join(projectDir, 'scripts', 'sync-local-agent-skills.sh')}`);
+    } catch {}
 
     log.ok(`Updated to v${KIT_VERSION}`);
     log.info('Run ./scripts/sync-local-agent-skills.sh to sync to local IDE');
@@ -603,10 +680,20 @@ program
     const syncClaude = ['claude', 'all'].includes(opts.target);
     const syncAmpTarget = ['amp', 'all'].includes(opts.target);
 
+    generateAmpSubagentSkills(projectDir);
+
+    // Amp skill wrappers are redundant in Cursor/Claude (they get native
+    // subagents from .agents/subagents/), so exclude them from skill sync.
+    const ampWrappers = listAmpSubagentWrappers(projectDir);
+
     if (syncCursor) {
       log.info('Syncing .agents/ → .cursor/');
-      copyDir(join(projectDir, '.agents', 'skills'), join(projectDir, '.cursor', 'skills'), { overwrite: true, delete: true });
+      copyDir(join(projectDir, '.agents', 'skills'), join(projectDir, '.cursor', 'skills'), { overwrite: true, delete: true, skip: ampWrappers });
+      for (const wrapper of ampWrappers) {
+        rmSync(join(projectDir, '.cursor', 'skills', wrapper), { recursive: true, force: true });
+      }
       copyDir(join(projectDir, '.agents', 'rules'), join(projectDir, '.cursor', 'rules'), { overwrite: true, delete: true });
+      copyDir(join(projectDir, '.agents', 'subagents'), join(projectDir, '.cursor', 'agents'), { overwrite: true, delete: true });
 
       const mcpExample = join(projectDir, '.agents', 'mcp.json.example');
       const mcpDest = join(projectDir, '.mcp.json');
@@ -618,7 +705,11 @@ program
 
     if (syncClaude) {
       log.info('Syncing .agents/ → .claude/');
-      copyDir(join(projectDir, '.agents', 'skills'), join(projectDir, '.claude', 'skills'), { overwrite: true, delete: true });
+      copyDir(join(projectDir, '.agents', 'skills'), join(projectDir, '.claude', 'skills'), { overwrite: true, delete: true, skip: ampWrappers });
+      for (const wrapper of ampWrappers) {
+        rmSync(join(projectDir, '.claude', 'skills', wrapper), { recursive: true, force: true });
+      }
+      copyDir(join(projectDir, '.agents', 'subagents'), join(projectDir, '.claude', 'agents'), { overwrite: true, delete: true });
 
       const claudeMd = join(projectDir, 'CLAUDE.md');
       const claudeDir = join(projectDir, '.claude');

@@ -64,4 +64,4 @@ _40 atomic tasks across 8 sections._
 - [x] 8.2 `npx openspec validate --all --strict` — pass
 - [x] 8.3 `npm test` — pass
 - [x] 8.4 `npm run release:check` — pass
-- [ ] 8.5 Commit + tag (pending explicit user confirmation — not auto-committed)
+- [x] 8.5 Commit + tag (pending explicit user confirmation — not auto-committed)

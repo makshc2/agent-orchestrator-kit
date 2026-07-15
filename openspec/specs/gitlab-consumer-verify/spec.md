@@ -78,7 +78,7 @@ CLI `init` SHALL приймати опцію `--ci` зі значеннями `g
 
 ### Requirement: GitLab CI fragment agent-verify
 
-Kit SHALL розповсюджувати `templates/.gitlab/agent-verify.yml` з job template для OpenSpec validate, lint, build, test.
+Kit SHALL розповсюджувати `templates/.gitlab/agent-verify.yml` з job template для OpenSpec validate, lint, build, test, а також опційної перевірки orchestration review-gate.
 
 #### Scenario: Fragment містить hidden base job
 
@@ -107,6 +107,12 @@ Kit SHALL розповсюджувати `templates/.gitlab/agent-verify.yml` з
 - **THEN** job `agent-verify` виконується
 - **WHEN** push до default branch або `develop`
 - **THEN** job `agent-verify` виконується
+
+#### Scenario: Fragment включає gate-check крок
+
+- **WHEN** job `agent-verify` виконується
+- **THEN** script також виконує `npx agent-orchestrator-kit gate-check` (або еквівалентний локальний виклик) як окремий крок
+- **AND** цей крок не провалює pipeline, якщо `.agents/orchestrator.yaml` відсутній (graceful degrade для проєктів без review-гейту)
 
 ### Requirement: Starter example для раннього push
 

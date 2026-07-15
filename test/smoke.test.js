@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execSync } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -853,6 +853,195 @@ test('sync --delete does not remove unrelated generated files', () => {
     runCli(dir, 'sync --target cursor');
 
     assert.ok(existsSync(join(dir, '.cursor/memory.json')));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('init installs default subagents', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-subagents-init-'));
+  try {
+    runInit(dir, '--profile generic --name SubagentsInit --lang en');
+
+    const expected = [
+      '.agents/subagents/openspec-guide.md',
+      '.agents/subagents/code-writer.md',
+      '.agents/subagents/code-reviewer.md',
+      '.agents/subagents/test-writer.md',
+      '.agents/subagents/setup-doctor.md',
+      '.agents/subagents/design-implementer.md',
+    ];
+    for (const rel of expected) {
+      assert.ok(existsSync(join(dir, rel)), `missing: ${rel}`);
+    }
+
+    const guide = readFileSync(join(dir, '.agents/subagents/openspec-guide.md'), 'utf-8');
+    assert.match(guide, /^---\nname: openspec-guide\ndescription:/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('sync copies subagents to .cursor/agents and .claude/agents', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-subagents-sync-'));
+  try {
+    runInit(dir, '--profile generic --name SubagentsSync --lang en');
+    runCli(dir, 'sync --target all');
+
+    assert.ok(existsSync(join(dir, '.cursor/agents/code-writer.md')));
+    assert.ok(existsSync(join(dir, '.claude/agents/code-writer.md')));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('sync removes a subagent from .cursor/agents when deleted from .agents/subagents', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-subagents-delete-'));
+  try {
+    runInit(dir, '--profile generic --name SubagentsDelete --lang en');
+    runCli(dir, 'sync --target cursor');
+    assert.ok(existsSync(join(dir, '.cursor/agents/test-writer.md')));
+
+    rmSync(join(dir, '.agents/subagents/test-writer.md'), { force: true });
+    runCli(dir, 'sync --target cursor');
+
+    assert.ok(!existsSync(join(dir, '.cursor/agents/test-writer.md')));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('update refreshes subagents', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-subagents-update-'));
+  try {
+    runInit(dir, '--profile generic --name SubagentsUpdate --lang en');
+    writeFileSync(join(dir, '.agents/subagents/setup-doctor.md'), '# stale\n');
+    execSync(`node "${CLI}" update`, { cwd: dir, stdio: 'pipe' });
+
+    const content = readFileSync(join(dir, '.agents/subagents/setup-doctor.md'), 'utf-8');
+    assert.doesNotMatch(content, /# stale/);
+    assert.match(content, /name: setup-doctor/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('init generates Amp skill wrappers for every subagent', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-amp-wrappers-'));
+  try {
+    runInit(dir, '--profile generic --name AmpWrappers --lang en');
+
+    const wrapper = join(dir, '.agents/skills/subagent-design-implementer/SKILL.md');
+    assert.ok(existsSync(wrapper), 'missing Amp wrapper for design-implementer');
+
+    const content = readFileSync(wrapper, 'utf-8');
+    assert.match(content, /^---\nname: subagent-design-implementer\ndescription: .+/);
+    assert.match(content, /AUTO-GENERATED from \.agents\/subagents\/design-implementer\.md/);
+    assert.match(content, /pixel|fidelity|design/i);
+
+    for (const name of ['openspec-guide', 'code-writer', 'code-reviewer', 'test-writer', 'setup-doctor']) {
+      assert.ok(
+        existsSync(join(dir, `.agents/skills/subagent-${name}/SKILL.md`)),
+        `missing Amp wrapper for ${name}`,
+      );
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('sync regenerates Amp wrappers and removes stale ones', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-amp-wrappers-stale-'));
+  try {
+    runInit(dir, '--profile generic --name AmpWrappersStale --lang en');
+    assert.ok(existsSync(join(dir, '.agents/skills/subagent-test-writer/SKILL.md')));
+
+    rmSync(join(dir, '.agents/subagents/test-writer.md'), { force: true });
+    runCli(dir, 'sync --target amp');
+
+    assert.ok(!existsSync(join(dir, '.agents/skills/subagent-test-writer')));
+    assert.ok(existsSync(join(dir, '.agents/skills/subagent-code-writer/SKILL.md')));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('Amp wrappers are excluded from .cursor and .claude skill sync', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-amp-wrappers-exclude-'));
+  try {
+    runInit(dir, '--profile generic --name AmpWrappersExclude --lang en');
+    runCli(dir, 'sync --target all');
+
+    assert.ok(existsSync(join(dir, '.agents/skills/subagent-code-writer/SKILL.md')));
+    assert.ok(!existsSync(join(dir, '.cursor/skills/subagent-code-writer')));
+    assert.ok(!existsSync(join(dir, '.claude/skills/subagent-code-writer')));
+    assert.ok(existsSync(join(dir, '.cursor/agents/code-writer.md')));
+    assert.ok(existsSync(join(dir, '.claude/agents/code-writer.md')));
+    assert.ok(existsSync(join(dir, '.cursor/skills/openspec-howto/SKILL.md')));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('shell sync script generates Amp wrappers and excludes them from IDE dirs', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-amp-wrappers-shell-'));
+  try {
+    runInit(dir, '--profile generic --name AmpWrappersShell --lang en');
+    rmSync(join(dir, '.agents/skills/subagent-code-writer'), { recursive: true, force: true });
+
+    execSync('sh scripts/sync-local-agent-skills.sh', { cwd: dir, stdio: 'pipe' });
+
+    const wrapper = join(dir, '.agents/skills/subagent-code-writer/SKILL.md');
+    assert.ok(existsSync(wrapper), 'shell script did not regenerate wrapper');
+    const content = readFileSync(wrapper, 'utf-8');
+    assert.match(content, /^---\nname: subagent-code-writer\ndescription: .+/);
+
+    assert.ok(!existsSync(join(dir, '.cursor/skills/subagent-code-writer')));
+    assert.ok(!existsSync(join(dir, '.claude/skills/subagent-code-writer')));
+    assert.ok(existsSync(join(dir, '.cursor/agents/code-writer.md')));
+    assert.ok(existsSync(join(dir, '.claude/agents/code-writer.md')));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('design-implementer subagent enforces design-brief priority and fidelity', () => {
+  const content = readFileSync(
+    join(KIT_ROOT, 'templates/.agents/subagents/design-implementer.md'),
+    'utf-8',
+  );
+  assert.match(content, /name: design-implementer/);
+  assert.match(content, /design-brief\.md/);
+  assert.match(content, /Do NOT call live Figma MCP when a brief exists/i);
+  assert.match(content, /get_design_context/);
+  assert.match(content, /hover, focus, active, disabled/);
+});
+
+test('update does not resurrect a CI workflow file the project deleted', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-ci-noresurrect-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'ci-noresurrect', scripts: {} }, null, 2));
+    runInit(dir, '--ci gitlab --profile generic --name CiNoResurrect --lang en');
+    assert.ok(existsSync(join(dir, '.gitlab/agent-verify.yml')));
+    assert.ok(!existsSync(join(dir, '.github/workflows/agent-verify.yml')));
+
+    execSync(`node "${CLI}" update`, { cwd: dir, stdio: 'pipe' });
+
+    assert.ok(!existsSync(join(dir, '.github/workflows/agent-verify.yml')));
+    assert.ok(existsSync(join(dir, '.gitlab/agent-verify.yml')));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('update keeps sync-local-agent-skills.sh executable', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-update-exec-'));
+  try {
+    runInit(dir, '--profile generic --name UpdateExec --lang en');
+    execSync(`node "${CLI}" update`, { cwd: dir, stdio: 'pipe' });
+
+    const mode = statSync(join(dir, 'scripts/sync-local-agent-skills.sh')).mode;
+    assert.ok(mode & 0o111, 'expected sync script to remain executable after update');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

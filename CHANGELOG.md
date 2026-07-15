@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.10] - 2026-07-15
+
+### Added
+- **Custom subagents** — new `.agents/subagents/` asset category, synced to `.cursor/agents/` and `.claude/agents/` (like skills/rules, delete-stale semantics on `sync`)
+- 6 default subagents: `openspec-guide` (pipeline navigator, read-only), `code-writer` (scoped task implementation), `code-reviewer` (spec-compliance + convention review), `test-writer` (test authoring), `setup-doctor` (orchestrator setup diagnosis/repair), `design-implementer` (pixel-accurate Figma/screenshot → code, honors design-brief priority)
+- **Amp support via skill wrappers** — Amp has no file-based subagents, so `init`/`update`/`sync` auto-generate a committed `.agents/skills/subagent-<name>/SKILL.md` wrapper per subagent (Amp loads `.agents/skills/` natively); wrappers are excluded from `.cursor/`/`.claude/` skill sync and removed when the source subagent is deleted
+- `update` and `sync --target cursor|claude|all` now manage `.agents/subagents/` alongside skills and rules
+- `scripts/sync-local-agent-skills.sh` generates Amp wrappers and rsyncs `.agents/subagents/` → `.cursor/agents/` and `.claude/agents/`
+
+### Fixed
+- `update` no longer resurrects a CI workflow file the project deleted (e.g. `.github/workflows/agent-verify.yml` after switching to GitLab CI) — CI files are refreshed only when already present
+- `update` keeps `scripts/sync-local-agent-skills.sh` executable
+
 ## [0.1.9] - 2026-07-12
 
 ### Added

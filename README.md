@@ -1,24 +1,39 @@
 # agent-orchestrator-kit
 
-Universal AI agent orchestration kit for **Cursor**, **Claude Code**, and **Amp Code** — spec-driven pipeline built on [OpenSpec](https://github.com/fission-ai/openspec).
+Universal AI agent orchestration kit for **Cursor**, **Claude Code**, and **Amp Code** — spec-driven OpenSpec pipeline with **cross-IDE custom subagents**.
 
 [![npm version](https://img.shields.io/npm/v/agent-orchestrator-kit)](https://www.npmjs.com/package/agent-orchestrator-kit)
 [![license](https://img.shields.io/npm/l/agent-orchestrator-kit)](LICENSE)
 
 ## What It Is
 
-A portable kit that installs a **5-role AI pipeline** into any project:
+A portable kit that installs a **role-separated AI pipeline** into any project:
 
 ```
-explore → propose → review → apply → verify → archive
+explore → [design] → propose → review → apply → verify → archive
 ```
 
 Each role runs in a **separate agent session** with dedicated permissions, model hints, and handoff gates. The `openspec/changes/` folder acts as the **contract between agents** — no shared memory between sessions, only files.
 
+**Custom subagents (v0.1.10+)** ship with the kit and work in all three IDEs:
+
+| Subagent | Role |
+|----------|------|
+| `openspec-guide` | Pipeline navigator — status, gates, next `/opsx:*` command |
+| `code-writer` | Scoped task implementation against stack conventions |
+| `code-reviewer` | Spec-compliance + convention review of the resulting code |
+| `test-writer` | Automated tests for recently changed code |
+| `setup-doctor` | Orchestrator / MCP / sync diagnosis and repair |
+| `design-implementer` | Pixel-accurate Figma / screenshot → production UI |
+
+- **Cursor** → `.cursor/agents/` (native subagents)
+- **Claude Code** → `.claude/agents/` (native subagents)
+- **Amp Code** → auto-generated `subagent-*` skill wrappers in `.agents/skills/` (Amp has no file-based subagents)
+
 Works with:
-- [Cursor](https://cursor.sh) — via `.cursor/rules/` + `.cursor/skills/`
-- [Claude Code](https://code.claude.com) — via `CLAUDE.md` + `.claude/skills/`
-- [Amp Code](https://ampcode.com) — via `AGENTS.md` + `.agents/skills/` (native, no sync needed)
+- [Cursor](https://cursor.sh) — via `.cursor/rules/` + `.cursor/skills/` + `.cursor/agents/`
+- [Claude Code](https://code.claude.com) — via `CLAUDE.md` + `.claude/skills/` + `.claude/agents/`
+- [Amp Code](https://ampcode.com) — via `AGENTS.md` + `.agents/skills/` (native, including `subagent-*` wrappers)
 
 ## Why
 
@@ -38,15 +53,15 @@ npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-veri
 
 See [Installation](#installation) for profile/CI options.
 
-**🔄 Already have the kit installed? Get `status` / `gate-check` / GitHub Spec Verifier (v0.1.7+):**
+**🔄 Already have the kit installed? Upgrade to latest (subagents in v0.1.10+):**
 
 ```bash
 npx agent-orchestrator-kit@latest update
-./scripts/sync-local-agent-skills.sh
-npx agent-orchestrator-kit@latest status       # try it right away
+npx agent-orchestrator-kit@latest sync         # or: ./scripts/sync-local-agent-skills.sh
+npx agent-orchestrator-kit@latest status
 ```
 
-See [Upgrading an existing project](#upgrading-an-existing-project-to-v017-status--gate-check--github-spec-verifier) for what changes and what stays opt-in.
+This refreshes kit-managed files, installs `.agents/subagents/`, generates Amp `subagent-*` skill wrappers, and syncs agents into `.cursor/agents/` + `.claude/agents/`. See [Changelog](#changelog) for the full list.
 
 ## Installation
 
@@ -130,6 +145,7 @@ your-project/
 │   ├── amp.settings.json.example        # Amp MCP template
 │   ├── commands/                        # 6 /opsx:* commands
 │   ├── rules/                           # 3 auto-applied rules
+│   ├── subagents/                       # 6 default custom subagents (Cursor/Claude/Amp)
 │   └── skills/
 │       ├── agent-orchestration/         # Pipeline orchestration
 │       ├── openspec-howto/
@@ -149,7 +165,8 @@ your-project/
 |----------|----------|
 | Orchestration | 5-role pipeline, `AGENTS.md`, `orchestrator.yaml`, review command |
 | OpenSpec skills | All 7 skills for `/opsx:*` workflow |
-| IDE sync | Cursor + Claude Code sync script (`--delete` semantics — removes stale skills) |
+| IDE sync | Cursor + Claude Code sync script (`--delete` semantics — removes stale skills/subagents) |
+| Subagents | `openspec-guide`, `code-writer`, `code-reviewer`, `test-writer`, `setup-doctor`, `design-implementer` — native in Cursor (`.cursor/agents/`) + Claude Code (`.claude/agents/`), exposed to Amp as auto-generated `subagent-*` skill wrappers in `.agents/skills/` |
 | CLI gates | `agent-orchestrator status` / `gate-check` — deterministic review-gate checks |
 | CI | `agent-verify.yml` — GitHub (default) or GitLab fragment + `prebuild` hook, both run `gate-check` |
 | AI Spec Verifier | `spec-verify.yml` + verifier scripts — GitLab or GitHub, opt-in (`--spec-verify`) |
@@ -183,6 +200,8 @@ cp .agents/amp.settings.json.example .amp/settings.json
 
 Or run `./scripts/sync-local-agent-skills.sh` — it creates `.amp/settings.json` automatically.
 
+**Subagents in Amp:** Amp has no file-based custom subagents (only skills and plugin agents), so the kit exposes every `.agents/subagents/<name>.md` as an auto-generated skill `subagent-<name>` in `.agents/skills/`. These wrappers are committed to git, so Amp picks them up with zero local setup — just say "use the subagent-design-implementer skill" or let Amp auto-load it from the description. Edit the source file in `.agents/subagents/` (never the wrapper) and re-run `sync` to regenerate.
+
 4. Use commands directly:
 
 ```
@@ -210,9 +229,10 @@ Switch modes in Amp CLI: `Ctrl+O` → `mode`.
 1. Run sync: `./scripts/sync-local-agent-skills.sh`
 2. This creates:
    - `.claude/CLAUDE.md` — project context
-   - `.claude/skills/` — all skills from `.agents/skills/`
+   - `.claude/skills/` — all skills from `.agents/skills/` (excluding Amp `subagent-*` wrappers)
+   - `.claude/agents/` — custom subagents from `.agents/subagents/` (native Claude Code subagents)
 3. Skills are auto-loaded by Claude Code from `.claude/skills/`.
-4. Invoke directly: `/agent-orchestration`, `/openspec-howto`, etc.
+4. Invoke directly: `/agent-orchestration`, `/openspec-howto`, etc. Subagents are delegated automatically by description or on request ("use the design-implementer subagent").
 
 **CLAUDE.md tiers used:**
 - Project level: `.claude/CLAUDE.md` (synced from `CLAUDE.md`)
@@ -237,8 +257,10 @@ You can add `context: fork` to explore/review skills for isolated subagent sessi
 2. Creates:
    - `.cursor/skills/` — all skills
    - `.cursor/rules/` — `.mdc` rule files
+   - `.cursor/agents/` — custom subagents (`openspec-guide`, `code-writer`, `code-reviewer`, `test-writer`, `setup-doctor`, `design-implementer`)
    - `.mcp.json` — from `mcp.json.example` (if not present)
 3. Rules are applied automatically per `alwaysApply: true`.
+4. Subagents are invoked by name in chat (e.g. "use the code-reviewer subagent on this diff") or delegated to automatically by Cursor when their `description` matches the task. Add project-specific subagents by dropping `.md` files into `.agents/subagents/` and re-running sync.
 
 **Memory MCP for Cursor** (`.mcp.json`):
 
@@ -648,16 +670,20 @@ npx agent-orchestrator-kit gate-check [change-name] [options]
 .agents/                 # Committed — source of truth for all IDEs
   commands/              # /opsx:* command definitions
   rules/                 # Auto-applied rules for Cursor
+  subagents/             # Custom subagents (source of truth, all IDEs)
   skills/                # Skills for Cursor, Claude Code, Amp
+                         #   subagent-*/ — auto-generated Amp wrappers (do not edit)
   orchestrator.yaml      # Project pipeline config
 
 .cursor/                 # Local only — Cursor IDE runtime
   skills/                # Synced from .agents/skills/
   rules/                 # Synced from .agents/rules/
+  agents/                # Synced from .agents/subagents/
   memory.json            # Memory MCP data
 
 .claude/                 # Local only — Claude Code runtime
   skills/                # Synced from .agents/skills/
+  agents/                # Synced from .agents/subagents/
   CLAUDE.md              # Synced from root CLAUDE.md
 
 .amp/                    # Local only — Amp config
@@ -672,6 +698,11 @@ openspec/                # Committed — spec-driven workflow
 ```
 
 ## Changelog
+
+### 0.1.10
+- Custom subagents (`.agents/subagents/`) synced to `.cursor/agents/` + `.claude/agents/`, exposed to Amp via auto-generated `subagent-*` skill wrappers
+- 6 default subagents: `openspec-guide`, `code-writer`, `code-reviewer`, `test-writer`, `setup-doctor`, `design-implementer`
+- `update` no longer resurrects deleted CI workflow files
 
 ### 0.1.9
 - Design intake — `/opsx:design` captures design into `design-brief.md` + `assets/` (Figma / export / screenshot / photo)
