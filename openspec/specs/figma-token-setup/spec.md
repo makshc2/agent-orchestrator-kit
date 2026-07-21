@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Optional local Figma Personal Access Token setup so design intake can access private files without pasting secrets into chat or committing them to MCP JSON.
+
+## Requirements
 
 ### Requirement: Local Figma token file
 
@@ -16,12 +20,12 @@ The kit SHALL provide a committed template `.agents/figma.local.env.example` and
 
 ### Requirement: MCP launcher without embedded secret
 
-The kit SHALL ship `scripts/figma-mcp-launcher.js` that reads `FIGMA_ACCESS_TOKEN` (or `FIGMA_API_KEY`) from `.agents/figma.local.env` and starts `figma-developer-mcp` with `--stdio`, passing the value as `FIGMA_API_KEY`. Committed MCP examples MUST reference the launcher and MUST NOT contain a real token.
+The kit SHALL ship `scripts/figma-mcp-launcher.cjs` that reads `FIGMA_ACCESS_TOKEN` (or `FIGMA_API_KEY`) from `.agents/figma.local.env` and starts `figma-developer-mcp` with `--stdio`, passing the value as `FIGMA_API_KEY`. Committed MCP examples MUST reference the launcher and MUST NOT contain a real token.
 
 #### Scenario: Cursor MCP example uses launcher
 
 - **WHEN** a project uses `.agents/mcp.json.example`
-- **THEN** the `figma` server entry runs `node scripts/figma-mcp-launcher.js` (or equivalent) without an inline API key
+- **THEN** the `figma` server entry runs `node scripts/figma-mcp-launcher.cjs` without an inline API key
 
 ### Requirement: CLI status, setup, and fetch
 
