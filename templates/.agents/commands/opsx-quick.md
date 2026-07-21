@@ -31,7 +31,7 @@ Quick mode for **small changes, demos, and hypothesis testing**. Combines propos
 2. **Create change (minimal artifacts)**
 
    ```bash
-   openspec new change "<name>"
+   npx openspec new change "<name>"
    ```
 
    Create **lightweight** artifacts (no delta specs unless user asks):
@@ -44,7 +44,7 @@ Quick mode for **small changes, demos, and hypothesis testing**. Combines propos
 3. **Validate**
 
    ```bash
-   openspec validate <name> --strict --type change
+   npx openspec validate <name> --strict --type change
    ```
 
 4. **Apply immediately**

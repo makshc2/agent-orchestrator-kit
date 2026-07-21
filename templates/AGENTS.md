@@ -31,7 +31,7 @@ Verifier runs on **GitHub Actions** (default) or **GitLab** via `prebuild` → `
 
 With `init --ci gitlab --spec-verify` or `init --ci github --spec-verify`, an **AI Spec Verifier** also runs on MRs/PRs changing `src/`: an Amp agent checks the changed code against `openspec/specs/` and a **BLOCKED verdict fails the pipeline** (gate `spec-verify-blocking` in `.agents/orchestrator.yaml`).
 
-Both CI fragments also run `agent-orchestrator-kit gate-check` — a deterministic check that fails the pipeline when `src/` changed but the active change has no `review.md` with `Verdict: APPROVE` (when `require_spec_review: true`), and optionally requires `design-brief.md` (when `require_design_brief: true`, unless `proposal.md` has `Design: none`). Run `agent-orchestrator-kit status` at the start of any session to see task progress, review verdict, design brief, and archive readiness for every active change without querying `openspec` per change.
+Both CI fragments also run `npx agent-orchestrator-kit gate-check` — a deterministic check that fails the pipeline when `src/` changed but the active change has no `review.md` with `Verdict: APPROVE` (when `require_spec_review: true`), and optionally requires `design-brief.md` (when `require_design_brief: true`, unless `proposal.md` has `Design: none`). At session start run `npx agent-orchestrator-kit status` (not a bare global binary — Amp PATH often lacks it; see `.agents/rules/cli-via-npm.mdc`).
 
 ## Hard Rules
 
@@ -48,10 +48,10 @@ Both CI fragments also run `agent-orchestrator-kit gate-check` — a determinist
 | explore → design | UI change needs a brief; change name chosen |
 | explore → propose | Decision brief written; change name chosen (skip design if non-UI) |
 | design → propose | `design-brief.md` (+ `assets/`) written |
-| propose → review | `openspec validate --strict` passes ✓ |
+| propose → review | `npx openspec validate <name> --strict --type change` passes ✓ |
 | review → apply | Reviewer writes explicit **Approve** — enforced in CI by `gate-check` |
 | apply → verify | All `tasks.md` checkboxes `[x]`; local build OK |
-| verify → archive | CI green; PR merged — check `agent-orchestrator status` for "ready to archive" |
+| verify → archive | CI green; PR merged — check `npx agent-orchestrator-kit status` for "ready to archive" |
 
 ## Context to Pin per Role
 
@@ -66,6 +66,18 @@ Both CI fragments also run `agent-orchestrator-kit gate-check` — a determinist
 ## Configuration
 
 See `.agents/orchestrator.yaml` for role config, pipeline flags, and MCP baseline.
+
+### Optional: Figma personal token
+
+For design intake against private Figma files, each developer configures a local token (never commit, never paste into chat):
+
+```bash
+npx agent-orchestrator-kit figma-setup
+# edit .agents/figma.local.env → FIGMA_ACCESS_TOKEN=...
+npx agent-orchestrator-kit figma-status
+```
+
+MCP starts via `scripts/figma-mcp-launcher.cjs` (secret stays out of `.mcp.json`). See kit README → **Figma token**.
 
 ## Skills & Commands
 

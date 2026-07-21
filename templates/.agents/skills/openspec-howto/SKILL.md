@@ -55,6 +55,10 @@ openspec/
 
 ## CLI (read-only — не змінює код)
 
+Завжди `npx openspec …` або `npm run openspec:*` / `npx agent-orchestrator-kit …`.  
+Голі `openspec` / `agent-orchestrator-kit` у Amp часто дають exit **127**.  
+Див. `.agents/rules/cli-via-npm.mdc`. Ніколи `openspec validate --strict` без `<name>` / `--all`.
+
 | Команда | Навіщо |
 |---------|--------|
 | `list` | Активні changes або specs |

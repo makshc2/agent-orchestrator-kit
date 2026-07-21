@@ -1,0 +1,40 @@
+---
+description: Always invoke OpenSpec and agent-orchestrator-kit via npx/npm (Amp + Cursor PATH)
+alwaysApply: true
+---
+
+# CLI via npx / npm (Cursor + Amp)
+
+Amp Code і багато агентських shell **не мають** глобальних `openspec`, `agent-orchestrator-kit`, `rg` у PATH → exit **127**.  
+Не викликай голі бінарні імена. Завжди з кореня репо (де є `package.json` / `node_modules/`):
+
+## Обов’язкові форми
+
+| Замість (ламає Amp) | Використовуй |
+|---------------------|--------------|
+| `agent-orchestrator-kit status` | `npx agent-orchestrator-kit status` (або `npm run agent:status`, якщо script є) |
+| `agent-orchestrator-kit gate-check` | `npx agent-orchestrator-kit gate-check` (або `npm run agent:gate-check`) |
+| `openspec list` | `npx openspec list` (або `npm run openspec:list`) |
+| `openspec validate --strict` | **ніколи без цілі** → `npx openspec validate <name> --strict --type change` |
+| `openspec validate --all --strict` | `npx openspec validate --all --strict` (або `npm run openspec:validate` / `verify:openspec`) |
+| `openspec status --change X` | `npx openspec status --change "X"` |
+| `rg …` | IDE Grep / читання файлів; не покладайся на глобальний `rg` |
+
+## Session start
+
+```bash
+npx agent-orchestrator-kit status
+npx openspec list
+```
+
+## Validate перед review / apply
+
+```bash
+npx openspec validate "<change-name>" --strict --type change
+```
+
+## Правила
+
+- Якщо exit **127** — одразу `npx` / `npm run`, не повторюй голу команду.
+- `openspec validate --strict` без `<name>` / `--all` / `--changes` — помилка контракту.
+- CI вже використовує `npx …` — локальні агенти мають робити так само.

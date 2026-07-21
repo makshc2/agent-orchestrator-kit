@@ -1,7 +1,7 @@
 {
   "name": "agent-orchestrator-kit",
-  "version": "0.1.10",
-  "description": "Universal AI agent orchestration kit for Cursor, Claude Code, and Amp Code — spec-driven OpenSpec pipeline with cross-IDE custom subagents (openspec-guide, code-writer, code-reviewer, test-writer, setup-doctor, design-implementer)",
+  "version": "0.1.11",
+  "description": "Universal AI agent orchestration kit for Cursor, Claude Code, and Amp Code — spec-driven OpenSpec pipeline, cross-IDE subagents, and optional local Figma PAT setup (figma-setup / figma-status / figma-fetch)",
   "keywords": [
     "ai-agent",
     "cursor",
@@ -13,6 +13,8 @@
     "subagents",
     "custom-subagents",
     "design-to-code",
+    "figma",
+    "figma-mcp",
     "developer-tools"
   ],
   "author": "Maksim Shevyakov <makshc2>",

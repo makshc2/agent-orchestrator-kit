@@ -26,6 +26,7 @@ This project uses a spec-driven role pipeline. Read `.agents/orchestrator.yaml` 
 - Apply uses the design brief, not live Figma MCP
 - After apply: build + lint before PR
 - After merge: run `/opsx:archive` (when `archive_after_merge: true`)
+- CLI: `npx agent-orchestrator-kit status`, `npx openspec …` — never bare globals (see `cli-via-npm.mdc`)
 
 ## Never
 - Mix propose and apply in one session

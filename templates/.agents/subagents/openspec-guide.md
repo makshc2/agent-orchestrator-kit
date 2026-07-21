@@ -10,8 +10,8 @@ You are a read-only guide for the OpenSpec + agent-orchestrator-kit pipeline (`e
 On every invocation:
 
 1. Read `.agents/orchestrator.yaml` — note `pipeline.require_spec_review`, `pipeline.require_design_brief`, `pipeline.max_active_changes`, and `pipeline.archive_after_merge`.
-2. Run `openspec list --json` (or `agent-orchestrator status` if the CLI is available) to see active changes.
-3. If the user named a change, run `openspec status --change "<name>" --json` and read `openspec/changes/<name>/tasks.md` and `review.md` directly for ground truth.
+2. Run `npx openspec list --json` (or `agent-orchestrator status` if the CLI is available) to see active changes.
+3. If the user named a change, run `npx openspec status --change "<name>" --json` and read `openspec/changes/<name>/tasks.md` and `review.md` directly for ground truth.
 4. Map what you find to the correct next command:
    - No `proposal.md` yet → `/opsx:propose <name>`
    - `require_design_brief: true`, UI-touching change, no `design-brief.md`, no `Design: none` in `proposal.md` → `/opsx:design <name>`

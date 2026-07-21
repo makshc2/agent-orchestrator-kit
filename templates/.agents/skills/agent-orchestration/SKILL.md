@@ -77,9 +77,10 @@ Context from explore:
 ### propose → review
 Exit Architect when:
 ```bash
-openspec validate <name> --strict --type change  # must pass ✓
-openspec status --change "<name>"                # applyRequires artifacts all done
+npx openspec validate <name> --strict --type change  # must pass ✓
+npx openspec status --change "<name>"                # applyRequires artifacts all done
 ```
+(Use `npx` / `npm run` — bare `openspec` / `agent-orchestrator-kit` often exit 127 in Amp. See `cli-via-npm.mdc`.)
 
 ### review → apply
 Exit Reviewer only when verdict is explicit **APPROVE ✓** and `review.md` written.
@@ -90,7 +91,7 @@ Before apply, check `.agents/orchestrator.yaml`:
 
 If Request Changes — fix artifacts, re-run `/opsx:review`.
 
-This is no longer only a chat convention: `agent-orchestrator-kit gate-check` runs in CI (both `agent-verify.yml` fragments) and fails the pipeline if `src/` changed without an approved `review.md` — a forgotten or skipped review is caught at merge time, not just at apply time. When `require_design_brief: true`, the same command also requires `design-brief.md` (or `Design: none` in `proposal.md`).
+This is no longer only a chat convention: `npx agent-orchestrator-kit gate-check` runs in CI (both `agent-verify.yml` fragments) and fails the pipeline if `src/` changed without an approved `review.md` — a forgotten or skipped review is caught at merge time, not just at apply time. When `require_design_brief: true`, the same command also requires `design-brief.md` (or `Design: none` in `proposal.md`).
 
 ### apply → verify
 Exit Implementer when:
@@ -110,7 +111,7 @@ After PR merged + CI green:
 
 **Start of each session:**
 1. Announce role: "Starting Spec Reviewer session for change: <name>"
-2. Run `agent-orchestrator-kit status` (or `openspec list`) — confirm active change limit (`max_active_changes` in orchestrator.yaml) and see task/review/brief progress for every active change at a glance
+2. Run `npx agent-orchestrator-kit status` (or `npx openspec list`) — confirm active change limit (`max_active_changes` in orchestrator.yaml) and see task/review/brief progress for every active change at a glance
 3. Read `orchestrator.yaml` for project config and review gate
 
 **During session:**
@@ -151,12 +152,12 @@ At start of new session: read relevant entities to restore context without re-ex
 ## Orchestration Checklist (per change)
 
 - [ ] explore session closed before propose started
-- [ ] `openspec validate --strict` passed before review
+- [ ] `npx openspec validate <name> --strict --type change` passed before review
 - [ ] explicit **Approve** received before apply (when `require_spec_review: true`)
 - [ ] `review.md` with `Verdict: APPROVE` exists (when review required)
 - [ ] all tasks `[x]` + build OK before PR
-- [ ] `agent-orchestrator-kit gate-check` passes locally before pushing (mirrors the CI gate)
-- [ ] `/opsx:archive` run after merge — `agent-orchestrator-kit status` shows "ready to archive"
+- [ ] `npx agent-orchestrator-kit gate-check` passes locally before pushing (mirrors the CI gate)
+- [ ] `/opsx:archive` run after merge — `npx agent-orchestrator-kit status` shows "ready to archive"
 
 ## Anti-patterns
 

@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+## [0.1.11] - 2026-07-21
+
+### Added
+- **Figma personal token setup** — local `.agents/figma.local.env` (gitignored) + committed `.agents/figma.local.env.example`
+- **`scripts/figma-mcp-launcher.cjs`** — starts `figma-developer-mcp` with token from the env file (no secret in `.mcp.json`)
+- **CLI** — `figma-setup`, `figma-status`, `figma-fetch` (REST file/nodes JSON via `X-Figma-Token`)
+- Cursor/Amp MCP examples include optional `figma` server pointing at the launcher
+- Agent rule `figma-token-setup.mdc`; setup-doctor + `/opsx:design` guidance (never ask for token in chat)
+- `orchestrator.yaml` / profiles: `mcp.optional` includes `figma` + `figma.env_file` metadata
+
+### Fixed
+- **Amp / agent PATH** — templates now document and require `npx` / `npm run` for OpenSpec and `agent-orchestrator-kit` CLIs (bare binaries often exit 127 in Amp shells)
+- Added always-apply rule `templates/.agents/rules/cli-via-npm.mdc`; updated openspec skills/commands, `AGENTS.md`, `CLAUDE.md`, `orchestrator.yaml` `cli.*` hints
+- Never recommend `openspec validate --strict` without `<name>` / `--all`
+
 ## [0.1.10] - 2026-07-15
 
 ### Added

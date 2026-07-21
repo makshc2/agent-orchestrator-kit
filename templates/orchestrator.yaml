@@ -55,10 +55,25 @@ mcp:
   baseline:
     - memory
   optional:
+    - figma
     - github
     - browser
+
+figma:
+  env_file: .agents/figma.local.env
+  token_key: FIGMA_ACCESS_TOKEN
+  mcp_launcher: scripts/figma-mcp-launcher.cjs
 
 verifier:
   lint_command: "npm run lint"
   build_command: "npm run build"
   test_command: ""
+
+# Amp/Cursor often lack global bins — agents must use npx/npm (see .agents/rules/cli-via-npm.mdc)
+cli:
+  status: npx agent-orchestrator-kit status
+  gate_check: npx agent-orchestrator-kit gate-check
+  openspec_list: npx openspec list
+  openspec_validate_change: npx openspec validate <name> --strict --type change
+  openspec_validate_all: npx openspec validate --all --strict
+  openspec_status: npx openspec status --change <name> --json

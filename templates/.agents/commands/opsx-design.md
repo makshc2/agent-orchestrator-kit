@@ -18,7 +18,7 @@ Capture design into a durable brief for an OpenSpec change. One-shot intake from
 ### 1. Select the change
 
 If name provided — use it. Otherwise:
-- Run `openspec list --json` to list active changes.
+- Run `npx openspec list --json` to list active changes.
 - Auto-select if only one exists.
 - Ask the user if ambiguous.
 
@@ -28,7 +28,7 @@ Announce: "Design intake for change: **<name>**"
 
 Use the first available source; do not climb the ladder twice:
 
-1. **Figma MCP** — one pass only (`get_design_context` / screenshot / metadata). Capture everything needed immediately; never call Figma again during later apply.
+1. **Figma MCP** — one pass only (`get_design_context` / screenshot / metadata). Capture everything needed immediately; never call Figma again during later apply. If MCP fails, check `npx agent-orchestrator-kit figma-status`. If the token is missing, tell the user to run `figma-setup` and edit `.agents/figma.local.env` locally — **never ask them to paste the token into chat**. Optional REST dump: `npx agent-orchestrator-kit figma-fetch --url "<figma-url>" --out openspec/changes/<name>/assets/figma-nodes.json`.
 2. **Exported images** — PNG/SVG already in the repo or attached by the user.
 3. **Screenshots** — UI captures (desktop/mobile).
 4. **Photos** — physical mockups or whiteboard photos.

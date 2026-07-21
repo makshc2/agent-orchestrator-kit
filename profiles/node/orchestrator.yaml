@@ -57,6 +57,13 @@ memory:
 mcp:
   baseline:
     - memory
+  optional:
+    - figma
+
+figma:
+  env_file: .agents/figma.local.env
+  token_key: FIGMA_ACCESS_TOKEN
+  mcp_launcher: scripts/figma-mcp-launcher.cjs
 
 verifier:
   lint_command: "npm run lint"

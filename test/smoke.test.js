@@ -1062,3 +1062,66 @@ test('sync removes a skill directory from .claude/skills too', () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('init installs figma token templates and gitignores local env', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-figma-init-'));
+  try {
+    runInit(dir, '--profile generic --name FigmaInit --lang en');
+
+    assert.ok(existsSync(join(dir, '.agents/figma.local.env.example')));
+    assert.ok(existsSync(join(dir, 'scripts/figma-mcp-launcher.cjs')));
+    assert.ok(existsSync(join(dir, '.agents/rules/figma-token-setup.mdc')));
+
+    const mcp = JSON.parse(readFileSync(join(dir, '.agents/mcp.json.example'), 'utf-8'));
+    assert.equal(mcp.mcpServers.figma.command, 'node');
+    assert.deepEqual(mcp.mcpServers.figma.args, ['scripts/figma-mcp-launcher.cjs']);
+    assert.ok(!JSON.stringify(mcp).includes('figd_'));
+
+    const lines = gitignoreLines(dir);
+    assert.ok(lines.includes('.agents/figma.local.env'));
+
+    const orch = readFileSync(join(dir, '.agents/orchestrator.yaml'), 'utf-8');
+    assert.match(orch, /figma:/);
+    assert.match(orch, /FIGMA_ACCESS_TOKEN/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('figma-setup and figma-status never print token value', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-figma-cli-'));
+  try {
+    runInit(dir, '--profile generic --name FigmaCli --lang en');
+
+    let failed = false;
+    try {
+      execSync(`node "${CLI}" figma-status`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' });
+    } catch (error) {
+      failed = true;
+      const out = `${error.stdout || ''}${error.stderr || ''}`;
+      assert.match(out, /not configured/i);
+      assert.doesNotMatch(out, /figd_/i);
+    }
+    assert.ok(failed, 'figma-status should exit non-zero without token');
+
+    const setupOut = execSync(`node "${CLI}" figma-setup`, {
+      cwd: dir,
+      stdio: 'pipe',
+      encoding: 'utf-8',
+    });
+    assert.ok(existsSync(join(dir, '.agents/figma.local.env')));
+    assert.match(setupOut, /figma\.local\.env/);
+    assert.doesNotMatch(setupOut, /figd_/i);
+
+    writeFileSync(join(dir, '.agents/figma.local.env'), 'FIGMA_ACCESS_TOKEN=figd_test_secret_value\n');
+    const statusOut = execSync(`node "${CLI}" figma-status`, {
+      cwd: dir,
+      stdio: 'pipe',
+      encoding: 'utf-8',
+    });
+    assert.match(statusOut, /configured/i);
+    assert.doesNotMatch(statusOut, /figd_test_secret_value/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

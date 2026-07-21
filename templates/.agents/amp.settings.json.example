@@ -6,6 +6,10 @@
       "env": {
         "MEMORY_FILE_PATH": ".cursor/memory.json"
       }
+    },
+    "figma": {
+      "command": "node",
+      "args": ["scripts/figma-mcp-launcher.cjs"]
     }
   }
 }

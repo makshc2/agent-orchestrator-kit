@@ -60,7 +60,23 @@ function specVerifyPathsFor(ci) {
 const VALID_CI_PROVIDERS = ['gitlab', 'github', 'none'];
 const VERIFY_OPENSPEC_SCRIPT = 'npx openspec validate --all --strict';
 
-const GITIGNORE_LINES = ['.cursor', '.cursor/memory.json', '.amp/settings.json', '.claude'];
+const GITIGNORE_LINES = [
+  '.cursor',
+  '.cursor/memory.json',
+  '.amp/settings.json',
+  '.claude',
+  '.agents/figma.local.env',
+];
+
+const FIGMA_ENV_REL = join('.agents', 'figma.local.env');
+const FIGMA_ENV_EXAMPLE_REL = join('.agents', 'figma.local.env.example');
+const FIGMA_LAUNCHER_REL = join('scripts', 'figma-mcp-launcher.cjs');
+const FIGMA_MANAGED_PATHS = [
+  FIGMA_ENV_EXAMPLE_REL,
+  FIGMA_LAUNCHER_REL,
+  join('.agents', 'mcp.json.example'),
+  join('.agents', 'amp.settings.json.example'),
+];
 
 const log = {
   info: (msg) => console.log(pc.cyan('  →'), msg),
@@ -116,6 +132,141 @@ function mergeGitignore(projectDir, lines) {
   const prefix = raw.length > 0 && !raw.endsWith('\n') ? '\n' : '';
   writeFileSync(gitignorePath, raw + prefix + toAdd.join('\n') + '\n');
   log.ok('.gitignore updated');
+}
+
+function parseEnvFile(filePath) {
+  if (!existsSync(filePath)) return {};
+  const values = {};
+  for (const line of readFileSync(filePath, 'utf-8').split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq === -1) continue;
+    const key = trimmed.slice(0, eq).trim();
+    let value = trimmed.slice(eq + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    values[key] = value;
+  }
+  return values;
+}
+
+function readFigmaToken(projectDir) {
+  const envPath = join(projectDir, FIGMA_ENV_REL);
+  const values = parseEnvFile(envPath);
+  return values.FIGMA_ACCESS_TOKEN || values.FIGMA_API_KEY || '';
+}
+
+function isFigmaConfigured(projectDir) {
+  return Boolean(readFigmaToken(projectDir));
+}
+
+function ensureFigmaEnvFile(projectDir) {
+  const dest = join(projectDir, FIGMA_ENV_REL);
+  const example = join(projectDir, FIGMA_ENV_EXAMPLE_REL);
+  const kitExample = join(KIT_ROOT, 'templates', FIGMA_ENV_EXAMPLE_REL);
+
+  if (existsSync(dest)) {
+    return { created: false, path: dest };
+  }
+
+  const src = existsSync(example) ? example : kitExample;
+  if (!existsSync(src)) {
+    throw new Error(`Missing template: ${FIGMA_ENV_EXAMPLE_REL}`);
+  }
+
+  mkdirSync(dirname(dest), { recursive: true });
+  copyFileSync(src, dest);
+  return { created: true, path: dest };
+}
+
+function refreshFigmaManagedFiles(projectDir) {
+  const templateDir = join(KIT_ROOT, 'templates');
+  for (const rel of FIGMA_MANAGED_PATHS) {
+    const src = join(templateDir, rel);
+    const dest = join(projectDir, rel);
+    if (!existsSync(src)) continue;
+    mkdirSync(dirname(dest), { recursive: true });
+    copyFileSync(src, dest);
+    log.ok(rel);
+  }
+}
+
+function ensureFigmaMcpEntry(projectDir) {
+  const figmaServer = {
+    command: 'node',
+    args: ['scripts/figma-mcp-launcher.cjs'],
+  };
+
+  const cursorPath = join(projectDir, '.mcp.json');
+  if (existsSync(cursorPath)) {
+    try {
+      const cfg = JSON.parse(readFileSync(cursorPath, 'utf-8'));
+      cfg.mcpServers = cfg.mcpServers || {};
+      if (!cfg.mcpServers.figma) {
+        cfg.mcpServers.figma = figmaServer;
+        writeFileSync(cursorPath, `${JSON.stringify(cfg, null, 2)}\n`);
+        log.ok('.mcp.json ← added figma server');
+      } else {
+        log.ok('.mcp.json already has figma server');
+      }
+    } catch {
+      log.warn('.mcp.json present but invalid JSON — merge figma server manually from .agents/mcp.json.example');
+    }
+  }
+
+  const ampPath = join(projectDir, '.amp', 'settings.json');
+  if (existsSync(ampPath)) {
+    try {
+      const cfg = JSON.parse(readFileSync(ampPath, 'utf-8'));
+      cfg['amp.mcpServers'] = cfg['amp.mcpServers'] || {};
+      if (!cfg['amp.mcpServers'].figma) {
+        cfg['amp.mcpServers'].figma = figmaServer;
+        writeFileSync(ampPath, `${JSON.stringify(cfg, null, 2)}\n`);
+        log.ok('.amp/settings.json ← added figma server');
+      } else {
+        log.ok('.amp/settings.json already has figma server');
+      }
+    } catch {
+      log.warn('.amp/settings.json present but invalid JSON — merge figma server manually');
+    }
+  }
+}
+
+function parseFigmaUrl(url) {
+  try {
+    const parsed = new URL(url);
+    const parts = parsed.pathname.split('/').filter(Boolean);
+    const designIdx = parts.findIndex((p) => p === 'design' || p === 'file' || p === 'proto');
+    const fileKey = designIdx >= 0 ? parts[designIdx + 1] : '';
+    const nodeParam = parsed.searchParams.get('node-id') || '';
+    const nodeId = nodeParam ? nodeParam.replace(/-/g, ':') : '';
+    return { fileKey, nodeId };
+  } catch {
+    return { fileKey: '', nodeId: '' };
+  }
+}
+
+async function figmaApiGet(token, path) {
+  const response = await fetch(`https://api.figma.com/v1${path}`, {
+    headers: { 'X-Figma-Token': token },
+  });
+  const text = await response.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = { err: text };
+  }
+  if (!response.ok) {
+    const message = data?.err || data?.message || response.statusText || `HTTP ${response.status}`;
+    throw new Error(String(message));
+  }
+  return data;
 }
 
 function resolveTemplate(templateName, profile) {
@@ -406,14 +557,17 @@ function printNextSteps(profile, projectDir, ci = 'github', specVerify = false) 
     lines.push(`  3. Install Vue/JS stack skills:`);
     lines.push(`     ${pc.cyan('npx frontend-agent-skills install --agent all --yes')}`);
     lines.push(`  4. MCP: copy .mcp.json (Cursor) / .amp/settings.json (Amp) from *.example files`);
-    lines.push(`  5. Start your first change:`);
+    lines.push(`  5. Optional Figma: ${pc.cyan('npx agent-orchestrator-kit figma-setup')} then paste token into ${pc.cyan('.agents/figma.local.env')} (never in chat)`);
+    lines.push(`  6. Start your first change:`);
   } else if (profile === 'mvp') {
     lines.push(`  3. For quick demos use ${pc.cyan('/opsx:quick <name>')} (propose + apply, no review gate)`);
     lines.push(`  4. MCP: copy .mcp.json (Cursor) / .amp/settings.json (Amp) from *.example files`);
-    lines.push(`  5. Start exploring:`);
+    lines.push(`  5. Optional Figma: ${pc.cyan('npx agent-orchestrator-kit figma-setup')} then paste token into ${pc.cyan('.agents/figma.local.env')} (never in chat)`);
+    lines.push(`  6. Start exploring:`);
   } else {
     lines.push(`  3. MCP: copy .mcp.json (Cursor) / .amp/settings.json (Amp) from *.example files`);
-    lines.push(`  4. Start your first change:`);
+    lines.push(`  4. Optional Figma: ${pc.cyan('npx agent-orchestrator-kit figma-setup')} then paste token into ${pc.cyan('.agents/figma.local.env')} (never in chat)`);
+    lines.push(`  5. Start your first change:`);
   }
 
   const startCmd = profile === 'mvp' ? '/opsx:quick' : '/opsx:explore';
@@ -663,8 +817,13 @@ program
       execSync(`chmod +x ${join(projectDir, 'scripts', 'sync-local-agent-skills.sh')}`);
     } catch {}
 
+    log.title('Refreshing Figma setup templates');
+    refreshFigmaManagedFiles(projectDir);
+    mergeGitignore(projectDir, GITIGNORE_LINES);
+
     log.ok(`Updated to v${KIT_VERSION}`);
     log.info('Run ./scripts/sync-local-agent-skills.sh to sync to local IDE');
+    log.info('Optional Figma: npx agent-orchestrator-kit figma-setup');
   });
 
 program
@@ -836,6 +995,120 @@ program
         log.err(`Run /opsx:design ${target} (or add "Design: none" to proposal.md for non-UI changes).`);
         process.exitCode = 1;
       }
+    }
+  });
+
+program
+  .command('figma-setup')
+  .description('Create local Figma token env file (never prints the token)')
+  .action(() => {
+    const projectDir = process.cwd();
+    log.title('agent-orchestrator figma-setup');
+
+    refreshFigmaManagedFiles(projectDir);
+    mergeGitignore(projectDir, GITIGNORE_LINES);
+
+    const result = ensureFigmaEnvFile(projectDir);
+    if (result.created) {
+      log.ok(`Created ${FIGMA_ENV_REL}`);
+    } else {
+      log.ok(`${FIGMA_ENV_REL} already exists`);
+    }
+
+    ensureFigmaMcpEntry(projectDir);
+
+    if (isFigmaConfigured(projectDir)) {
+      log.ok('Figma token: configured');
+    } else {
+      log.warn('Figma token: missing — open .agents/figma.local.env and set FIGMA_ACCESS_TOKEN locally (do not paste into chat)');
+    }
+
+    log.info('Restart Cursor / Amp after saving the token');
+    log.info('Check: npx agent-orchestrator-kit figma-status');
+  });
+
+program
+  .command('figma-status')
+  .description('Report whether a local Figma token is configured (never prints the token)')
+  .action(() => {
+    const projectDir = process.cwd();
+    log.title('agent-orchestrator figma-status');
+
+    const envPath = join(projectDir, FIGMA_ENV_REL);
+    if (!existsSync(envPath)) {
+      log.err(`Figma token: not configured (missing ${FIGMA_ENV_REL})`);
+      log.info('Run: npx agent-orchestrator-kit figma-setup');
+      process.exitCode = 1;
+      return;
+    }
+
+    if (!isFigmaConfigured(projectDir)) {
+      log.err('Figma token: not configured (FIGMA_ACCESS_TOKEN is empty)');
+      log.info('Edit .agents/figma.local.env locally — never paste the token into chat');
+      process.exitCode = 1;
+      return;
+    }
+
+    log.ok('Figma token: configured');
+    if (existsSync(join(projectDir, FIGMA_LAUNCHER_REL))) {
+      log.ok(`MCP launcher: ${FIGMA_LAUNCHER_REL}`);
+    } else {
+      log.warn(`MCP launcher missing — run npx agent-orchestrator-kit update`);
+    }
+  });
+
+program
+  .command('figma-fetch')
+  .description('Fetch Figma file/nodes JSON via REST API using the local token')
+  .option('--url <url>', 'Figma design URL (file key + optional node-id)')
+  .option('--file <key>', 'Figma file key')
+  .option('--nodes <ids>', 'Comma-separated node ids (1:2 or 1-2)')
+  .option('--out <path>', 'Output JSON path', 'figma-nodes.json')
+  .action(async (opts) => {
+    const projectDir = process.cwd();
+    log.title('agent-orchestrator figma-fetch');
+
+    const token = readFigmaToken(projectDir);
+    if (!token) {
+      log.err('Figma token: not configured');
+      log.info('Run: npx agent-orchestrator-kit figma-setup');
+      process.exitCode = 1;
+      return;
+    }
+
+    let fileKey = opts.file || '';
+    let nodes = opts.nodes || '';
+    if (opts.url) {
+      const parsed = parseFigmaUrl(opts.url);
+      fileKey = fileKey || parsed.fileKey;
+      nodes = nodes || parsed.nodeId;
+    }
+
+    if (!fileKey) {
+      log.err('Missing --file <key> or --url <figma-url>');
+      process.exitCode = 1;
+      return;
+    }
+
+    const nodeIds = String(nodes || '')
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean)
+      .map((id) => id.replace(/-/g, ':'));
+
+    try {
+      const path = nodeIds.length
+        ? `/files/${encodeURIComponent(fileKey)}/nodes?ids=${encodeURIComponent(nodeIds.join(','))}`
+        : `/files/${encodeURIComponent(fileKey)}`;
+      log.info(nodeIds.length ? `Fetching ${nodeIds.length} node(s)…` : 'Fetching full file…');
+      const data = await figmaApiGet(token, path);
+      const outPath = join(projectDir, opts.out);
+      mkdirSync(dirname(outPath), { recursive: true });
+      writeFileSync(outPath, `${JSON.stringify(data, null, 2)}\n`);
+      log.ok(`Wrote ${opts.out}`);
+    } catch (error) {
+      log.err(`Figma API error: ${error.message}`);
+      process.exitCode = 1;
     }
   });
 

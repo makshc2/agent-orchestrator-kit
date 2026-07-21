@@ -1,0 +1,35 @@
+---
+description: Figma personal access token setup — local env file, never ask for token in chat
+alwaysApply: true
+---
+
+# Figma Token Setup
+
+Optional Figma access for design intake (`/opsx:design`) uses a **local Personal Access Token**.
+
+## Where the token lives
+
+| File | Git |
+|------|-----|
+| `.agents/figma.local.env` | **ignored** — real token |
+| `.agents/figma.local.env.example` | committed — template |
+
+Key: `FIGMA_ACCESS_TOKEN=`
+
+## Developer setup (tell the user this — never ask them to paste the token here)
+
+```bash
+cp .agents/figma.local.env.example .agents/figma.local.env
+# edit .agents/figma.local.env in the IDE and paste the token
+npx agent-orchestrator-kit figma-status
+```
+
+Restart Cursor / Amp after saving. MCP starts via `scripts/figma-mcp-launcher.cjs` (no secret in `.mcp.json`).
+
+## Agent rules
+
+- **NEVER** ask the user to paste a Figma token into chat
+- Check with `npx agent-orchestrator-kit figma-status` (yes/no only)
+- If missing → point to `.agents/figma.local.env` + README “Figma token” section
+- Use live Figma only in design-intake; apply uses `design-brief.md`
+- Optional REST dump: `npx agent-orchestrator-kit figma-fetch --file <key> --nodes <id> --out openspec/changes/<name>/assets/figma-nodes.json`

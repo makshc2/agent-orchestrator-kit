@@ -15,6 +15,8 @@ explore → [design] → propose → review → apply → verify → archive
 
 Each role runs in a **separate agent session** with dedicated permissions, model hints, and handoff gates. The `openspec/changes/` folder acts as the **contract between agents** — no shared memory between sessions, only files.
 
+**Figma PAT setup (v0.1.11+)** — local `.agents/figma.local.env` + MCP launcher (token never in chat / committed MCP JSON). See [Figma token](#figma-token-optional).
+
 **Custom subagents (v0.1.10+)** ship with the kit and work in all three IDEs:
 
 | Subagent | Role |
@@ -53,11 +55,12 @@ npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-veri
 
 See [Installation](#installation) for profile/CI options.
 
-**🔄 Already have the kit installed? Upgrade to latest (subagents in v0.1.10+):**
+**🔄 Already have the kit installed? Upgrade to latest (Figma PAT in v0.1.11+, subagents in v0.1.10+):**
 
 ```bash
 npx agent-orchestrator-kit@latest update
 npx agent-orchestrator-kit@latest sync         # or: ./scripts/sync-local-agent-skills.sh
+npx agent-orchestrator-kit@latest figma-setup  # optional — local Figma token
 npx agent-orchestrator-kit@latest status
 ```
 
@@ -167,7 +170,7 @@ your-project/
 | OpenSpec skills | All 7 skills for `/opsx:*` workflow |
 | IDE sync | Cursor + Claude Code sync script (`--delete` semantics — removes stale skills/subagents) |
 | Subagents | `openspec-guide`, `code-writer`, `code-reviewer`, `test-writer`, `setup-doctor`, `design-implementer` — native in Cursor (`.cursor/agents/`) + Claude Code (`.claude/agents/`), exposed to Amp as auto-generated `subagent-*` skill wrappers in `.agents/skills/` |
-| CLI gates | `agent-orchestrator status` / `gate-check` — deterministic review-gate checks |
+| CLI gates | `npx agent-orchestrator-kit status` / `gate-check` — deterministic review-gate checks (always via `npx`; see `cli-via-npm.mdc`) |
 | CI | `agent-verify.yml` — GitHub (default) or GitLab fragment + `prebuild` hook, both run `gate-check` |
 | AI Spec Verifier | `spec-verify.yml` + verifier scripts — GitLab or GitHub, opt-in (`--spec-verify`) |
 | MCP templates | Memory MCP for Cursor and Amp |
@@ -189,6 +192,8 @@ Local only (not committed): `.cursor/` `.claude/` `.amp/`
 ### Amp Code (primary — zero config)
 
 Amp reads `.agents/skills/` and `AGENTS.md` **natively** — no sync needed.
+
+**CLI note:** Amp shells often lack global `openspec` / `agent-orchestrator-kit` on PATH (exit 127). Agents must use `npx …` / `npm run …` — see always-apply rule `.agents/rules/cli-via-npm.mdc`.
 
 1. Install the kit → `AGENTS.md` is created automatically.
 2. Amp picks up skills from `.agents/skills/` on session start.
@@ -262,7 +267,7 @@ You can add `context: fork` to explore/review skills for isolated subagent sessi
 3. Rules are applied automatically per `alwaysApply: true`.
 4. Subagents are invoked by name in chat (e.g. "use the code-reviewer subagent on this diff") or delegated to automatically by Cursor when their `description` matches the task. Add project-specific subagents by dropping `.md` files into `.agents/subagents/` and re-running sync.
 
-**Memory MCP for Cursor** (`.mcp.json`):
+**Memory + optional Figma MCP for Cursor** (`.mcp.json`):
 
 ```json
 {
@@ -271,10 +276,16 @@ You can add `context: fork` to explore/review skills for isolated subagent sessi
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-memory"],
       "env": { "MEMORY_FILE_PATH": ".cursor/memory.json" }
+    },
+    "figma": {
+      "command": "node",
+      "args": ["scripts/figma-mcp-launcher.cjs"]
     }
   }
 }
 ```
+
+Token lives in `.agents/figma.local.env` — see [Figma token](#figma-token-optional).
 
 ## The Pipeline in Detail
 
@@ -304,7 +315,7 @@ You can add `context: fork` to explore/review skills for isolated subagent sessi
 
 **Exit gate:**
 ```bash
-openspec validate <name> --strict --type change  # must be ✓
+npx openspec validate <name> --strict --type change  # must be ✓
 ```
 
 ```
@@ -582,6 +593,49 @@ npx frontend-agent-skills install --agent all --yes
 
 > **Migrating from `vue-cursor-skills`?** Renamed to `frontend-agent-skills` v2 — same package, old CLI alias still works.
 
+## Figma token (optional)
+
+Personal Access Token for design intake (`/opsx:design`) and the optional Framelink `figma-developer-mcp` server. **Never paste the token into AI chat.**
+
+### Setup (each developer, once)
+
+```bash
+npx agent-orchestrator-kit figma-setup
+# open .agents/figma.local.env in the IDE and set:
+# FIGMA_ACCESS_TOKEN=figd_...
+npx agent-orchestrator-kit figma-status
+```
+
+Then restart Cursor / Amp.
+
+| Path | Purpose | Git |
+|------|---------|-----|
+| `.agents/figma.local.env` | Your token (`FIGMA_ACCESS_TOKEN`) | **ignored** |
+| `.agents/figma.local.env.example` | Template | committed |
+| `scripts/figma-mcp-launcher.cjs` | Starts MCP with token from the env file | committed |
+| `.mcp.json` → `figma` | Points at the launcher (no secret inline) | committed OK |
+
+Create a token: Figma → Settings → Security → Personal access tokens (file content read as needed).
+
+### CLI
+
+```bash
+npx agent-orchestrator-kit figma-setup
+npx agent-orchestrator-kit figma-status
+npx agent-orchestrator-kit figma-fetch --url "https://www.figma.com/design/FILE_KEY/Name?node-id=1-2" \
+  --out openspec/changes/<name>/assets/figma-nodes.json
+```
+
+`figma-fetch` uses the Figma REST API (`X-Figma-Token`) and writes JSON for design-brief capture. Live Figma is for design-intake only — apply uses `design-brief.md`.
+
+### Upgrade existing projects
+
+```bash
+npx agent-orchestrator-kit@latest update
+npx agent-orchestrator-kit figma-setup
+./scripts/sync-local-agent-skills.sh
+```
+
 ## Memory MCP — Shared State Between Sessions
 
 Each role starts a fresh session. Memory MCP persists orchestration state across sessions so you don't re-explain context every time.
@@ -698,6 +752,12 @@ openspec/                # Committed — spec-driven workflow
 ```
 
 ## Changelog
+
+### 0.1.11
+- Optional **Figma personal token** setup: `.agents/figma.local.env` (gitignored) + `figma-mcp-launcher.cjs` (no secret in `.mcp.json`)
+- CLI: `figma-setup`, `figma-status`, `figma-fetch` (REST nodes/file JSON)
+- Agent rule + docs: never paste Figma tokens into chat
+- Amp PATH hardening: prefer `npx` / `npm run` for OpenSpec and kit CLIs (`cli-via-npm` rule)
 
 ### 0.1.10
 - Custom subagents (`.agents/subagents/`) synced to `.cursor/agents/` + `.claude/agents/`, exposed to Amp via auto-generated `subagent-*` skill wrappers

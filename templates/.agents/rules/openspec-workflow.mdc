@@ -30,13 +30,16 @@ alwaysApply: true
 - `/opsx:archive` → skill `openspec-archive-change`
 - `/opsx:sync` → skill `openspec-sync-specs`
 
-## CLI (read-only)
+## CLI (via npx — never bare binaries)
+
+See also `.agents/rules/cli-via-npm.mdc`.
 
 ```bash
-openspec list
-openspec validate <name> --strict --type change
-openspec status --change "<name>" --json
-openspec instructions apply --change "<name>" --json
+npx openspec list
+npx openspec validate "<name>" --strict --type change
+npx openspec status --change "<name>" --json
+npx openspec instructions apply --change "<name>" --json
+npx agent-orchestrator-kit status
 ```
 
 Do NOT search for opsx in `src/` — nothing there.

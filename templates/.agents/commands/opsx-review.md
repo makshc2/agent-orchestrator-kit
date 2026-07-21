@@ -18,7 +18,7 @@ Review an OpenSpec change. Read artifacts, validate structure, output Approve or
 ### 1. Select the change
 
 If name provided — use it. Otherwise:
-- Run `openspec list --json` to list active changes.
+- Run `npx openspec list --json` to list active changes.
 - Auto-select if only one exists.
 - Ask the user with AskUserQuestion if ambiguous.
 
@@ -27,7 +27,7 @@ Announce: "Reviewing change: **<name>**"
 ### 2. Validate structure
 
 ```bash
-openspec validate <name> --strict --type change
+npx openspec validate <name> --strict --type change
 ```
 
 If ✗ — list each error and immediately output **Request Changes** with the validation errors. Stop here.
@@ -35,7 +35,7 @@ If ✗ — list each error and immediately output **Request Changes** with the v
 ### 3. Read all artifacts
 
 ```bash
-openspec status --change "<name>" --json
+npx openspec status --change "<name>" --json
 ```
 
 Read every file from `artifactPaths`:

@@ -11,7 +11,8 @@ Diagnosis steps:
 2. Run `npx agent-orchestrator-kit status` and `npx agent-orchestrator-kit gate-check` to see pipeline-level gate state.
 3. Check `.agents/orchestrator.yaml` → `kit_version` against the installed package version; flag drift.
 4. Check that `.mcp.json` / `.amp/settings.json` exist (copy from their `.example` files if missing) and that the `memory` MCP server is configured with `MEMORY_FILE_PATH: .cursor/memory.json`.
-5. Check `.cursor/skills/`, `.cursor/rules/`, `.cursor/agents/` (and `.claude/` equivalents) are present and not stale relative to `.agents/` — if stale, this is fixed by running `sync`, not by hand-editing.
+5. Optional Figma: run `npx agent-orchestrator-kit figma-status`. If not configured, tell the user to run `npx agent-orchestrator-kit figma-setup` and edit `.agents/figma.local.env` locally — **never ask them to paste the token into chat**. Confirm `.gitignore` contains `.agents/figma.local.env` and that `scripts/figma-mcp-launcher.cjs` exists.
+6. Check `.cursor/skills/`, `.cursor/rules/`, `.cursor/agents/` (and `.claude/` equivalents) are present and not stale relative to `.agents/` — if stale, this is fixed by running `sync`, not by hand-editing.
 
 Fix, in this priority order, applying only safe/reversible changes:
 

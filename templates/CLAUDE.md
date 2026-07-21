@@ -34,11 +34,12 @@ Use `/skill-name` or let Claude auto-load based on context.
 ## Key Rules for This Session
 
 - Check `.agents/orchestrator.yaml` for project-specific pipeline config.
-- One active change at a time — run `openspec list` to confirm.
+- One active change at a time — run `npx openspec list` / `npx agent-orchestrator-kit status` to confirm.
 - No code edits in explore, design, or review mode.
 - Design Intake writes only `design-brief.md` and `assets/` — never `src/`.
 - After completing apply: run build/lint before declaring done.
-- Use `openspec validate --all --strict` to verify change artifacts.
+- Use `npx openspec validate --all --strict` or `npx openspec validate <name> --strict --type change`.
+- Never bare `openspec` / `agent-orchestrator-kit` without `npx` (Amp PATH → exit 127). See `.agents/rules/cli-via-npm.mdc`.
 
 ## File Locations
 
