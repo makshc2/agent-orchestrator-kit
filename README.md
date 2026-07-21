@@ -624,6 +624,8 @@ npx agent-orchestrator-kit figma-setup
 npx agent-orchestrator-kit figma-status
 npx agent-orchestrator-kit figma-fetch --url "https://www.figma.com/design/FILE_KEY/Name?node-id=1-2" \
   --out openspec/changes/<name>/assets/figma-nodes.json
+# large frames: limit tree depth
+npx agent-orchestrator-kit figma-fetch --file FILE_KEY --nodes 1:2 --depth 2 --out figma-nodes.json
 ```
 
 `figma-fetch` uses the Figma REST API (`X-Figma-Token`) and writes JSON for design-brief capture. Live Figma is for design-intake only — apply uses `design-brief.md`.
@@ -752,6 +754,10 @@ openspec/                # Committed — spec-driven workflow
 ```
 
 ## Changelog
+
+### 0.1.12
+- `figma-fetch --depth <n>` for large frames
+- Write large Figma JSON as raw API text (avoids `Invalid string length` on huge trees)
 
 ### 0.1.11
 - Optional **Figma personal token** setup: `.agents/figma.local.env` (gitignored) + `figma-mcp-launcher.cjs` (no secret in `.mcp.json`)

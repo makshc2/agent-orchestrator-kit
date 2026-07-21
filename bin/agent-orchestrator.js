@@ -260,13 +260,17 @@ async function figmaApiGet(token, path) {
   try {
     data = JSON.parse(text);
   } catch {
-    data = { err: text };
+    data = null;
   }
   if (!response.ok) {
-    const message = data?.err || data?.message || response.statusText || `HTTP ${response.status}`;
+    const message =
+      (data && (data.err || data.message)) || response.statusText || `HTTP ${response.status}`;
     throw new Error(String(message));
   }
-  return data;
+  if (!data) {
+    throw new Error('Figma API returned non-JSON response');
+  }
+  return { data, text };
 }
 
 function resolveTemplate(templateName, profile) {
@@ -1063,6 +1067,7 @@ program
   .option('--url <url>', 'Figma design URL (file key + optional node-id)')
   .option('--file <key>', 'Figma file key')
   .option('--nodes <ids>', 'Comma-separated node ids (1:2 or 1-2)')
+  .option('--depth <n>', 'Limit node tree depth (use for large frames; omit = full tree)')
   .option('--out <path>', 'Output JSON path', 'figma-nodes.json')
   .action(async (opts) => {
     const projectDir = process.cwd();
@@ -1096,16 +1101,36 @@ program
       .filter(Boolean)
       .map((id) => id.replace(/-/g, ':'));
 
+    const query = [];
+    if (nodeIds.length) {
+      query.push(`ids=${encodeURIComponent(nodeIds.join(','))}`);
+    }
+    if (opts.depth != null && String(opts.depth).trim() !== '') {
+      const depth = Number(opts.depth);
+      if (!Number.isInteger(depth) || depth < 1) {
+        log.err('--depth must be a positive integer');
+        process.exitCode = 1;
+        return;
+      }
+      query.push(`depth=${depth}`);
+    }
+
     try {
-      const path = nodeIds.length
-        ? `/files/${encodeURIComponent(fileKey)}/nodes?ids=${encodeURIComponent(nodeIds.join(','))}`
-        : `/files/${encodeURIComponent(fileKey)}`;
-      log.info(nodeIds.length ? `Fetching ${nodeIds.length} node(s)…` : 'Fetching full file…');
-      const data = await figmaApiGet(token, path);
+      const apiPath = nodeIds.length
+        ? `/files/${encodeURIComponent(fileKey)}/nodes${query.length ? `?${query.join('&')}` : ''}`
+        : `/files/${encodeURIComponent(fileKey)}${query.length ? `?${query.join('&')}` : ''}`;
+      log.info(
+        nodeIds.length
+          ? `Fetching ${nodeIds.length} node(s)${opts.depth ? ` (depth ${opts.depth})` : ''}…`
+          : `Fetching full file${opts.depth ? ` (depth ${opts.depth})` : ''}…`
+      );
+      const { data, text } = await figmaApiGet(token, apiPath);
       const outPath = join(projectDir, opts.out);
       mkdirSync(dirname(outPath), { recursive: true });
-      writeFileSync(outPath, `${JSON.stringify(data, null, 2)}\n`);
-      log.ok(`Wrote ${opts.out}`);
+      // Write API payload as-is — pretty-print of huge trees can throw "Invalid string length"
+      writeFileSync(outPath, text.endsWith('\n') ? text : `${text}\n`);
+      const nodeCount = data.nodes ? Object.keys(data.nodes).length : 0;
+      log.ok(`Wrote ${opts.out}${nodeCount ? ` (${nodeCount} node key(s))` : ''}`);
     } catch (error) {
       log.err(`Figma API error: ${error.message}`);
       process.exitCode = 1;

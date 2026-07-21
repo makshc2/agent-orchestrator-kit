@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-07-21
+
+### Added
+- **`figma-fetch --depth <n>`** — limit Figma node tree depth for large frames (omit = full tree)
+
+### Fixed
+- **`figma-fetch` large payloads** — write API response text as-is instead of pretty-printing via `JSON.stringify` (avoids `Invalid string length` on huge trees)
+- Clearer error when Figma API returns a non-JSON body
+
 ## [0.1.11] - 2026-07-21
 
 ### Added
