@@ -643,6 +643,8 @@ function generateAmpSubagentSkills(projectDir) {
         '',
         `<!-- AUTO-GENERATED from .agents/subagents/${file} — edit the source file, then run: npx agent-orchestrator-kit sync -->`,
         '',
+        'Parent MUST spawn this skill as an isolated subagent with fresh context. Do not execute it in the main thread. Return only the structured subagent report.',
+        '',
         parsed[2].trim(),
         '',
       ].join('\n');

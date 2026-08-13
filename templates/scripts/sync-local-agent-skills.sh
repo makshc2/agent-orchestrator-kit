@@ -50,6 +50,8 @@ if [ -d .agents/subagents ]; then
       echo ""
       echo "<!-- AUTO-GENERATED from ${sub} — edit the source file, then re-run this script -->"
       echo ""
+      echo "Parent MUST spawn this skill as an isolated subagent with fresh context. Do not execute it in the main thread. Return only the structured subagent report."
+      echo ""
       awk '/^---$/{c++; next} c>=2{print}' "$sub"
     } > "$DIR/SKILL.md"
     ok "$DIR/SKILL.md"

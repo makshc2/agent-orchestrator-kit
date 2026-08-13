@@ -13,6 +13,8 @@ Archive a completed change in the experimental workflow.
 
 **Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
+**Conductor delegation is mandatory:** after resolving the change and confirming archive gates, spawn `spec-archiver` with a self-contained prompt. The parent MUST NOT compare/merge main specs or move the change itself; it only verifies the structured report, archive path, and validation result.
+
 **Steps**
 
 1. **If no change name provided, prompt for selection**
@@ -55,20 +57,22 @@ Archive a completed change in the experimental workflow.
 
 4. **Assess delta spec sync state**
 
-   Use `artifactPaths.specs.existingOutputPaths` from status JSON to check for delta specs. If none exist, proceed without sync prompt.
+   Use `artifactPaths.specs.existingOutputPaths` from status JSON to identify delta specs. Pass these paths and the user's sync preference to `spec-archiver`; the parent MUST NOT compare or merge specs itself.
 
    **If delta specs exist:**
-   - Compare each delta spec with its corresponding main spec at `openspec/specs/<capability>/spec.md`
-   - Determine what changes would be applied (adds, modifications, removals, renames)
-   - Show a combined summary before prompting
+   - Ask whether main specs should be synced before archive
+   - Include the delta and main spec paths in the `spec-archiver` prompt
+   - Have `spec-archiver` return the combined sync summary in its report
 
    **Prompt options:**
    - If changes needed: "Sync now (recommended)", "Archive without syncing"
    - If already synced: "Archive now", "Sync anyway", "Cancel"
 
-   If user chooses sync, use Task tool (subagent_type: "general-purpose", prompt: "Use Skill tool to invoke openspec-sync-specs for change '<name>'. Delta spec analysis: <include the analyzed delta spec summary>"). Proceed to archive regardless of choice.
+   The `spec-archiver` performs any requested comparison and sync as part of its isolated work; do not spawn a generic sync agent.
 
-5. **Perform the archive**
+5. **Spawn the specialist and perform the archive**
+
+   Spawn `spec-archiver`, require `## Subagent report: spec-archiver`, and delegate the sync/archive operations below. Do not run them in the parent session.
 
    Create an `archive` directory under `planningHome.changesDir` if it doesn't exist:
    ```bash
@@ -85,7 +89,9 @@ Archive a completed change in the experimental workflow.
    mv "<changeRoot>" "<planningHome.changesDir>/archive/YYYY-MM-DD-<name>"
    ```
 
-6. **Display summary**
+6. **Verify the report and display summary**
+
+   The conductor verifies `Status: done`, the reported archive path, and modified main specs before reporting completion.
 
    Show archive completion summary including:
    - Change name

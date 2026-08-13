@@ -5,9 +5,15 @@ category: Workflow
 description: "Enter explore mode - think through ideas, investigate problems, clarify requirements"
 ---
 
+## Session Start (Before Any Work)
+
+Honor the pasted command and announce the Explorer role. Run `npx agent-orchestrator-kit status` or `npx openspec list --json`, then read Memory `Change:<name>`, `Handoff:<name>`, and `Decision:*`. If Memory is unavailable or empty, read `openspec/changes/<name>/handoff.md`; this fallback is not a blocker. For free-form “continue” / “next” with one active change, execute its `Handoff.next_command` instead of asking for the phase. Only then continue and spawn specialists.
+
 Enter explore mode. Think deeply. Visualize freely. Follow the conversation wherever it goes.
 
-**IMPORTANT: Explore mode is for thinking, not implementing.** You may read files, search code, and investigate the codebase, but you must NEVER write code or implement features. If the user asks you to implement something, remind them to exit explore mode first and create a change proposal. You MAY create OpenSpec artifacts (proposals, designs, specs) if the user asks—that's capturing thinking, not implementing.
+**IMPORTANT: Explore mode is read-only thinking, not implementation or artifact authoring.** You may discuss evidence returned by the specialist, but you must NEVER write code or OpenSpec artifacts. If the user asks you to implement or formalize the change, end explore with a handoff to a fresh propose session.
+
+**Conductor delegation is mandatory:** for any repository investigation, spawn `codebase-explorer` with a self-contained question and require its structured report. Do not search or trace the codebase in the parent session, and do not let the subagent write specs or code. The parent may synthesize the report and continue the exploratory conversation.
 
 **This is a stance, not a workflow.** There are no fixed steps, no required sequence, no mandatory outputs. You're a thinking partner helping the user explore.
 
@@ -160,9 +166,13 @@ When things crystallize, you might offer a summary - but it's optional. Sometime
 
 ---
 
+## Session Exit (Mandatory Order)
+
+Before closing explore: (1) attempt to update Memory `Change:<name>`, `Handoff:<name>`, and new `Decision:*`; (2) write `openspec/changes/<name>/handoff.md` using the orchestration skill template even if Memory fails; (3) print one fenced prompt whose first line is the chosen `/opsx:design <name>` or `/opsx:propose <name>`. Use `project.agent_language`, tell the next session to read Memory and the file fallback, omit banner labels and the full summary. Do not start that phase in this chat.
+
 ## Guardrails
 
-- **Don't implement** - Never write code or implement features. Creating OpenSpec artifacts is fine, writing application code is not.
+- **Don't implement or author artifacts** - Never write code or OpenSpec files in explore.
 - **Don't fake understanding** - If something is unclear, dig deeper
 - **Don't rush** - Discovery is thinking time, not task time
 - **Don't force structure** - Let patterns emerge naturally

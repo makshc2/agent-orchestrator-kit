@@ -46,6 +46,17 @@ test('init installs orchestration and openspec skills', () => {
     assert.match(orch, /design_intake:/);
     assert.match(orch, /require_design_brief:\s*false/);
     assert.match(orch, /command:\s*\/opsx:design/);
+    assert.match(orch, /restore_on_start:\s*true/);
+    assert.match(orch, /persist_on_exit:\s*true/);
+    assert.match(orch, /emit_next_session_prompt:\s*true/);
+
+    const orchestrationRule = readFileSync(
+      join(dir, '.agents/rules/agent-orchestration.mdc'),
+      'utf-8',
+    );
+    for (const name of ['codebase-explorer', 'design-intake', 'spec-architect', 'spec-reviewer', 'spec-archiver']) {
+      assert.match(orchestrationRule, new RegExp(`\\b${name}\\b`), `missing route: ${name}`);
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -858,7 +869,7 @@ test('sync --delete does not remove unrelated generated files', () => {
   }
 });
 
-test('init installs default subagents', () => {
+test('init installs all routed subagents', () => {
   const dir = mkdtempSync(join(tmpdir(), 'aok-subagents-init-'));
   try {
     runInit(dir, '--profile generic --name SubagentsInit --lang en');
@@ -870,6 +881,11 @@ test('init installs default subagents', () => {
       '.agents/subagents/test-writer.md',
       '.agents/subagents/setup-doctor.md',
       '.agents/subagents/design-implementer.md',
+      '.agents/subagents/codebase-explorer.md',
+      '.agents/subagents/design-intake.md',
+      '.agents/subagents/spec-architect.md',
+      '.agents/subagents/spec-reviewer.md',
+      '.agents/subagents/spec-archiver.md',
     ];
     for (const rel of expected) {
       assert.ok(existsSync(join(dir, rel)), `missing: ${rel}`);
@@ -888,8 +904,17 @@ test('sync copies subagents to .cursor/agents and .claude/agents', () => {
     runInit(dir, '--profile generic --name SubagentsSync --lang en');
     runCli(dir, 'sync --target all');
 
-    assert.ok(existsSync(join(dir, '.cursor/agents/code-writer.md')));
-    assert.ok(existsSync(join(dir, '.claude/agents/code-writer.md')));
+    const stageSubagents = [
+      'codebase-explorer',
+      'design-intake',
+      'spec-architect',
+      'spec-reviewer',
+      'spec-archiver',
+    ];
+    for (const name of stageSubagents) {
+      assert.ok(existsSync(join(dir, `.cursor/agents/${name}.md`)), `missing Cursor agent: ${name}`);
+      assert.ok(existsSync(join(dir, `.claude/agents/${name}.md`)), `missing Claude agent: ${name}`);
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -938,6 +963,15 @@ test('init generates Amp skill wrappers for every subagent', () => {
     assert.match(content, /^---\nname: subagent-design-implementer\ndescription: .+/);
     assert.match(content, /AUTO-GENERATED from \.agents\/subagents\/design-implementer\.md/);
     assert.match(content, /pixel|fidelity|design/i);
+
+    const architectWrapper = readFileSync(
+      join(dir, '.agents/skills/subagent-spec-architect/SKILL.md'),
+      'utf-8',
+    );
+    assert.match(
+      architectWrapper,
+      /Parent MUST spawn this skill as an isolated subagent with fresh context\. Do not execute it in the main thread\. Return only the structured subagent report\./,
+    );
 
     for (const name of ['openspec-guide', 'code-writer', 'code-reviewer', 'test-writer', 'setup-doctor']) {
       assert.ok(

@@ -5,6 +5,10 @@ category: Workflow
 description: Propose a new change - create it and generate all artifacts in one step
 ---
 
+## Session Start (Before Any Work)
+
+Honor the pasted command and announce the Architect role. Run `npx agent-orchestrator-kit status` or `npx openspec list --json`, then read Memory `Change:<name>`, `Handoff:<name>`, and `Decision:*`. If Memory is unavailable or empty, read `openspec/changes/<name>/handoff.md`; this fallback is not a blocker. For free-form “continue” / “next” with one active change, execute its `Handoff.next_command` instead of asking for the phase. Only then continue and spawn specialists.
+
 Propose a new change - create the change and generate all artifacts in one step.
 
 I'll create a change with artifacts:
@@ -18,6 +22,8 @@ When ready to implement, run /opsx:apply
 
 **Input**: The argument after `/opsx:propose` is the change name (kebab-case), OR a description of what the user wants to build.
 
+**Conductor delegation is mandatory:** spawn `spec-architect` with the resolved name, decision brief, design brief if present, and artifact instructions. The parent MUST NOT create or edit proposal/design/specs/tasks; after the structured report it may only verify files, run status, and run strict validation.
+
 **Steps**
 
 1. **If no input provided, ask what they want to build**
@@ -29,13 +35,17 @@ When ready to implement, run /opsx:apply
 
    **IMPORTANT**: Do NOT proceed without understanding what the user wants to build.
 
-2. **Create the change directory**
+2. **Spawn the specialist**
+
+   Spawn `spec-architect` with a self-contained prompt and require `## Subagent report: spec-architect`. Delegate steps 3–5 to it; do not perform artifact creation in the parent session.
+
+3. **Create the change directory**
    ```bash
    npx openspec new change "<name>"
    ```
    This creates a scaffolded change in the planning home resolved by the CLI with `.openspec.yaml`.
 
-3. **Get the artifact build order**
+4. **Get the artifact build order**
    ```bash
    npx openspec status --change "<name>" --json
    ```
@@ -44,7 +54,7 @@ When ready to implement, run /opsx:apply
    - `artifacts`: list of all artifacts with their status and dependencies
    - `planningHome`, `changeRoot`, `artifactPaths`, and `actionContext`: path and scope context. Use these instead of assuming repo-local paths.
 
-4. **Create artifacts in sequence until apply-ready**
+5. **Create artifacts in sequence until apply-ready**
 
    Use the **TodoWrite tool** to track progress through the artifacts.
 
@@ -76,7 +86,9 @@ When ready to implement, run /opsx:apply
       - Use **AskUserQuestion tool** to clarify
       - Then continue with creation
 
-5. **Show final status**
+6. **Verify the report and show final status**
+
+   The conductor verifies `Status: done` and each reported artifact path, then runs:
    ```bash
    npx openspec status --change "<name>"
    ```
@@ -86,8 +98,12 @@ When ready to implement, run /opsx:apply
 After completing all artifacts, summarize:
 - Change name and location
 - List of artifacts created with brief descriptions
-- What's ready: "All artifacts created! Ready for implementation."
-- Prompt: "Run `/opsx:apply` to start implementing."
+- What's ready: "All artifacts created and validated! Ready for spec review."
+- Prompt: "Run `/opsx:review <name>` in a fresh session."
+
+## Session Exit (Mandatory Order)
+
+After strict validation passes: (1) attempt to update Memory `Change:<name>`, `Handoff:<name>`, and new `Decision:*`; (2) write `openspec/changes/<name>/handoff.md` using the orchestration skill template even if Memory fails; (3) print one fenced prompt beginning `/opsx:review <name>`. Use `project.agent_language`, tell the next session to read Memory and the file fallback, omit banner labels and the full summary. Do not start review in this chat.
 
 **Artifact Creation Guidelines**
 

@@ -5,11 +5,17 @@ category: Workflow
 description: Read-only spec review of an OpenSpec change — approve or request changes before apply
 ---
 
+## Session Start (Before Any Work)
+
+Honor the pasted command and announce the Spec Reviewer role. Run `npx agent-orchestrator-kit status` or `npx openspec list --json`, then read Memory `Change:<name>`, `Handoff:<name>`, and `Decision:*`. If Memory is unavailable or empty, read `openspec/changes/<name>/handoff.md`; this fallback is not a blocker. For free-form “continue” / “next” with one active change, execute its `Handoff.next_command` instead of asking for the phase. Only then continue and spawn specialists.
+
 Review an OpenSpec change. Read artifacts, validate structure, output Approve or Request Changes.
 
 **IMPORTANT: This is a read-only mode. You must NEVER edit any file in `src/` or any source code. You may not mark tasks `[x]`. Your only output is a structured review verdict.**
 
 **Input**: Optionally specify a change name (e.g., `/opsx:review add-auth`). If omitted, auto-select if one active change exists, otherwise list and ask.
+
+**Conductor delegation is mandatory:** after selecting the change, spawn `spec-reviewer` with the complete change paths and project constraints. The parent MUST NOT review artifacts or write `review.md`; it only verifies the structured report and that `review.md` contains the reported verdict. Never substitute `code-reviewer`.
 
 ---
 
@@ -24,7 +30,11 @@ If name provided — use it. Otherwise:
 
 Announce: "Reviewing change: **<name>**"
 
-### 2. Validate structure
+### 2. Spawn the specialist
+
+Spawn `spec-reviewer` and delegate steps 3–6 below. Require `## Subagent report: spec-reviewer`. Do not perform the review in the parent session.
+
+### 3. Validate structure
 
 ```bash
 npx openspec validate <name> --strict --type change
@@ -32,7 +42,7 @@ npx openspec validate <name> --strict --type change
 
 If ✗ — list each error and immediately output **Request Changes** with the validation errors. Stop here.
 
-### 3. Read all artifacts
+### 4. Read all artifacts
 
 ```bash
 npx openspec status --change "<name>" --json
@@ -46,7 +56,7 @@ Read every file from `artifactPaths`:
 
 Also read related `openspec/specs/` domain files to check consistency.
 
-### 4. Review checklist
+### 5. Review checklist
 
 Evaluate each item. Mark ✓ or ✗:
 
@@ -81,7 +91,7 @@ Evaluate each item. Mark ✓ or ✗:
 - [ ] Tasks reference concrete component/store paths under `src/`
 - [ ] No scope creep into unrelated UI refactors
 
-### 5. Output verdict
+### 6. Write and report the verdict
 
 #### If all ✓ (or only minor notes):
 
@@ -125,6 +135,8 @@ For **REQUEST CHANGES**, write the same file with `Verdict: REQUEST CHANGES` and
 
 This is the **only file** you may write during review (not `src/`, not `tasks.md` checkboxes).
 
+The conductor verifies the subagent's `Status: done`, checks that `review.md` exists with the reported verdict, and relays the result without editing it.
+
 #### If any ✗:
 
 ```
@@ -147,6 +159,10 @@ Fix the above, then re-run `/opsx:review <name>`.
 ```
 
 ---
+
+## Session Exit (Mandatory Order)
+
+After writing the verdict: (1) attempt to update Memory `Change:<name>`, `Handoff:<name>`, and new `Decision:*`; (2) write `openspec/changes/<name>/handoff.md` using the orchestration skill template even if Memory fails; (3) print one fenced prompt beginning with the next `/opsx:*` command (`/opsx:apply <name>` only after APPROVE). Use `project.agent_language`, tell the next session to read Memory and the file fallback, omit banner labels and the full summary. Do not start the next phase in this chat.
 
 ## Guardrails
 

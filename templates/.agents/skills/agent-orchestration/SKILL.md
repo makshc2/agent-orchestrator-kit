@@ -42,6 +42,26 @@ Read `.agents/orchestrator.yaml` for project-specific config (language, flags, M
 | Quick (MVP) | `/opsx:quick <name>` | specs+code | strong | `openspec/changes/` + `src/` |
 | Verifier | CI / local scripts | — | — | exit codes |
 
+## Conductor Routing (Mandatory and Exclusive)
+
+The parent `/opsx:*` session is the conductor. It MUST spawn the selected specialist with a self-contained prompt, MUST verify the structured report, and MUST NOT do the specialist's work itself. Each signal has exactly one primary subagent.
+
+| Phase / signal | MUST spawn | Specialist scope |
+|----------------|------------|------------------|
+| Status, gate failure, next command | `openspec-guide` | Read-only pipeline diagnosis |
+| Broken kit, MCP, or generated-file sync | `setup-doctor` | Kit setup repair only |
+| `/opsx:explore` repository investigation | `codebase-explorer` | Read-only repository research |
+| `/opsx:design` | `design-intake` | `design-brief.md` and `assets/` only |
+| `/opsx:propose` | `spec-architect` | Change artifacts only |
+| `/opsx:review` | `spec-reviewer` | Pre-apply verdict and `review.md` only |
+| Apply task with design brief/Figma/image | `design-implementer` | UI implementation |
+| Apply ordinary implementation task | `code-writer` | One production-code task |
+| Apply after implementation | `test-writer` | Automated tests |
+| Apply before PR/MR | `code-reviewer` | Post-implementation spec review |
+| `/opsx:archive` | `spec-archiver` | Delta merge and archive move |
+
+`spec-reviewer` is not `code-reviewer`. During apply, specialists MUST NOT edit `tasks.md`; only the conductor may mark a checkbox after a `Status: done` report and verification that the reported files exist.
+
 ## Handoff Protocol
 
 ### explore → design (optional)
@@ -110,9 +130,11 @@ After PR merged + CI green:
 ## Session Rules
 
 **Start of each session:**
-1. Announce role: "Starting Spec Reviewer session for change: <name>"
-2. Run `npx agent-orchestrator-kit status` (or `npx openspec list`) — confirm active change limit (`max_active_changes` in orchestrator.yaml) and see task/review/brief progress for every active change at a glance
-3. Read `orchestrator.yaml` for project config and review gate
+1. Honor the pasted `/opsx:<phase> <name>` command and announce that role.
+2. Run `npx agent-orchestrator-kit status` (or `npx openspec list --json`) and read `orchestrator.yaml`; resolve the active change and gates.
+3. Read Memory entities `Change:<name>`, `Handoff:<name>`, and `Decision:*`.
+4. If Memory MCP is unavailable or those entities are empty, read `openspec/changes/<name>/handoff.md`; Memory failure alone is not a blocker.
+5. Only after restoration, spawn the routed specialist. If the user said “continue” / “next” and exactly one active change has `Handoff.next_command`, execute it instead of asking for a phase.
 
 **During session:**
 - Stay in role — do not drift into next phase
@@ -120,9 +142,45 @@ After PR merged + CI green:
 - Never edit files outside your role's allowed output
 
 **End of each session:**
-- Show progress summary
-- State explicit next step and next role
-- If apply: confirm build/lint status
+1. Attempt to update Memory: `Change:<name>` (`status`, `tasks n/m`, `last_role`, `review`), `Handoff:<name>` (`next_role`, `next_command`, `session_count`, `summary`, `blocked`), and new `Decision:<topic>` entities (`chosen`, `reason`).
+2. Even if Memory fails, write `openspec/changes/<name>/handoff.md` using the template below.
+3. Print exactly one fenced next-session prompt after the write attempt. The first line is `/opsx:<next> <name>`; the body uses `project.agent_language`, tells the next session to read Memory and the file fallback, has no banner label, and does not repeat the summary.
+4. Do not start the next phase in this chat. If apply, include build/lint status in the persisted summary.
+
+`handoff.md` template:
+
+````markdown
+# Session Handoff
+
+## Closed role
+<role and completion status>
+
+## Done
+<concise persisted summary>
+
+## Decisions
+- <decision or none>
+
+## Blocked
+<blocker or none>
+
+## Next command
+`/opsx:<next> <name>`
+
+## Attach
+- `openspec/changes/<name>/<artifact>`
+
+## Subagents to spawn
+- `<subagent>` — <signal>
+
+## Prompt
+
+```text
+/opsx:<next> <name>
+
+<Localized start instruction in project.agent_language. Read Memory Change:<name>, Handoff:<name>, Decision:* before work. If Memory is unavailable, read openspec/changes/<name>/handoff.md. Act as conductor and do not mix phases.>
+```
+````
 
 ## Model Selection Guide
 
@@ -136,18 +194,17 @@ After PR merged + CI green:
 | apply simple | 1–2 file change | medium or fast |
 | fix lint | Mechanical | fast |
 
-## Memory MCP Entities
+## Mandatory Memory and Handoff Protocol
 
-Store these between sessions (key → value):
+Before specialist work, the conductor MUST restore context in order: honor the pasted `/opsx:*` command; read Memory entities `Change:<name>`, `Handoff:<name>`, and `Decision:*`; if Memory is unavailable or empty, read `openspec/changes/<name>/handoff.md`. Memory failure is not a blocker when the file exists. With one active change, free-form “continue” uses `Handoff.next_command` instead of asking for the phase.
 
-| Key | Example value |
-|-----|---------------|
-| `Change:<name>` | `status: spec-approved, tasks: 3/7` |
-| `Decision:<topic>` | `chosen: xlsx over csv, reason: ...` |
-| `Convention:<area>` | `api errors: use ApiError class` |
-| `Handoff:<name>` | `next_role: implementer, session_count: 2` |
+Before declaring a session closed, the conductor MUST, in order: (1) update Memory, (2) mirror state to `openspec/changes/<name>/handoff.md`, (3) print one fenced next-session prompt whose first line is `/opsx:<next> <name>`. The prompt has no `NEXT_SESSION_PROMPT` label, tells the next session to read Memory, uses `project.agent_language`, and does not duplicate the full summary. Never start the next phase in the current chat.
 
-At start of new session: read relevant entities to restore context without re-explanation.
+| Entity | Required fields |
+|--------|-----------------|
+| `Change:<name>` | `status`, `tasks n/m`, `last_role`, `review` |
+| `Handoff:<name>` | `next_role`, `next_command`, `session_count`, `summary`, `blocked` |
+| `Decision:<topic>` | `chosen`, `reason` |
 
 ## Orchestration Checklist (per change)
 

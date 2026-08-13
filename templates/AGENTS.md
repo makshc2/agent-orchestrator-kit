@@ -16,16 +16,36 @@ explore → [design] → propose → review → apply → verify → archive
 Each phase runs in a **separate agent session** with a dedicated role, model hint, and permissions.
 Never mix phases in one chat — this is the single most important rule.
 
+The parent `/opsx:*` session is a **conductor**: it restores handoff state, spawns the required specialist, verifies the structured report, and never performs the specialist's work itself.
+
 ## Roles
 
 | Role | Command | Mode | Model hint |
 |------|---------|------|------------|
 | Explorer | `/opsx:explore` | read-only | fast |
 | Design Intake | `/opsx:design <name>` | writes `design-brief.md` + `assets/` only | strong |
-| Architect | `/opsx:propose <name>` | writes `openspec/changes/` only | strong |
-| Spec Reviewer | `/opsx:review <name>` | read-only | medium/strong |
-| Implementer | `/opsx:apply <name>` | writes `src/` | strong |
+| Architect | `/opsx:propose <name>` | conductor; `spec-architect` writes change artifacts | strong |
+| Spec Reviewer | `/opsx:review <name>` | conductor; `spec-reviewer` writes only `review.md` | medium/strong |
+| Implementer | `/opsx:apply <name>` | conductor; apply specialists write code/tests | strong |
 | Verifier | CI (automatic) | scripts only | — |
+
+## Conductor Routing
+
+| Phase / signal | Subagent |
+|----------------|----------|
+| Status, gate failure, next command | `openspec-guide` |
+| Broken kit, MCP, or sync | `setup-doctor` |
+| `/opsx:explore` repository research | `codebase-explorer` |
+| `/opsx:design` | `design-intake` |
+| `/opsx:propose` | `spec-architect` |
+| `/opsx:review` | `spec-reviewer` |
+| Apply with design evidence | `design-implementer` |
+| Apply ordinary task | `code-writer` |
+| Apply tests | `test-writer` |
+| Apply pre-PR review | `code-reviewer` |
+| `/opsx:archive` | `spec-archiver` |
+
+This routing is mandatory and exclusive. `spec-reviewer` is not `code-reviewer`; only the conductor marks `tasks.md` after a verified `Status: done` report.
 
 Verifier runs on **GitHub Actions** (default) or **GitLab** via `prebuild` → `verify:openspec` when using `init --ci gitlab`. GitLab projects do not use `.github/workflows/`.
 
@@ -40,6 +60,7 @@ Both CI fragments also run `npx agent-orchestrator-kit gate-check` — a determi
 - **No code edits** during explore, design-intake, or spec-review sessions.
 - **Archive after every merge** (`/opsx:archive`).
 - **Always run local build/lint** before opening a PR.
+- **Conductor MUST spawn** the routed specialist and MUST NOT do specialist work in the parent session.
 
 ## Handoff Gates
 
@@ -66,6 +87,14 @@ Both CI fragments also run `npx agent-orchestrator-kit gate-check` — a determi
 ## Configuration
 
 See `.agents/orchestrator.yaml` for role config, pipeline flags, and MCP baseline.
+
+## Session Handoff
+
+At session start: honor the pasted `/opsx:*` command, read Memory `Change:<name>`, `Handoff:<name>`, `Decision:*`, then fall back to `openspec/changes/<name>/handoff.md` when Memory is unavailable or empty.
+
+At exit, in order: update Memory → write `handoff.md` → print one fenced next-session prompt beginning with `/opsx:*`. The prompt body uses `project.agent_language`, asks the next session to read Memory, has no service banner, and does not repeat the full summary. Never start the next phase in the current chat.
+
+OpenSpec artifacts remain the source of truth for requirements and tasks. Memory and `handoff.md` are only a durable index of the current phase, decisions, blockers, and next command.
 
 ### Optional: Figma personal token
 

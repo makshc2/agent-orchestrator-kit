@@ -5,9 +5,15 @@ category: Workflow
 description: Implement tasks from an OpenSpec change (Experimental)
 ---
 
+## Session Start (Before Any Work)
+
+Honor the pasted command and announce the Implementer role. Run `npx agent-orchestrator-kit status` or `npx openspec list --json`, then read Memory `Change:<name>`, `Handoff:<name>`, and `Decision:*`. If Memory is unavailable or empty, read `openspec/changes/<name>/handoff.md`; this fallback is not a blocker. For free-form “continue” / “next” with one active change, execute its `Handoff.next_command` instead of asking for the phase. Only then continue and spawn specialists.
+
 Implement tasks from an OpenSpec change.
 
 **Input**: Optionally specify a change name (e.g., `/opsx:apply add-auth`). If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
+
+**Conductor delegation is mandatory:** the parent MUST NOT implement code or tests. For each task spawn `design-implementer` when a design brief/Figma/image signal exists, otherwise `code-writer`; after implementation spawn `test-writer` when tests are required, and before PR/MR spawn `code-reviewer`. Require each structured report. Only the conductor may edit `tasks.md` checkboxes.
 
 **Steps**
 
@@ -80,9 +86,10 @@ Implement tasks from an OpenSpec change.
 
    For each pending task:
    - Show which task is being worked on
-   - Make the code changes required
-   - Keep changes minimal and focused
-   - Mark task complete in the tasks file: `- [ ]` → `- [x]`
+   - Spawn the routed implementation subagent with one self-contained task; do not make code changes in the parent
+   - Verify `Status: done` and that every reported file exists
+   - Spawn `test-writer` for required test work and verify its report
+   - Only then, as conductor, mark the task complete in the tasks file: `- [ ]` → `- [x]`
    - Continue to next task
 
    **Pause if:**
@@ -150,13 +157,17 @@ All tasks complete! You can archive this change with `/opsx:archive`.
 What would you like to do?
 ```
 
+## Session Exit (Mandatory Order)
+
+When apply completes or pauses: (1) attempt to update Memory `Change:<name>`, `Handoff:<name>`, and new `Decision:*`, including task and build/lint status; (2) write `openspec/changes/<name>/handoff.md` using the orchestration skill template even if Memory fails; (3) print one fenced prompt beginning with the next `/opsx:*` role command. Use `project.agent_language`, tell the next session to read Memory and the file fallback, omit banner labels and the full summary. Never start archive in this apply chat.
+
 **Guardrails**
 - Keep going through tasks until done or blocked
 - Always read context files before starting (from the apply instructions output)
 - If task is ambiguous, pause and ask before implementing
 - If implementation reveals issues, pause and suggest artifact updates
 - Keep code changes minimal and scoped to each task
-- Update task checkbox immediately after completing each task
+- Never let a specialist update `tasks.md`; the conductor updates a checkbox only after a verified `done` report
 - Pause on errors, blockers, or unclear requirements - don't guess
 - Use contextFiles from CLI output, don't assume specific file names
 

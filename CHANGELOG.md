@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-08-13
+
+### Added
+- **Pipeline subagent conductor** — every `/opsx:*` parent session now delegates through an exclusive phase/signal routing table, with five new stage specialists for explore, design, propose, spec review, and archive (`codebase-explorer`, `design-intake`, `spec-architect`, `spec-reviewer`, `spec-archiver`)
+- **Durable session handoff** — sessions restore and persist `Change:*`, `Handoff:*`, and `Decision:*` Memory entities, mirror state in `openspec/changes/<name>/handoff.md`, and emit one next-session prompt in `project.agent_language` (no service banner, no duplicated summary)
+
+### Changed
+- Amp `subagent-*` wrappers now require isolated fresh-context execution and return only a structured specialist report
+- OpenSpec commands, orchestration rules, skills, profiles, and documentation now enforce conductor-only task marking and phase separation
+
 ## [0.1.12] - 2026-07-21
 
 ### Added

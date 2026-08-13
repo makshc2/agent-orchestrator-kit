@@ -5,6 +5,10 @@ category: Workflow
 description: Fast path for MVP/demo — propose artifacts and apply in one session (skips review gate)
 ---
 
+## Session Start (Before Any Work)
+
+Honor the pasted command and announce the Quick conductor role. Run `npx agent-orchestrator-kit status` or `npx openspec list --json`, then read Memory `Change:<name>`, `Handoff:<name>`, and `Decision:*`. If Memory is unavailable or empty, read `openspec/changes/<name>/handoff.md`; this fallback is not a blocker. For free-form “continue” / “next” with one active change, execute its `Handoff.next_command` instead of asking for the phase. Only then continue and spawn specialists.
+
 Quick mode for **small changes, demos, and hypothesis testing**. Combines propose + apply in one session.
 
 **Use when:**
@@ -20,6 +24,8 @@ Quick mode for **small changes, demos, and hypothesis testing**. Combines propos
 
 **Input**: Change name (kebab-case) or description. Example: `/opsx:quick add-export-button`
 
+**Conductor delegation is mandatory inside this one session:** spawn `spec-architect` for minimal artifacts, then `design-implementer` or `code-writer` per implementation task, `test-writer` for tests, and `code-reviewer` before merge. The parent MUST NOT write specialist artifacts/code/tests itself. Specialists never edit `tasks.md`; the conductor verifies each `Status: done` report and marks checkboxes. Do not emit a next-session prompt between propose and apply.
+
 **Steps**
 
 1. **Check orchestrator config**
@@ -29,6 +35,8 @@ Quick mode for **small changes, demos, and hypothesis testing**. Combines propos
    - If `false` or `profile: mvp` → proceed
 
 2. **Create change (minimal artifacts)**
+
+   Spawn `spec-architect` with the quick-mode scope and require its structured report. Do not create the artifacts in the parent session.
 
    ```bash
    npx openspec new change "<name>"
@@ -51,9 +59,12 @@ Quick mode for **small changes, demos, and hypothesis testing**. Combines propos
 
    Follow `/opsx:apply` steps for the same change:
    - Read tasks.md
-   - Implement 1–3 tasks per pass
-   - Mark `[x]`
+   - Spawn `design-implementer` for design-led work, otherwise `code-writer`, one task per prompt
+   - Spawn `test-writer` for required tests
+   - Verify each structured report and reported file, then let only the conductor mark `[x]`
    - Run build/lint from `orchestrator.yaml` verifier commands
+
+   Continue directly from propose to apply in this session. Do not print or ask the user to paste a mid-session handoff prompt.
 
 5. **Exit**
 
@@ -62,8 +73,13 @@ Quick mode for **small changes, demos, and hypothesis testing**. Combines propos
 
 ---
 
+## Session Exit (Mandatory Order)
+
+At the end of the whole quick session: (1) attempt to update Memory `Change:<name>`, `Handoff:<name>`, and new `Decision:*`, including task and build/lint status; (2) write `openspec/changes/<name>/handoff.md` using the orchestration skill template even if Memory fails; (3) print exactly one fenced prompt for the verify/archive continuation using `project.agent_language`, Memory keys, and the file fallback, without a banner label or duplicated summary. This is the session's only next-session prompt. Do not start archive in this chat.
+
 **Guardrails**
 - Max ~3 hours of work — if bigger, switch to full pipeline
 - Still run build/lint before declaring done
 - Do not skip OpenSpec entirely — at minimum proposal + tasks
 - For vue3: use vue-core, vue-pinia skills during implementation
+- Never emit or request paste of a next-session prompt between quick propose and apply; emit exactly one only at final exit

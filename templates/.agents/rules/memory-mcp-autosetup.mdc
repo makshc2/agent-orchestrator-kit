@@ -40,16 +40,23 @@ Ensure present (do not duplicate):
 
 ## Memory Entity Format
 
-Use these keys for orchestration state:
+Use these keys and fields for orchestration state:
 
-| Key | Value |
-|-----|-------|
-| `Change:<name>` | status, task progress |
-| `Decision:<topic>` | chosen option + rationale |
+| Key | Required fields |
+|-----|-----------------|
+| `Change:<name>` | `status`, `tasks n/m`, `last_role`, `review` |
+| `Handoff:<name>` | `next_role`, `next_command`, `session_count`, `summary`, `blocked` |
+| `Decision:<topic>` | `chosen`, `reason` |
 | `Convention:<area>` | project-specific rules |
-| `Handoff:<name>` | next role, session count |
+
+## Session Lifecycle
+
+At the start of every `/opsx:*` role session, after resolving the change and before specialist work, read `Change:<name>`, `Handoff:<name>`, and `Decision:*`. If Memory MCP is unavailable or those entities are empty, read `openspec/changes/<name>/handoff.md` and continue; Memory failure is not a blocker.
+
+At session exit, first attempt to update `Change:<name>`, `Handoff:<name>`, and every new `Decision:<topic>`. Then always mirror the state to `openspec/changes/<name>/handoff.md`, even when the Memory write fails. Only after that attempt may the conductor emit the next-session prompt.
 
 ## Rules
 - Do not overwrite existing correct config
 - Do not delete other MCP servers
 - Notify once: "Memory MCP connected."
+- Never treat unavailable Memory MCP as a reason to stop when `handoff.md` can restore or persist state

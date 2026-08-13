@@ -48,6 +48,9 @@ handoff:
   propose_to_review: validate_strict
   review_to_apply: explicit_approve
   apply_to_verify: all_tasks_checked
+  restore_on_start: true
+  persist_on_exit: true
+  emit_next_session_prompt: true
 
 memory:
   enabled: true

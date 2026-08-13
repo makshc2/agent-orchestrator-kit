@@ -13,6 +13,8 @@ Implement tasks from an OpenSpec change.
 
 **Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
+**Conductor delegation is mandatory:** the parent MUST NOT implement code or tests. For each task spawn `design-implementer` when a design brief/Figma/image signal exists, otherwise `code-writer`; then spawn `test-writer` for required tests and `code-reviewer` before PR/MR. Require each structured report. Only the conductor may edit `tasks.md` checkboxes.
+
 **Steps**
 
 1. **Select the change**
@@ -71,9 +73,10 @@ Implement tasks from an OpenSpec change.
 
    For each pending task:
    - Show which task is being worked on
-   - Make the code changes required
-   - Keep changes minimal and focused
-   - Mark task complete in the tasks file: `- [ ]` → `- [x]`
+   - Spawn the routed implementation subagent with one self-contained task; do not make code changes in the parent
+   - Verify `Status: done` and that every reported file exists
+   - Spawn `test-writer` for required tests and verify its report
+   - Only then, as conductor, mark the task complete in the tasks file: `- [ ]` → `- [x]`
    - Continue to next task
 
    **Pause if:**
@@ -147,7 +150,7 @@ What would you like to do?
 - If task is ambiguous, pause and ask before implementing
 - If implementation reveals issues, pause and suggest artifact updates
 - Keep code changes minimal and scoped to each task
-- Update task checkbox immediately after completing each task
+- Never let a specialist update `tasks.md`; the conductor updates a checkbox only after a verified `done` report
 - Pause on errors, blockers, or unclear requirements - don't guess
 - Use contextFiles from CLI output, don't assume specific file names
 

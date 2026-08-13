@@ -16,6 +16,45 @@ This project uses a spec-driven role pipeline. Read `.agents/orchestrator.yaml` 
 - `/opsx:quick <name>` → MVP: propose + apply in one session (when `require_spec_review: false`)
 - `/opsx:archive` → merges delta specs, moves change to archive
 
+## Conductor Routing (Mandatory and Exclusive)
+
+The parent `/opsx:*` session is the conductor. For specialist work it MUST spawn the one subagent selected below with a self-contained prompt, MUST verify the structured report, and MUST NOT perform that specialist's work itself. One signal maps to one primary subagent; do not substitute a generic agent.
+
+| Phase / signal | MUST spawn | Specialist scope the conductor MUST NOT do |
+|----------------|------------|--------------------------------------------|
+| Status, gate failure, next command | `openspec-guide` | Pipeline diagnosis |
+| Broken kit, MCP, or generated-file sync | `setup-doctor` | Kit setup repair |
+| `/opsx:explore` repository investigation | `codebase-explorer` | Repository research; no specs or code |
+| `/opsx:design` | `design-intake` | `design-brief.md` and `assets/` |
+| `/opsx:propose` | `spec-architect` | Change proposal/design/specs/tasks |
+| `/opsx:review` | `spec-reviewer` | Pre-apply spec verdict and `review.md` |
+| Apply task with design brief/Figma/image | `design-implementer` | UI implementation |
+| Apply ordinary implementation task | `code-writer` | One task's production code |
+| Apply after implementation | `test-writer` | Automated tests |
+| Apply before PR/MR | `code-reviewer` | Post-implementation spec review |
+| `/opsx:archive` | `spec-archiver` | Delta merge and archive move |
+
+`spec-reviewer` is never interchangeable with `code-reviewer`. During apply, only the conductor may mark a `tasks.md` checkbox, and only after a subagent reports `Status: done` and the conductor verifies the reported files.
+
+## Session Start Protocol (Before Any Specialist Work)
+
+1. Honor the pasted `/opsx:<phase> <name>` command and announce that role.
+2. Run `npx agent-orchestrator-kit status` or `npx openspec list --json`; resolve the active change without exceeding `max_active_changes`.
+3. Read Memory entities `Change:<name>`, `Handoff:<name>`, and `Decision:*`.
+4. If Memory MCP is unavailable or those entities are empty, read `openspec/changes/<name>/handoff.md`. Memory failure alone MUST NOT block the session.
+5. Only after context is restored, spawn the routed specialist.
+
+If the user says “continue” / “next” without a command and exactly one active change has `Handoff.next_command` (from Memory or `handoff.md`), execute that command instead of asking which phase to run.
+
+## Session Exit Protocol (Mandatory Order)
+
+A phase is not closed until the conductor performs these steps in order:
+
+1. Attempt to update Memory: `Change:<name>` (`status`, `tasks n/m`, `last_role`, `review`), `Handoff:<name>` (`next_role`, `next_command`, `session_count`, `summary`, `blocked`), and each new `Decision:<topic>` (`chosen`, `reason`).
+2. Write the same state to `openspec/changes/<name>/handoff.md` with sections **Closed role**, **Done**, **Decisions**, **Blocked**, **Next command**, **Attach**, **Subagents to spawn**, and **Prompt**. Do this even if Memory is unavailable.
+3. Print one fenced copy/paste prompt. Its first line MUST be `/opsx:<next> <name>`; its body MUST use `.agents/orchestrator.yaml` → `project.agent_language`, instruct the next session to read `Change:<name>`, `Handoff:<name>`, and `Decision:*`, and mention the `handoff.md` fallback. Do not add a service/banner label or duplicate the session summary.
+4. Do NOT start the next phase in this chat.
+
 ## Session Rules
 - One active change at a time (unless mvp profile: up to 3)
 - Each role = new chat session (except `/opsx:quick` combines propose+apply)

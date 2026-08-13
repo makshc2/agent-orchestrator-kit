@@ -31,6 +31,19 @@ Use `/skill-name` or let Claude auto-load based on context.
 /opsx:archive   — archive after merge
 ```
 
+The parent command session is a conductor. It MUST spawn the phase specialist and MUST NOT perform specialist work itself:
+
+| Signal | Subagent |
+|--------|----------|
+| Status / next command | `openspec-guide` |
+| Kit / MCP / sync failure | `setup-doctor` |
+| Explore research | `codebase-explorer` |
+| Design intake | `design-intake` |
+| Propose | `spec-architect` |
+| Spec review | `spec-reviewer` |
+| Apply UI / ordinary task / tests / pre-PR review | `design-implementer` / `code-writer` / `test-writer` / `code-reviewer` |
+| Archive | `spec-archiver` |
+
 ## Key Rules for This Session
 
 - Check `.agents/orchestrator.yaml` for project-specific pipeline config.
@@ -38,8 +51,15 @@ Use `/skill-name` or let Claude auto-load based on context.
 - No code edits in explore, design, or review mode.
 - Design Intake writes only `design-brief.md` and `assets/` — never `src/`.
 - After completing apply: run build/lint before declaring done.
+- Only the conductor marks `tasks.md`, after a specialist reports `Status: done` and its files are verified.
 - Use `npx openspec validate --all --strict` or `npx openspec validate <name> --strict --type change`.
 - Never bare `openspec` / `agent-orchestrator-kit` without `npx` (Amp PATH → exit 127). See `.agents/rules/cli-via-npm.mdc`.
+
+## Session Handoff
+
+Before work, read Memory `Change:<name>`, `Handoff:<name>`, `Decision:*`; if unavailable or empty, read `openspec/changes/<name>/handoff.md`. At exit: Memory → `handoff.md` → one fenced `/opsx:*` prompt localized to `project.agent_language`, with no banner or duplicated summary. Do not begin the next phase in the same chat.
+
+OpenSpec files are the requirements/tasks source of truth. Memory and `handoff.md` only index phase state, decisions, blockers, and the next command.
 
 ## File Locations
 
@@ -47,6 +67,7 @@ Use `/skill-name` or let Claude auto-load based on context.
 |------|-------|
 | Active changes | `openspec/changes/` |
 | Design brief | `openspec/changes/<name>/design-brief.md` + `assets/` |
+| Session handoff index | `openspec/changes/<name>/handoff.md` |
 | Specs (source of truth) | `openspec/specs/` |
 | Project config | `openspec/config.yaml` |
 | Orchestration config | `.agents/orchestrator.yaml` |

@@ -51,6 +51,9 @@ handoff:
   explore_to_propose: decision_brief
   propose_to_apply: validate_or_quick
   apply_to_verify: all_tasks_checked
+  restore_on_start: true
+  persist_on_exit: true
+  emit_next_session_prompt: true
 
 memory:
   enabled: true

@@ -5,11 +5,17 @@ category: Workflow
 description: Capture design from any source into a durable design brief for an OpenSpec change
 ---
 
+## Session Start (Before Any Work)
+
+Honor the pasted command and announce the Design Intake role. Run `npx agent-orchestrator-kit status` or `npx openspec list --json`, then read Memory `Change:<name>`, `Handoff:<name>`, and `Decision:*`. If Memory is unavailable or empty, read `openspec/changes/<name>/handoff.md`; this fallback is not a blocker. For free-form “continue” / “next” with one active change, execute its `Handoff.next_command` instead of asking for the phase. Only then continue and spawn specialists.
+
 Capture design into a durable brief for an OpenSpec change. One-shot intake from Figma, exports, screenshots, or photos — then apply never needs live design tools.
 
 **IMPORTANT: You must NEVER edit any file in `src/` or any source code. You may write only `openspec/changes/<name>/design-brief.md` and files under `openspec/changes/<name>/assets/`.**
 
 **Input**: Optionally specify a change name (e.g., `/opsx:design add-login-form`). If omitted, auto-select if one active change exists, otherwise list and ask. If the change does not exist yet, create the change directory when writing the brief (after explore chose the name).
+
+**Conductor delegation is mandatory:** after resolving the change and source, spawn `design-intake` with a self-contained prompt. The parent MUST NOT inspect the design source or write the brief/assets itself; it only verifies the structured report and reported files.
 
 ---
 
@@ -24,7 +30,11 @@ If name provided — use it. Otherwise:
 
 Announce: "Design intake for change: **<name>**"
 
-### 2. Choose source (fallback ladder)
+### 2. Spawn the specialist
+
+Spawn `design-intake` and delegate steps 3–6 below. Require `## Subagent report: design-intake`. Do not perform those steps in the parent session.
+
+### 3. Choose source (fallback ladder)
 
 Use the first available source; do not climb the ladder twice:
 
@@ -35,14 +45,14 @@ Use the first available source; do not climb the ladder twice:
 
 Ask the user for the source if unclear. Prefer Figma when a `figma.com` URL is given.
 
-### 3. Capture into assets/
+### 4. Capture into assets/
 
 Save reference images under `openspec/changes/<name>/assets/`:
 - Prefer compressed PNG; ~1–2 images per breakpoint
 - Do not commit raw video, PSD, or huge originals
 - Name files clearly: `desktop.png`, `mobile.png`, `hero-detail.png`
 
-### 4. Write design-brief.md
+### 5. Write design-brief.md
 
 Create or overwrite `openspec/changes/<name>/design-brief.md` using this template:
 
@@ -89,14 +99,16 @@ Create or overwrite `openspec/changes/<name>/design-brief.md` using this templat
 - Inferred (screenshot/photo): mark each inferred value with a confidence marker, e.g. `~8px (medium confidence)` or `color ≈ #1a1a1a (low confidence)`
 ```
 
-### 5. Confidence markers for raster sources
+### 6. Confidence markers for raster sources
 
 When the source is a **screenshot** or **photo** (not Figma MCP / vector export):
 - Do not present guessed spacing, colors, or type sizes as facts
 - Mark every inferred token/value with a confidence note in **Confidence notes** and inline in **Tokens** where useful
 - Prefer ranges or approximations over fake precision
 
-### 6. Handoff
+### 7. Verify report and handoff
+
+The conductor verifies `Status: done` and that every reported brief/asset path exists, then outputs the handoff summary.
 
 Output a short summary:
 
@@ -115,6 +127,10 @@ Output a short summary:
 For non-UI changes: do not invent a brief. Tell the Architect to add a line `Design: none` in `proposal.md` so `gate-check` can opt out when `require_design_brief: true`.
 
 ---
+
+## Session Exit (Mandatory Order)
+
+Before closing design: (1) attempt to update Memory `Change:<name>`, `Handoff:<name>`, and new `Decision:*`; (2) write `openspec/changes/<name>/handoff.md` using the orchestration skill template even if Memory fails; (3) print one fenced prompt beginning `/opsx:propose <name>`. Use `project.agent_language`, tell the next session to read Memory and the file fallback, omit banner labels and the full summary. Do not start propose in this chat.
 
 ## Guardrails
 

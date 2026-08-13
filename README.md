@@ -13,7 +13,7 @@ A portable kit that installs a **role-separated AI pipeline** into any project:
 explore → [design] → propose → review → apply → verify → archive
 ```
 
-Each role runs in a **separate agent session** with dedicated permissions, model hints, and handoff gates. The `openspec/changes/` folder acts as the **contract between agents** — no shared memory between sessions, only files.
+Each role runs in a **separate agent session**. The parent `/opsx:*` session is a conductor: it restores state, spawns the routed specialist, verifies its report, and does not perform specialist work itself. OpenSpec files remain the requirements/tasks source of truth; Memory MCP and `openspec/changes/<name>/handoff.md` index phase state and the next command.
 
 **Figma PAT setup (v0.1.11+)** — local `.agents/figma.local.env` + MCP launcher (token never in chat / committed MCP JSON). See [Figma token](#figma-token-optional).
 
@@ -27,10 +27,26 @@ Each role runs in a **separate agent session** with dedicated permissions, model
 | `test-writer` | Automated tests for recently changed code |
 | `setup-doctor` | Orchestrator / MCP / sync diagnosis and repair |
 | `design-implementer` | Pixel-accurate Figma / screenshot → production UI |
+| `codebase-explorer` | Read-only repository investigation for explore |
+| `design-intake` | Design source → durable brief + assets |
+| `spec-architect` | Proposal, design, delta specs, and tasks |
+| `spec-reviewer` | Pre-apply artifact gate + `review.md` |
+| `spec-archiver` | Delta merge and completed-change archive |
+
+The conductor uses one exclusive route per signal:
+
+| Phase / signal | Subagent |
+|----------------|----------|
+| Status / gates / next command | `openspec-guide` |
+| Kit / MCP / sync repair | `setup-doctor` |
+| Explore repository research | `codebase-explorer` |
+| Design / propose / spec review | `design-intake` / `spec-architect` / `spec-reviewer` |
+| Apply UI / ordinary task / tests / pre-PR review | `design-implementer` / `code-writer` / `test-writer` / `code-reviewer` |
+| Archive | `spec-archiver` |
 
 - **Cursor** → `.cursor/agents/` (native subagents)
 - **Claude Code** → `.claude/agents/` (native subagents)
-- **Amp Code** → auto-generated `subagent-*` skill wrappers in `.agents/skills/` (Amp has no file-based subagents)
+- **Amp Code** → auto-generated `subagent-*` skill wrappers in `.agents/skills/`; each wrapper requires the parent to spawn an isolated subagent, never execute it in the main thread
 
 Works with:
 - [Cursor](https://cursor.sh) — via `.cursor/rules/` + `.cursor/skills/` + `.cursor/agents/`
@@ -55,7 +71,7 @@ npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-veri
 
 See [Installation](#installation) for profile/CI options.
 
-**🔄 Already have the kit installed? Upgrade to latest (Figma PAT in v0.1.11+, subagents in v0.1.10+):**
+**🔄 Already have the kit installed? Upgrade to latest (conductor + session handoff in v0.1.13+, Figma PAT in v0.1.11+):**
 
 ```bash
 npx agent-orchestrator-kit@latest update
@@ -146,9 +162,9 @@ your-project/
 │   ├── orchestrator.yaml
 │   ├── mcp.json.example                 # Cursor MCP template
 │   ├── amp.settings.json.example        # Amp MCP template
-│   ├── commands/                        # 6 /opsx:* commands
-│   ├── rules/                           # 3 auto-applied rules
-│   ├── subagents/                       # 6 default custom subagents (Cursor/Claude/Amp)
+│   ├── commands/                        # /opsx:* role commands
+│   ├── rules/                           # auto-applied orchestration rules
+│   ├── subagents/                       # 11 stage/custom subagents (Cursor/Claude/Amp)
 │   └── skills/
 │       ├── agent-orchestration/         # Pipeline orchestration
 │       ├── openspec-howto/
@@ -169,7 +185,7 @@ your-project/
 | Orchestration | 5-role pipeline, `AGENTS.md`, `orchestrator.yaml`, review command |
 | OpenSpec skills | All 7 skills for `/opsx:*` workflow |
 | IDE sync | Cursor + Claude Code sync script (`--delete` semantics — removes stale skills/subagents) |
-| Subagents | `openspec-guide`, `code-writer`, `code-reviewer`, `test-writer`, `setup-doctor`, `design-implementer` — native in Cursor (`.cursor/agents/`) + Claude Code (`.claude/agents/`), exposed to Amp as auto-generated `subagent-*` skill wrappers in `.agents/skills/` |
+| Subagents | 11 exclusive routes: guide/setup, explore/design/propose/review/archive stage agents, and apply implementation/test/code-review agents — native in Cursor + Claude Code, isolated Amp `subagent-*` wrappers |
 | CLI gates | `npx agent-orchestrator-kit status` / `gate-check` — deterministic review-gate checks (always via `npx`; see `cli-via-npm.mdc`) |
 | CI | `agent-verify.yml` — GitHub (default) or GitLab fragment + `prebuild` hook, both run `gate-check` |
 | AI Spec Verifier | `spec-verify.yml` + verifier scripts — GitLab or GitHub, opt-in (`--spec-verify`) |
@@ -205,7 +221,7 @@ cp .agents/amp.settings.json.example .amp/settings.json
 
 Or run `./scripts/sync-local-agent-skills.sh` — it creates `.amp/settings.json` automatically.
 
-**Subagents in Amp:** Amp has no file-based custom subagents (only skills and plugin agents), so the kit exposes every `.agents/subagents/<name>.md` as an auto-generated skill `subagent-<name>` in `.agents/skills/`. These wrappers are committed to git, so Amp picks them up with zero local setup — just say "use the subagent-design-implementer skill" or let Amp auto-load it from the description. Edit the source file in `.agents/subagents/` (never the wrapper) and re-run `sync` to regenerate.
+**Subagents in Amp:** the kit exposes every `.agents/subagents/<name>.md` as an auto-generated `subagent-<name>` skill. The conductor MUST run the wrapper as an isolated subagent with fresh context and MUST NOT execute its body in the main thread. Edit only the source file and re-run `sync` to regenerate wrappers.
 
 4. Use commands directly:
 
@@ -237,7 +253,7 @@ Switch modes in Amp CLI: `Ctrl+O` → `mode`.
    - `.claude/skills/` — all skills from `.agents/skills/` (excluding Amp `subagent-*` wrappers)
    - `.claude/agents/` — custom subagents from `.agents/subagents/` (native Claude Code subagents)
 3. Skills are auto-loaded by Claude Code from `.claude/skills/`.
-4. Invoke directly: `/agent-orchestration`, `/openspec-howto`, etc. Subagents are delegated automatically by description or on request ("use the design-implementer subagent").
+4. Invoke `/opsx:*` or the orchestration skill. The conductor delegates using the mandatory phase/signal routing table rather than relying on description-only selection.
 
 **CLAUDE.md tiers used:**
 - Project level: `.claude/CLAUDE.md` (synced from `CLAUDE.md`)
@@ -262,10 +278,10 @@ You can add `context: fork` to explore/review skills for isolated subagent sessi
 2. Creates:
    - `.cursor/skills/` — all skills
    - `.cursor/rules/` — `.mdc` rule files
-   - `.cursor/agents/` — custom subagents (`openspec-guide`, `code-writer`, `code-reviewer`, `test-writer`, `setup-doctor`, `design-implementer`)
+   - `.cursor/agents/` — all 11 custom/stage subagents
    - `.mcp.json` — from `mcp.json.example` (if not present)
 3. Rules are applied automatically per `alwaysApply: true`.
-4. Subagents are invoked by name in chat (e.g. "use the code-reviewer subagent on this diff") or delegated to automatically by Cursor when their `description` matches the task. Add project-specific subagents by dropping `.md` files into `.agents/subagents/` and re-running sync.
+4. `/opsx:*` sessions use the mandatory conductor routing table to spawn subagents. Add project-specific subagents in `.agents/subagents/`, add an exclusive route, and re-run sync.
 
 **Memory + optional Figma MCP for Cursor** (`.mcp.json`):
 
@@ -295,6 +311,8 @@ Token lives in `.agents/figma.local.env` — see [Figma token](#figma-token-opti
 **Model:** fast/cheap.
 **Purpose:** Understand the problem. Surface options. Choose a direction.
 
+The conductor spawns `codebase-explorer` for repository investigation and stays read-only.
+
 **Exit criteria (before starting Architect):**
 - Problem stated in 3–5 sentences
 - 2–3 solution options + recommendation
@@ -313,6 +331,8 @@ Token lives in `.agents/figma.local.env` — see [Figma token](#figma-token-opti
 **Model:** strong reasoning.
 **Purpose:** Create all change artifacts: proposal, design, tasks, delta specs.
 
+The conductor spawns `spec-architect`; it does not write artifacts in the parent session.
+
 **Exit gate:**
 ```bash
 npx openspec validate <name> --strict --type change  # must be ✓
@@ -330,6 +350,8 @@ npx openspec validate <name> --strict --type change  # must be ✓
 **Model:** medium or strong.
 **Purpose:** Review artifacts. Output **Approve ✓** or **Request Changes ✗**.
 
+The conductor spawns `spec-reviewer` (not `code-reviewer`) and verifies its `review.md`.
+
 Checks:
 - Acceptance criteria are testable
 - Tasks ≤ ~2 hours each
@@ -346,7 +368,7 @@ Checks:
 
 ### Role 4: Implementer — `/opsx:apply <name>`
 
-**Mode:** writes `src/`. Marks `tasks.md [x]`.
+**Mode:** conductor; routed specialists write `src/` and tests. Only the conductor marks `tasks.md [x]` after a verified `Status: done` report.
 **Model:** strong. Use fast for simple mechanical tasks.
 **Purpose:** Implement tasks. One session = 1–3 tasks (not all 15 at once).
 
@@ -640,21 +662,18 @@ npx agent-orchestrator-kit figma-setup
 
 ## Memory MCP — Shared State Between Sessions
 
-Each role starts a fresh session. Memory MCP persists orchestration state across sessions so you don't re-explain context every time.
+Each role starts a fresh session. OpenSpec artifacts remain the source of truth; Memory MCP and `openspec/changes/<name>/handoff.md` are the phase index used to resume without re-explanation.
 
 **Standard entities to save:**
 
 ```
-Change:add-bulk-export     status: spec-approved, tasks: 0/7
+Change:add-bulk-export     status: spec-approved, tasks: 0/7, last_role: reviewer, review: APPROVE
 Decision:export-format     chosen: xlsx, reason: matches existing reports
-Convention:api-errors      use ApiError class, not raw Error
-Handoff:add-bulk-export    next_role: implementer, session_count: 1
+Handoff:add-bulk-export    next_role: implementer, next_command: /opsx:apply add-bulk-export,
+                           session_count: 2, summary: ..., blocked: none
 ```
 
-At the start of each implementer/reviewer session, read relevant memory:
-```
-What do we know about Change:add-bulk-export?
-```
+Every `/opsx:*` session reads `Change:<name>`, `Handoff:<name>`, and `Decision:*` before specialist work, falling back to `handoff.md` if Memory is unavailable. At exit it writes Memory, mirrors `handoff.md`, then prints one fenced prompt beginning `/opsx:*`, localized to `project.agent_language`, with no service banner or duplicated summary. The next phase always starts in a new chat.
 
 ## Amp Code — Deep Integration Notes
 
@@ -667,21 +686,22 @@ Amp is the **primary target** of this kit. It reads `.agents/skills/` and `AGENT
 | `AGENTS.md` subtree loading | Per-domain AGENTS.md in `openspec/` subtree |
 | `.agents/skills/` | All orchestration + domain skills |
 | `mcp.json` in skill dir | Lazy MCP loading (Memory only when needed) |
-| Subagents | Explore and Review skills use forked subagents |
+| Subagents | Conductor routing + isolated `subagent-*` wrappers |
 | Amp modes (rush/smart/deep) | Per-role model hints in AGENTS.md |
 
-**Amp subagent in skill** (`.agents/skills/openspec-explore/SKILL.md`):
+**Amp generated wrapper** (`.agents/skills/subagent-codebase-explorer/SKILL.md`):
 
 ```yaml
 ---
-name: openspec-explore
-description: Enter explore mode — read-only thinking partner
-disable-model-invocation: false
-allowed-tools: Read, Bash
+name: subagent-codebase-explorer
+description: Read-only repository research specialist...
 ---
+
+Parent MUST spawn this skill as an isolated subagent with fresh context.
+Do not execute it in the main thread.
 ```
 
-Amp will run this skill as a subagent when invoked.
+The conductor invokes the wrapper in isolation and consumes only its structured report.
 
 **Team workflow with Amp:**
 
@@ -750,10 +770,16 @@ CLAUDE.md                # Committed — synced to .claude/CLAUDE.md
 openspec/                # Committed — spec-driven workflow
   config.yaml            # Project context for AI
   specs/                 # Source of truth after archive
-  changes/               # Active work
+  changes/               # Active work; <name>/handoff.md indexes session state
 ```
 
 ## Changelog
+
+### 0.1.13
+- Pipeline **conductor**: `/opsx:*` parent spawns the routed specialist and does not do that work itself
+- Five new stage subagents: `codebase-explorer`, `design-intake`, `spec-architect`, `spec-reviewer`, `spec-archiver`
+- Session handoff: Memory → `handoff.md` → next-session prompt in `project.agent_language` (read Memory on start)
+- Amp `subagent-*` wrappers must run as isolated subagents, not in the main thread
 
 ### 0.1.12
 - `figma-fetch --depth <n>` for large frames
