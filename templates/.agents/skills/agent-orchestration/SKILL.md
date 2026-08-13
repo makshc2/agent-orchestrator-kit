@@ -49,6 +49,7 @@ The parent `/opsx:*` session is the conductor. It MUST spawn the selected specia
 | Phase / signal | MUST spawn | Specialist scope |
 |----------------|------------|------------------|
 | Status, gate failure, next command | `openspec-guide` | Read-only pipeline diagnosis |
+| Session start restore / session exit persist | `session-handoff` | Memory, `handoff.md`, next-thread prompt |
 | Broken kit, MCP, or generated-file sync | `setup-doctor` | Kit setup repair only |
 | `/opsx:explore` repository investigation | `codebase-explorer` | Read-only repository research |
 | `/opsx:design` | `design-intake` | `design-brief.md` and `assets/` only |
@@ -132,20 +133,24 @@ After PR merged + CI green:
 **Start of each session:**
 1. Honor the pasted `/opsx:<phase> <name>` command and announce that role.
 2. Run `npx agent-orchestrator-kit status` (or `npx openspec list --json`) and read `orchestrator.yaml`; resolve the active change and gates.
-3. Read Memory entities `Change:<name>`, `Handoff:<name>`, and `Decision:*`.
-4. If Memory MCP is unavailable or those entities are empty, read `openspec/changes/<name>/handoff.md`; Memory failure alone is not a blocker.
-5. Only after restoration, spawn the routed specialist. If the user said “continue” / “next” and exactly one active change has `Handoff.next_command`, execute it instead of asking for a phase.
+3. Run `npx agent-orchestrator-kit handoff --restore` (or `handoff <name> --restore`).
+4. Read Memory entities `Change:<name>`, `Handoff:<name>`, and `Decision:*` when MCP works.
+5. If restore CLI fails and Memory is empty, read `openspec/changes/<name>/handoff.md`; Memory failure alone is not a blocker.
+6. Spawn `session-handoff` in restore mode when context is incomplete (Amp: isolated `subagent-session-handoff`).
+7. Only after restoration, spawn the routed phase specialist. If the user said “continue” / “next” and exactly one active change has `Handoff.next_command`, execute it instead of asking for a phase.
 
 **During session:**
 - Stay in role — do not drift into next phase
 - Pause and ask if requirements are unclear
 - Never edit files outside your role's allowed output
 
-**End of each session:**
-1. Attempt to update Memory: `Change:<name>` (`status`, `tasks n/m`, `last_role`, `review`), `Handoff:<name>` (`next_role`, `next_command`, `session_count`, `summary`, `blocked`), and new `Decision:<topic>` entities (`chosen`, `reason`).
-2. Even if Memory fails, write `openspec/changes/<name>/handoff.md` using the template below.
-3. Print exactly one fenced next-session prompt after the write attempt. The first line is `/opsx:<next> <name>`; the body uses `project.agent_language`, tells the next session to read Memory and the file fallback, has no banner label, and does not repeat the summary.
-4. Do not start the next phase in this chat. If apply, include build/lint status in the persisted summary.
+**End of each session (HARD STOP — you are NOT done):**
+1. Spawn `session-handoff` in persist mode (Amp: isolated `subagent-session-handoff`). If spawn fails, persist in the parent — never skip.
+2. Write `openspec/changes/<name>/handoff.md` using the template below even if Memory MCP fails.
+3. Run `npx agent-orchestrator-kit handoff <name>` and require exit 0. The CLI upserts Memory JSON with an absolute path and prints the expanded self-contained prompt on stdout.
+4. If Memory MCP tools work, also update `Change:<name>`, `Handoff:<name>`, and new `Decision:<topic>` entities.
+5. Paste the CLI stdout as one fenced next-session prompt. First line is `/opsx:<next> <name>`; body uses `project.agent_language`; keep Done/Decisions/Blocked/spawn/HARD STOP complete. No banner. Do not emit a thin “read Memory” stub.
+6. Do not start the next phase in this chat. If apply, include build/lint status in the persisted Done section.
 
 `handoff.md` template:
 
@@ -155,11 +160,18 @@ After PR merged + CI green:
 ## Closed role
 <role and completion status>
 
+## Change
+- name: <name>
+- status: <proposed | spec-approved | applying | blocked>
+- tasks: <n/m>
+- review: <pending | APPROVE | REQUEST_CHANGES | none>
+- last_role: <role>
+
 ## Done
-<concise persisted summary>
+<full persisted summary the next thread needs>
 
 ## Decisions
-- <decision or none>
+- <topic>: <chosen> — <reason>
 
 ## Blocked
 <blocker or none>
@@ -167,19 +179,24 @@ After PR merged + CI green:
 ## Next command
 `/opsx:<next> <name>`
 
+## Next role
+<role or subagent name>
+
 ## Attach
 - `openspec/changes/<name>/<artifact>`
 
 ## Subagents to spawn
-- `<subagent>` — <signal>
+- `<phase-specialist>` — <signal> (Amp: isolated `subagent-<name>`)
+- `session-handoff` — restore at start, persist at exit (Amp: isolated `subagent-session-handoff`)
+
+## Constraints
+- language: <project.agent_language>
+- do not mix phases
+- conductor must spawn specialists
 
 ## Prompt
 
-```text
-/opsx:<next> <name>
-
-<Localized start instruction in project.agent_language. Read Memory Change:<name>, Handoff:<name>, Decision:* before work. If Memory is unavailable, read openspec/changes/<name>/handoff.md. Act as conductor and do not mix phases.>
-```
+The Prompt section is overwritten by `npx agent-orchestrator-kit handoff <name>`. Do not hand-write a thin stub.
 ````
 
 ## Model Selection Guide
@@ -196,9 +213,9 @@ After PR merged + CI green:
 
 ## Mandatory Memory and Handoff Protocol
 
-Before specialist work, the conductor MUST restore context in order: honor the pasted `/opsx:*` command; read Memory entities `Change:<name>`, `Handoff:<name>`, and `Decision:*`; if Memory is unavailable or empty, read `openspec/changes/<name>/handoff.md`. Memory failure is not a blocker when the file exists. With one active change, free-form “continue” uses `Handoff.next_command` instead of asking for the phase.
+Before specialist work, the conductor MUST restore context in order: honor the pasted `/opsx:*` command; run `npx agent-orchestrator-kit handoff --restore`; read Memory entities `Change:<name>`, `Handoff:<name>`, and `Decision:*`; if restore CLI and Memory fail, read `openspec/changes/<name>/handoff.md`. Memory failure is not a blocker when the file exists. With one active change, free-form “continue” uses `Handoff.next_command` instead of asking for the phase. Amp MUST spawn `session-handoff` and the phase specialist as isolated `subagent-*` skills.
 
-Before declaring a session closed, the conductor MUST, in order: (1) update Memory, (2) mirror state to `openspec/changes/<name>/handoff.md`, (3) print one fenced next-session prompt whose first line is `/opsx:<next> <name>`. The prompt has no `NEXT_SESSION_PROMPT` label, tells the next session to read Memory, uses `project.agent_language`, and does not duplicate the full summary. Never start the next phase in the current chat.
+Before declaring a session closed, the conductor MUST, in order: (1) spawn `session-handoff` persist, (2) write `openspec/changes/<name>/handoff.md`, (3) run `npx agent-orchestrator-kit handoff <name>` (exit 0), (4) paste the CLI stdout prompt whose first line is `/opsx:<next> <name>`. The prompt has no `NEXT_SESSION_PROMPT` label, uses `project.agent_language`, and MUST be self-contained (Done, Decisions, Blocked, attach, spawn, HARD STOP) so the next thread can run if Memory MCP is ignored. Never start the next phase in the current chat.
 
 | Entity | Required fields |
 |--------|-----------------|
@@ -226,7 +243,7 @@ Before declaring a session closed, the conductor MUST, in order: (1) update Memo
 | All tasks in one apply session | Context overload; model drifts |
 | No archive after merge | Next propose has stale domain specs |
 | Strong model on lint fixes | 5–10x cost with no quality gain |
-| Skip Memory MCP | Every session re-explains domain |
+| Skip Memory MCP / skip `handoff` CLI | Next thread has no context; Amp looks like it “ignored the rules” |
 
 ## Metrics (health check per change)
 

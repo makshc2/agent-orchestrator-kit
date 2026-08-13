@@ -32,12 +32,14 @@ Each role runs in a **separate agent session**. The parent `/opsx:*` session is 
 | `spec-architect` | Proposal, design, delta specs, and tasks |
 | `spec-reviewer` | Pre-apply artifact gate + `review.md` |
 | `spec-archiver` | Delta merge and completed-change archive |
+| `session-handoff` | Restore/persist Memory + `handoff.md` + expanded next-thread prompt |
 
 The conductor uses one exclusive route per signal:
 
 | Phase / signal | Subagent |
 |----------------|----------|
 | Status / gates / next command | `openspec-guide` |
+| Session start restore / session exit persist | `session-handoff` |
 | Kit / MCP / sync repair | `setup-doctor` |
 | Explore repository research | `codebase-explorer` |
 | Design / propose / spec review | `design-intake` / `spec-architect` / `spec-reviewer` |
@@ -71,7 +73,7 @@ npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-veri
 
 See [Installation](#installation) for profile/CI options.
 
-**🔄 Already have the kit installed? Upgrade to latest (conductor + session handoff in v0.1.13+, Figma PAT in v0.1.11+):**
+**🔄 Already have the kit installed? Upgrade to latest (hardened handoff CLI + Memory launcher in v0.1.14+, conductor in v0.1.13+, Figma PAT in v0.1.11+):**
 
 ```bash
 npx agent-orchestrator-kit@latest update
@@ -164,7 +166,7 @@ your-project/
 │   ├── amp.settings.json.example        # Amp MCP template
 │   ├── commands/                        # /opsx:* role commands
 │   ├── rules/                           # auto-applied orchestration rules
-│   ├── subagents/                       # 11 stage/custom subagents (Cursor/Claude/Amp)
+│   ├── subagents/                       # 12 stage/custom subagents (Cursor/Claude/Amp)
 │   └── skills/
 │       ├── agent-orchestration/         # Pipeline orchestration
 │       ├── openspec-howto/
@@ -185,8 +187,8 @@ your-project/
 | Orchestration | 5-role pipeline, `AGENTS.md`, `orchestrator.yaml`, review command |
 | OpenSpec skills | All 7 skills for `/opsx:*` workflow |
 | IDE sync | Cursor + Claude Code sync script (`--delete` semantics — removes stale skills/subagents) |
-| Subagents | 11 exclusive routes: guide/setup, explore/design/propose/review/archive stage agents, and apply implementation/test/code-review agents — native in Cursor + Claude Code, isolated Amp `subagent-*` wrappers |
-| CLI gates | `npx agent-orchestrator-kit status` / `gate-check` — deterministic review-gate checks (always via `npx`; see `cli-via-npm.mdc`) |
+| Subagents | 12 exclusive routes: guide/setup/session-handoff, explore/design/propose/review/archive stage agents, and apply implementation/test/code-review agents — native in Cursor + Claude Code, isolated Amp `subagent-*` wrappers |
+| CLI gates | `npx agent-orchestrator-kit status` / `gate-check` / `handoff` / `memory-setup` — deterministic review-gate and session-handoff (always via `npx`; see `cli-via-npm.mdc`) |
 | CI | `agent-verify.yml` — GitHub (default) or GitLab fragment + `prebuild` hook, both run `gate-check` |
 | AI Spec Verifier | `spec-verify.yml` + verifier scripts — GitLab or GitHub, opt-in (`--spec-verify`) |
 | MCP templates | Memory MCP for Cursor and Amp |
@@ -278,7 +280,7 @@ You can add `context: fork` to explore/review skills for isolated subagent sessi
 2. Creates:
    - `.cursor/skills/` — all skills
    - `.cursor/rules/` — `.mdc` rule files
-   - `.cursor/agents/` — all 11 custom/stage subagents
+   - `.cursor/agents/` — all 12 custom/stage subagents
    - `.mcp.json` — from `mcp.json.example` (if not present)
 3. Rules are applied automatically per `alwaysApply: true`.
 4. `/opsx:*` sessions use the mandatory conductor routing table to spawn subagents. Add project-specific subagents in `.agents/subagents/`, add an exclusive route, and re-run sync.
@@ -289,9 +291,8 @@ You can add `context: fork` to explore/review skills for isolated subagent sessi
 {
   "mcpServers": {
     "memory": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-memory"],
-      "env": { "MEMORY_FILE_PATH": ".cursor/memory.json" }
+      "command": "node",
+      "args": ["scripts/memory-mcp-launcher.cjs"]
     },
     "figma": {
       "command": "node",
@@ -673,7 +674,7 @@ Handoff:add-bulk-export    next_role: implementer, next_command: /opsx:apply add
                            session_count: 2, summary: ..., blocked: none
 ```
 
-Every `/opsx:*` session reads `Change:<name>`, `Handoff:<name>`, and `Decision:*` before specialist work, falling back to `handoff.md` if Memory is unavailable. At exit it writes Memory, mirrors `handoff.md`, then prints one fenced prompt beginning `/opsx:*`, localized to `project.agent_language`, with no service banner or duplicated summary. The next phase always starts in a new chat.
+Every `/opsx:*` session restores via `npx agent-orchestrator-kit handoff --restore`, then Memory `Change:<name>`, `Handoff:<name>`, `Decision:*`, falling back to `handoff.md` if Memory is unavailable. At exit it MUST spawn `session-handoff`, write `handoff.md`, run `npx agent-orchestrator-kit handoff <name>` (upserts `.cursor/memory.json` with an absolute path), and paste the CLI stdout prompt. The prompt is self-contained — Amp often skips Memory MCP, so the next thread must be able to work from the pasted text alone. Never configure Memory with a relative `MEMORY_FILE_PATH`; use `scripts/memory-mcp-launcher.cjs` (`npx agent-orchestrator-kit memory-setup`). The next phase always starts in a new chat.
 
 ## Amp Code — Deep Integration Notes
 
@@ -697,8 +698,8 @@ name: subagent-codebase-explorer
 description: Read-only repository research specialist...
 ---
 
-Parent MUST spawn this skill as an isolated subagent with fresh context.
-Do not execute it in the main thread.
+CRITICAL (Amp / Cursor / Claude): Parent MUST spawn this skill as an isolated subagent with fresh context.
+Do not execute it in the main thread. If spawn is unavailable, STOP and report blocked.
 ```
 
 The conductor invokes the wrapper in isolation and consumes only its structured report.
@@ -774,6 +775,12 @@ openspec/                # Committed — spec-driven workflow
 ```
 
 ## Changelog
+
+### 0.1.14
+- **HARD STOP session handoff** — `session-handoff` subagent at start/exit; Amp isolated `subagent-session-handoff`
+- **`handoff` CLI** — writes `handoff.md`, upserts `.cursor/memory.json` with an absolute path, prints an expanded self-contained next-thread prompt
+- **`memory-setup` + `memory-mcp-launcher.cjs`** — never a relative `MEMORY_FILE_PATH` (Amp was reading the wrong graph)
+- Next-thread prompt includes role, spawn instructions, Done/Decisions/Blocked, and exit HARD STOP
 
 ### 0.1.13
 - Pipeline **conductor**: `/opsx:*` parent spawns the routed specialist and does not do that work itself

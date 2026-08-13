@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-08-13
+
+### Added
+- **`session-handoff` subagent** — mandatory restore at session start and persist at session exit (Amp: isolated `subagent-session-handoff`)
+- **`npx agent-orchestrator-kit handoff <name>`** — validates `handoff.md`, upserts `.cursor/memory.json` with an absolute path, prints an expanded self-contained next-thread prompt in `project.agent_language`
+- **`npx agent-orchestrator-kit memory-setup`** — installs `scripts/memory-mcp-launcher.cjs` and rewrites Cursor/Amp Memory MCP away from relative `MEMORY_FILE_PATH`
+- Always-apply rule `.agents/rules/session-handoff.mdc` with HARD STOP gates Amp cannot treat as optional
+
+### Changed
+- Next-session prompt is now a full operating brief (Done, Decisions, Blocked, attach, which subagent to spawn, Amp isolation, exit HARD STOP) so the next thread works even if Memory MCP is ignored
+- Amp `subagent-*` wrappers require STOP if spawn is unavailable instead of running specialist work in the main thread
+- Memory MCP examples and init/sync use the launcher instead of `npx` + relative path
+
 ## [0.1.13] - 2026-08-13
 
 ### Added

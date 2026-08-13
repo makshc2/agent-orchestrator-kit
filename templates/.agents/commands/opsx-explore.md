@@ -7,7 +7,7 @@ description: "Enter explore mode - think through ideas, investigate problems, cl
 
 ## Session Start (Before Any Work)
 
-Honor the pasted command and announce the Explorer role. Run `npx agent-orchestrator-kit status` or `npx openspec list --json`, then read Memory `Change:<name>`, `Handoff:<name>`, and `Decision:*`. If Memory is unavailable or empty, read `openspec/changes/<name>/handoff.md`; this fallback is not a blocker. For free-form “continue” / “next” with one active change, execute its `Handoff.next_command` instead of asking for the phase. Only then continue and spawn specialists.
+Honor the pasted command and announce the Explorer role. Run `npx agent-orchestrator-kit status` or `npx openspec list --json`, then `npx agent-orchestrator-kit handoff --restore` (or `handoff <name> --restore`). Read Memory `Change:<name>`, `Handoff:<name>`, and `Decision:*` when MCP works. If restore CLI fails and Memory is empty, read `openspec/changes/<name>/handoff.md`; this fallback is not a blocker. Spawn `session-handoff` in restore mode when context is incomplete (Amp: isolated `subagent-session-handoff`). For free-form “continue” / “next” with one active change, execute its `Handoff.next_command` instead of asking for the phase. Only then spawn the routed phase specialist (Amp: isolated `subagent-<name>`, never the main thread). Follow `.agents/rules/session-handoff.mdc`.
 
 Enter explore mode. Think deeply. Visualize freely. Follow the conversation wherever it goes.
 
@@ -166,9 +166,16 @@ When things crystallize, you might offer a summary - but it's optional. Sometime
 
 ---
 
-## Session Exit (Mandatory Order)
+## Session Exit (HARD STOP)
 
-Before closing explore: (1) attempt to update Memory `Change:<name>`, `Handoff:<name>`, and new `Decision:*`; (2) write `openspec/changes/<name>/handoff.md` using the orchestration skill template even if Memory fails; (3) print one fenced prompt whose first line is the chosen `/opsx:design <name>` or `/opsx:propose <name>`. Use `project.agent_language`, tell the next session to read Memory and the file fallback, omit banner labels and the full summary. Do not start that phase in this chat.
+You have NOT finished until every step succeeds. Do not say done/готово, do not start the next phase, and do not omit the fenced next-thread prompt.
+
+1. Spawn `session-handoff` in persist mode (Amp: isolated `subagent-session-handoff`). If spawn fails, persist in the parent — never skip.
+2. Write `openspec/changes/<name>/handoff.md` with: Closed role, Change, Done, Decisions, Blocked, Next command, Next role, Attach, Subagents to spawn, Constraints.
+3. Run `npx agent-orchestrator-kit handoff <name>` and require exit 0. The CLI upserts Memory JSON (absolute path) and prints the expanded self-contained prompt on stdout.
+4. If Memory MCP tools work, also update `Change:<name>`, `Handoff:<name>`, and new `Decision:*`.
+5. Paste CLI stdout into chat as one fenced block. Keep it complete. No banner. First line is `/opsx:design <name>` or `/opsx:propose <name>`.
+6. Stop. Do not start that phase in this chat.
 
 ## Guardrails
 

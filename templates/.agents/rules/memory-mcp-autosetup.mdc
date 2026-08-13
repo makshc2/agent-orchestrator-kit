@@ -6,15 +6,18 @@ alwaysApply: true
 # Memory MCP Auto-Setup
 
 At session start: check `.mcp.json` (Cursor) and `.amp/settings.json` (Amp).
-If `memory` MCP is absent — add it silently.
+If `memory` MCP is absent or uses a **relative** `MEMORY_FILE_PATH` — run `npx agent-orchestrator-kit memory-setup` silently.
+
+Shared memory file: `.cursor/memory.json` (same path for Cursor and Amp).
+
+**CRITICAL:** never set `MEMORY_FILE_PATH` to a relative path. Relative `.cursor/memory.json` resolves inside npx `dist/` — Amp then reads the wrong graph (looks like "memory ignored"). Always start Memory via `node scripts/memory-mcp-launcher.cjs`, which injects an absolute path.
 
 ## Cursor (.mcp.json)
 
 ```json
 "memory": {
-  "command": "npx",
-  "args": ["-y", "@modelcontextprotocol/server-memory"],
-  "env": { "MEMORY_FILE_PATH": ".cursor/memory.json" }
+  "command": "node",
+  "args": ["scripts/memory-mcp-launcher.cjs"]
 }
 ```
 
@@ -23,12 +26,19 @@ If `memory` MCP is absent — add it silently.
 ```json
 "amp.mcpServers": {
   "memory": {
-    "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-memory"],
-    "env": { "MEMORY_FILE_PATH": ".cursor/memory.json" }
+    "command": "node",
+    "args": ["scripts/memory-mcp-launcher.cjs"]
   }
 }
 ```
+
+If Amp CLI is available and memory is missing:
+
+```bash
+npx agent-orchestrator-kit memory-setup
+```
+
+Do not run `amp mcp add` with a relative `MEMORY_FILE_PATH`.
 
 ## .gitignore
 
@@ -49,14 +59,17 @@ Use these keys and fields for orchestration state:
 | `Decision:<topic>` | `chosen`, `reason` |
 | `Convention:<area>` | project-specific rules |
 
+The deterministic writer is `npx agent-orchestrator-kit handoff <name>` — it upserts `.cursor/memory.json` even when MCP tools are ignored. Also call Memory MCP create/update when tools work.
+
 ## Session Lifecycle
 
-At the start of every `/opsx:*` role session, after resolving the change and before specialist work, read `Change:<name>`, `Handoff:<name>`, and `Decision:*`. If Memory MCP is unavailable or those entities are empty, read `openspec/changes/<name>/handoff.md` and continue; Memory failure is not a blocker.
+At the start of every `/opsx:*` role session, after resolving the change and before specialist work: `npx agent-orchestrator-kit handoff --restore`, then read `Change:<name>`, `Handoff:<name>`, and `Decision:*`. If Memory MCP is unavailable or those entities are empty, read `openspec/changes/<name>/handoff.md` and continue; Memory failure is not a blocker.
 
-At session exit, first attempt to update `Change:<name>`, `Handoff:<name>`, and every new `Decision:<topic>`. Then always mirror the state to `openspec/changes/<name>/handoff.md`, even when the Memory write fails. Only after that attempt may the conductor emit the next-session prompt.
+At session exit, spawn `session-handoff` (Amp: isolated `subagent-session-handoff`), write `handoff.md`, then run `npx agent-orchestrator-kit handoff <name>` (exit 0 required). Paste the CLI stdout prompt complete. Only after that attempt Memory MCP updates. You are not done without the fenced prompt.
 
 ## Rules
-- Do not overwrite existing correct config
+- Do not overwrite existing correct launcher config
 - Do not delete other MCP servers
 - Notify once: "Memory MCP connected."
-- Never treat unavailable Memory MCP as a reason to stop when `handoff.md` can restore or persist state
+- Never treat unavailable Memory MCP as a reason to skip `handoff.md` or the CLI
+- Never leave a relative `MEMORY_FILE_PATH` in Cursor or Amp config

@@ -1,11 +1,8 @@
 {
   "mcpServers": {
     "memory": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-memory"],
-      "env": {
-        "MEMORY_FILE_PATH": ".cursor/memory.json"
-      }
+      "command": "node",
+      "args": ["scripts/memory-mcp-launcher.cjs"]
     },
     "figma": {
       "command": "node",

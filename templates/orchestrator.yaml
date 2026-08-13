@@ -49,10 +49,13 @@ handoff:
   restore_on_start: true
   persist_on_exit: true
   emit_next_session_prompt: true
+  prompt_self_contained: true
+  spawn_handoff_subagent: true
 
 memory:
   enabled: true
   file: .cursor/memory.json
+  launcher: scripts/memory-mcp-launcher.cjs
 
 mcp:
   baseline:
@@ -76,6 +79,9 @@ verifier:
 cli:
   status: npx agent-orchestrator-kit status
   gate_check: npx agent-orchestrator-kit gate-check
+  handoff: npx agent-orchestrator-kit handoff <name>
+  handoff_restore: npx agent-orchestrator-kit handoff --restore
+  memory_setup: npx agent-orchestrator-kit memory-setup
   openspec_list: npx openspec list
   openspec_validate_change: npx openspec validate <name> --strict --type change
   openspec_validate_all: npx openspec validate --all --strict

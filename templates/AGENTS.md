@@ -34,6 +34,7 @@ The parent `/opsx:*` session is a **conductor**: it restores handoff state, spaw
 | Phase / signal | Subagent |
 |----------------|----------|
 | Status, gate failure, next command | `openspec-guide` |
+| Session start restore / session exit persist | `session-handoff` |
 | Broken kit, MCP, or sync | `setup-doctor` |
 | `/opsx:explore` repository research | `codebase-explorer` |
 | `/opsx:design` | `design-intake` |
@@ -90,11 +91,15 @@ See `.agents/orchestrator.yaml` for role config, pipeline flags, and MCP baselin
 
 ## Session Handoff
 
-At session start: honor the pasted `/opsx:*` command, read Memory `Change:<name>`, `Handoff:<name>`, `Decision:*`, then fall back to `openspec/changes/<name>/handoff.md` when Memory is unavailable or empty.
+**HARD STOP.** A `/opsx:*` session is incomplete without persist + the fenced next-thread prompt. Amp often skips Memory MCP and in-thread specialist work — use the CLI and isolated `subagent-*` spawns.
 
-At exit, in order: update Memory → write `handoff.md` → print one fenced next-session prompt beginning with `/opsx:*`. The prompt body uses `project.agent_language`, asks the next session to read Memory, has no service banner, and does not repeat the full summary. Never start the next phase in the current chat.
+At session start, before specialist work: honor the pasted `/opsx:*` command, run `npx agent-orchestrator-kit status`, run `npx agent-orchestrator-kit handoff --restore`, read Memory `Change:<name>`, `Handoff:<name>`, `Decision:*`, then fall back to `openspec/changes/<name>/handoff.md`. Spawn `session-handoff` in restore mode when context is incomplete (Amp: isolated `subagent-session-handoff`). Then spawn the routed phase specialist (Amp: isolated wrapper, never the main thread).
 
-OpenSpec artifacts remain the source of truth for requirements and tasks. Memory and `handoff.md` are only a durable index of the current phase, decisions, blockers, and next command.
+At exit, in order: spawn `session-handoff` persist → write `handoff.md` → `npx agent-orchestrator-kit handoff <name>` (exit 0, upserts absolute-path Memory JSON) → paste the CLI stdout prompt as one fenced block. The prompt body uses `project.agent_language`, has no service banner, and MUST be self-contained (Done, Decisions, Blocked, attach, which subagent to spawn, HARD STOP). Never start the next phase in the current chat.
+
+OpenSpec artifacts remain the source of truth for requirements and tasks. Memory and `handoff.md` index the phase. The pasted prompt is the next thread's operating brief even if Memory is ignored.
+
+Memory MCP MUST use `node scripts/memory-mcp-launcher.cjs` (never a relative `MEMORY_FILE_PATH`). Run `npx agent-orchestrator-kit memory-setup` when the launcher is missing.
 
 ### Optional: Figma personal token
 

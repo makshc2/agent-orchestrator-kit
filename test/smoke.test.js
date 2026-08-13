@@ -54,9 +54,12 @@ test('init installs orchestration and openspec skills', () => {
       join(dir, '.agents/rules/agent-orchestration.mdc'),
       'utf-8',
     );
-    for (const name of ['codebase-explorer', 'design-intake', 'spec-architect', 'spec-reviewer', 'spec-archiver']) {
+    for (const name of ['session-handoff', 'codebase-explorer', 'design-intake', 'spec-architect', 'spec-reviewer', 'spec-archiver']) {
       assert.match(orchestrationRule, new RegExp(`\\b${name}\\b`), `missing route: ${name}`);
     }
+    assert.match(orch, /prompt_self_contained:\s*true/);
+    assert.match(orch, /spawn_handoff_subagent:\s*true/);
+    assert.match(orch, /launcher:\s*scripts\/memory-mcp-launcher\.cjs/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -886,6 +889,7 @@ test('init installs all routed subagents', () => {
       '.agents/subagents/spec-architect.md',
       '.agents/subagents/spec-reviewer.md',
       '.agents/subagents/spec-archiver.md',
+      '.agents/subagents/session-handoff.md',
     ];
     for (const rel of expected) {
       assert.ok(existsSync(join(dir, rel)), `missing: ${rel}`);
@@ -970,10 +974,11 @@ test('init generates Amp skill wrappers for every subagent', () => {
     );
     assert.match(
       architectWrapper,
-      /Parent MUST spawn this skill as an isolated subagent with fresh context\. Do not execute it in the main thread\. Return only the structured subagent report\./,
+      /CRITICAL \(Amp \/ Cursor \/ Claude\): Parent MUST spawn this skill as an isolated subagent with fresh context/,
     );
+    assert.match(architectWrapper, /If spawn is unavailable, STOP/);
 
-    for (const name of ['openspec-guide', 'code-writer', 'code-reviewer', 'test-writer', 'setup-doctor']) {
+    for (const name of ['openspec-guide', 'code-writer', 'code-reviewer', 'test-writer', 'setup-doctor', 'session-handoff']) {
       assert.ok(
         existsSync(join(dir, `.agents/skills/subagent-${name}/SKILL.md`)),
         `missing Amp wrapper for ${name}`,
@@ -1155,6 +1160,172 @@ test('figma-setup and figma-status never print token value', () => {
     });
     assert.match(statusOut, /configured/i);
     assert.doesNotMatch(statusOut, /figd_test_secret_value/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('init installs memory launcher and session-handoff assets', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-handoff-init-'));
+  try {
+    runInit(dir, '--profile generic --name HandoffInit --lang uk');
+
+    assert.ok(existsSync(join(dir, 'scripts/memory-mcp-launcher.cjs')));
+    assert.ok(existsSync(join(dir, '.agents/subagents/session-handoff.md')));
+    assert.ok(existsSync(join(dir, '.agents/rules/session-handoff.mdc')));
+    assert.ok(existsSync(join(dir, '.agents/skills/subagent-session-handoff/SKILL.md')));
+
+    const mcp = JSON.parse(readFileSync(join(dir, '.agents/mcp.json.example'), 'utf-8'));
+    assert.equal(mcp.mcpServers.memory.command, 'node');
+    assert.deepEqual(mcp.mcpServers.memory.args, ['scripts/memory-mcp-launcher.cjs']);
+    assert.ok(!JSON.stringify(mcp.mcpServers.memory).includes('MEMORY_FILE_PATH'));
+
+    const cursorMcp = JSON.parse(readFileSync(join(dir, '.mcp.json'), 'utf-8'));
+    assert.deepEqual(cursorMcp.mcpServers.memory.args, ['scripts/memory-mcp-launcher.cjs']);
+
+    const rule = readFileSync(join(dir, '.agents/rules/session-handoff.mdc'), 'utf-8');
+    assert.match(rule, /HARD STOP/);
+    assert.match(rule, /self-contained/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('handoff persist writes memory json and expanded prompt', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-handoff-cli-'));
+  try {
+    runInit(dir, '--profile generic --name HandoffCli --lang uk');
+    const changeDir = join(dir, 'openspec/changes/add-bulk-export');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'tasks.md'), '- [ ] 1.1 pending\n- [ ] 1.2 pending\n');
+    writeFileSync(
+      join(changeDir, 'handoff.md'),
+      `# Session Handoff
+
+## Closed role
+Architect — validate --strict passed
+
+## Done
+- Created proposal, design, specs, and tasks for bulk export.
+
+## Decisions
+- export-format: xlsx — matches existing reports
+
+## Blocked
+none
+
+## Next command
+\`/opsx:review add-bulk-export\`
+
+## Next role
+spec-reviewer
+
+## Attach
+- \`openspec/changes/add-bulk-export/\`
+
+## Subagents to spawn
+- \`spec-reviewer\` — /opsx:review (Amp: isolated \`subagent-spec-reviewer\`)
+- \`session-handoff\` — persist/restore
+
+## Constraints
+- no src edits
+`,
+    );
+
+    const out = execSync(`node "${CLI}" handoff add-bulk-export`, {
+      cwd: dir,
+      encoding: 'utf-8',
+    });
+    assert.match(out, /^\/opsx:review add-bulk-export/m);
+    assert.match(out, /Ти — conductor/);
+    assert.match(out, /subagent-spec-reviewer/);
+    assert.match(out, /HARD STOP/);
+    assert.match(out, /xlsx/);
+    assert.doesNotMatch(out, /NEXT_SESSION_PROMPT/);
+    assert.doesNotMatch(out, /handoff persist/);
+
+    const memoryRaw = readFileSync(join(dir, '.cursor/memory.json'), 'utf-8');
+    assert.match(memoryRaw, /Handoff:add-bulk-export/);
+    assert.match(memoryRaw, /Change:add-bulk-export/);
+    assert.match(memoryRaw, /Decision:export-format/);
+
+    const restored = execSync(`node "${CLI}" handoff add-bulk-export --restore`, {
+      cwd: dir,
+      encoding: 'utf-8',
+    });
+    assert.match(restored, /next_command: \/opsx:review add-bulk-export/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('handoff persist fails without required sections', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-handoff-missing-'));
+  try {
+    runInit(dir, '--profile generic --name HandoffMissing --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'handoff.md'), '# Session Handoff\n\n## Done\nonly done\n');
+
+    let failed = false;
+    try {
+      execSync(`node "${CLI}" handoff add-thing`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' });
+    } catch (error) {
+      failed = true;
+      const out = `${error.stdout || ''}${error.stderr || ''}`;
+      assert.match(out, /incomplete/i);
+    }
+    assert.ok(failed, 'handoff should fail without Closed role and Next command');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('memory-setup rewrites relative MEMORY_FILE_PATH to launcher', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-memory-setup-'));
+  try {
+    runInit(dir, '--profile generic --name MemorySetup --lang en');
+    writeFileSync(
+      join(dir, '.mcp.json'),
+      JSON.stringify(
+        {
+          mcpServers: {
+            memory: {
+              command: 'npx',
+              args: ['-y', '@modelcontextprotocol/server-memory'],
+              env: { MEMORY_FILE_PATH: '.cursor/memory.json' },
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    execSync(`node "${CLI}" memory-setup`, { cwd: dir, stdio: 'pipe' });
+
+    const mcp = JSON.parse(readFileSync(join(dir, '.mcp.json'), 'utf-8'));
+    assert.equal(mcp.mcpServers.memory.command, 'node');
+    assert.deepEqual(mcp.mcpServers.memory.args, ['scripts/memory-mcp-launcher.cjs']);
+    assert.ok(!mcp.mcpServers.memory.env);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('english project gets english next-session prompt body', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-handoff-en-'));
+  try {
+    runInit(dir, '--profile generic --name HandoffEn --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    const out = execSync(
+      `node "${CLI}" handoff add-thing --closed-role architect --done "specs ready" --next-command "/opsx:review add-thing" --next-role spec-reviewer --spawn spec-reviewer`,
+      { cwd: dir, encoding: 'utf-8' },
+    );
+    assert.match(out, /^\/opsx:review add-thing/m);
+    assert.match(out, /You are the conductor/);
+    assert.doesNotMatch(out, /Ти — conductor/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

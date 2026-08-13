@@ -36,6 +36,7 @@ The parent command session is a conductor. It MUST spawn the phase specialist an
 | Signal | Subagent |
 |--------|----------|
 | Status / next command | `openspec-guide` |
+| Session restore / persist / next-thread prompt | `session-handoff` |
 | Kit / MCP / sync failure | `setup-doctor` |
 | Explore research | `codebase-explorer` |
 | Design intake | `design-intake` |
@@ -57,9 +58,11 @@ The parent command session is a conductor. It MUST spawn the phase specialist an
 
 ## Session Handoff
 
-Before work, read Memory `Change:<name>`, `Handoff:<name>`, `Decision:*`; if unavailable or empty, read `openspec/changes/<name>/handoff.md`. At exit: Memory → `handoff.md` → one fenced `/opsx:*` prompt localized to `project.agent_language`, with no banner or duplicated summary. Do not begin the next phase in the same chat.
+**HARD STOP.** Before work: `npx agent-orchestrator-kit handoff --restore`, then Memory `Change:<name>`, `Handoff:<name>`, `Decision:*`; if unavailable, `openspec/changes/<name>/handoff.md`. Spawn `session-handoff` restore when needed (Amp: isolated `subagent-session-handoff`). Spawn the phase specialist isolated — never in the Amp main thread.
 
-OpenSpec files are the requirements/tasks source of truth. Memory and `handoff.md` only index phase state, decisions, blockers, and the next command.
+At exit: persist via `session-handoff` → `handoff.md` → `npx agent-orchestrator-kit handoff <name>` (exit 0) → paste the full CLI stdout `/opsx:*` prompt. The prompt MUST be self-contained. Do not begin the next phase in the same chat.
+
+OpenSpec files are the requirements/tasks source of truth. Memory and `handoff.md` index phase state. The pasted prompt is the next thread's operating brief.
 
 ## File Locations
 

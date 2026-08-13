@@ -2,7 +2,7 @@
 import { program } from 'commander';
 import pc from 'picocolors';
 import { readFileSync, existsSync, mkdirSync, copyFileSync, readdirSync, statSync, writeFileSync, rmSync } from 'fs';
-import { join, dirname, basename } from 'path';
+import { join, dirname, basename, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
 
@@ -71,11 +71,34 @@ const GITIGNORE_LINES = [
 const FIGMA_ENV_REL = join('.agents', 'figma.local.env');
 const FIGMA_ENV_EXAMPLE_REL = join('.agents', 'figma.local.env.example');
 const FIGMA_LAUNCHER_REL = join('scripts', 'figma-mcp-launcher.cjs');
+const MEMORY_LAUNCHER_REL = join('scripts', 'memory-mcp-launcher.cjs');
+const MEMORY_FILE_REL = join('.cursor', 'memory.json');
 const FIGMA_MANAGED_PATHS = [
   FIGMA_ENV_EXAMPLE_REL,
   FIGMA_LAUNCHER_REL,
   join('.agents', 'mcp.json.example'),
   join('.agents', 'amp.settings.json.example'),
+];
+const MEMORY_MANAGED_PATHS = [
+  MEMORY_LAUNCHER_REL,
+  join('.agents', 'mcp.json.example'),
+  join('.agents', 'amp.settings.json.example'),
+];
+const AMP_SPAWN_PREAMBLE =
+  'CRITICAL (Amp / Cursor / Claude): Parent MUST spawn this skill as an isolated subagent with fresh context. Do not execute it in the main thread. If spawn is unavailable, STOP and report blocked — do not perform this specialist\'s work in the parent. Return only the structured subagent report.';
+const HANDOFF_REQUIRED_SECTIONS = ['Closed role', 'Done', 'Next command'];
+const HANDOFF_SECTIONS = [
+  'Closed role',
+  'Change',
+  'Done',
+  'Decisions',
+  'Blocked',
+  'Next command',
+  'Next role',
+  'Attach',
+  'Subagents to spawn',
+  'Constraints',
+  'Prompt',
 ];
 
 const log = {
@@ -235,6 +258,396 @@ function ensureFigmaMcpEntry(projectDir) {
       log.warn('.amp/settings.json present but invalid JSON — merge figma server manually');
     }
   }
+}
+
+function memoryServerConfig() {
+  return { command: 'node', args: [MEMORY_LAUNCHER_REL.replace(/\\/g, '/')] };
+}
+
+function isMemoryLauncher(server) {
+  const args = server?.args || [];
+  return server?.command === 'node' && args.some((arg) => String(arg).includes('memory-mcp-launcher.cjs'));
+}
+
+function refreshMemoryManagedFiles(projectDir) {
+  const templateDir = join(KIT_ROOT, 'templates');
+  for (const rel of MEMORY_MANAGED_PATHS) {
+    const src = join(templateDir, rel);
+    const dest = join(projectDir, rel);
+    if (!existsSync(src)) continue;
+    mkdirSync(dirname(dest), { recursive: true });
+    copyFileSync(src, dest);
+    log.ok(rel);
+  }
+}
+
+function writeJsonFile(filePath, value) {
+  mkdirSync(dirname(filePath), { recursive: true });
+  writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function upsertMemoryServer(cfg, key, label) {
+  const servers = cfg[key] || {};
+  const current = servers.memory;
+  if (isMemoryLauncher(current)) {
+    log.ok(`${label} already uses memory launcher`);
+    cfg[key] = servers;
+    return cfg;
+  }
+  servers.memory = memoryServerConfig();
+  cfg[key] = servers;
+  log.ok(`${label} ← memory launcher (absolute MEMORY_FILE_PATH)`);
+  return cfg;
+}
+
+function ensureMemoryMcpEntry(projectDir) {
+  mkdirSync(join(projectDir, '.cursor'), { recursive: true });
+  const memoryFile = join(projectDir, MEMORY_FILE_REL);
+  if (!existsSync(memoryFile)) {
+    writeFileSync(memoryFile, '');
+    log.ok('.cursor/memory.json created');
+  }
+
+  const examplePath = join(projectDir, '.agents', 'mcp.json.example');
+  const cursorPath = join(projectDir, '.mcp.json');
+  if (!existsSync(cursorPath) && existsSync(examplePath)) {
+    copyFileSync(examplePath, cursorPath);
+    log.ok('.mcp.json created from example');
+  }
+  if (existsSync(cursorPath)) {
+    try {
+      const cfg = upsertMemoryServer(JSON.parse(readFileSync(cursorPath, 'utf-8')), 'mcpServers', '.mcp.json');
+      writeJsonFile(cursorPath, cfg);
+    } catch {
+      log.warn('.mcp.json present but invalid JSON — merge memory launcher from .agents/mcp.json.example');
+    }
+  }
+
+  mkdirSync(join(projectDir, '.amp'), { recursive: true });
+  const ampExample = join(projectDir, '.agents', 'amp.settings.json.example');
+  const ampPath = join(projectDir, '.amp', 'settings.json');
+  if (!existsSync(ampPath) && existsSync(ampExample)) {
+    copyFileSync(ampExample, ampPath);
+    log.ok('.amp/settings.json created from example');
+  }
+  if (existsSync(ampPath)) {
+    try {
+      const cfg = upsertMemoryServer(JSON.parse(readFileSync(ampPath, 'utf-8')), 'amp.mcpServers', '.amp/settings.json');
+      writeJsonFile(ampPath, cfg);
+    } catch {
+      log.warn('.amp/settings.json present but invalid JSON — merge memory launcher manually');
+    }
+  }
+}
+
+function readOrchestratorMeta(projectDir) {
+  const orchPath = join(projectDir, '.agents', 'orchestrator.yaml');
+  if (!existsSync(orchPath)) return { agentLanguage: 'en' };
+  const content = readFileSync(orchPath, 'utf-8');
+  const lang = content.match(/agent_language:\s*["']?([A-Za-z_-]+)/);
+  return { agentLanguage: lang ? lang[1] : 'en' };
+}
+
+function parseHandoffMarkdown(content) {
+  const sections = {};
+  const parts = String(content || '').split(/^## /m);
+  for (const part of parts.slice(1)) {
+    const nl = part.indexOf('\n');
+    const title = (nl === -1 ? part : part.slice(0, nl)).trim();
+    const body = nl === -1 ? '' : part.slice(nl + 1).trim();
+    sections[title] = body;
+  }
+  return sections;
+}
+
+function firstLineCommand(value) {
+  const match = String(value || '').match(/\/opsx:[^\s`]+(?:\s+[^\s`]+)?/);
+  if (match) return match[0].trim();
+  return String(value || '').replace(/^[`\s]+|[`\s]+$/g, '').split('\n')[0].trim();
+}
+
+function firstSpawnName(value) {
+  const tick = String(value || '').match(/`([a-z0-9-]+)`/i);
+  if (tick) return tick[1];
+  const word = String(value || '').match(/\b([a-z][a-z0-9-]{2,})\b/i);
+  return word ? word[1] : '';
+}
+
+function sectionOr(sections, title, fallback = '') {
+  const value = sections[title];
+  return value && value.trim() ? value.trim() : fallback;
+}
+
+function buildHandoffMarkdown(fields) {
+  const prompt = fields.prompt ? `\n\n## Prompt\n\n\`\`\`text\n${fields.prompt}\n\`\`\`` : '';
+  return `# Session Handoff
+
+## Closed role
+${fields.closedRole}
+
+## Change
+${fields.change}
+
+## Done
+${fields.done}
+
+## Decisions
+${fields.decisions}
+
+## Blocked
+${fields.blocked}
+
+## Next command
+\`${fields.nextCommand}\`
+
+## Next role
+${fields.nextRole}
+
+## Attach
+${fields.attach}
+
+## Subagents to spawn
+${fields.spawn}
+
+## Constraints
+${fields.constraints}${prompt}
+`;
+}
+
+function fieldsFromSections(changeName, sections, extra = {}) {
+  const nextCommand = extra.nextCommand || firstLineCommand(sectionOr(sections, 'Next command'));
+  return {
+    changeName,
+    closedRole: extra.closedRole || sectionOr(sections, 'Closed role', extra.closedRole || ''),
+    change: extra.change || sectionOr(sections, 'Change', `- name: ${changeName}`),
+    done: extra.done || extra.summary || sectionOr(sections, 'Done', extra.done || ''),
+    decisions: extra.decisions || sectionOr(sections, 'Decisions', 'none'),
+    blocked: extra.blocked || sectionOr(sections, 'Blocked', 'none'),
+    nextCommand,
+    nextRole: extra.nextRole || sectionOr(sections, 'Next role', ''),
+    attach: extra.attach || sectionOr(sections, 'Attach', `- \`openspec/changes/${changeName}/\``),
+    spawn: extra.spawn || sectionOr(sections, 'Subagents to spawn', ''),
+    constraints: extra.constraints || sectionOr(sections, 'Constraints', ''),
+    status: extra.status || '',
+    tasks: extra.tasks || '',
+    review: extra.review || '',
+    sessionCount: extra.sessionCount || '',
+    summary: extra.summary || extra.done || sectionOr(sections, 'Done', ''),
+  };
+}
+
+function missingHandoffFields(fields) {
+  const missing = [];
+  if (!fields.closedRole) missing.push('Closed role');
+  if (!fields.done) missing.push('Done');
+  if (!fields.nextCommand) missing.push('Next command');
+  return missing;
+}
+
+function isUkLang(lang) {
+  const value = String(lang || 'en').toLowerCase();
+  return value === 'uk' || value.startsWith('uk');
+}
+
+function buildNextSessionPrompt(fields, agentLanguage) {
+  const name = fields.changeName;
+  const cmd = firstLineCommand(fields.nextCommand);
+  const spawnName = firstSpawnName(fields.spawn) || firstSpawnName(fields.nextRole);
+  const ampWrapper = spawnName ? `subagent-${spawnName}` : 'subagent-<phase-specialist>';
+  const uk = isUkLang(agentLanguage);
+  const languageName = uk ? 'українська' : 'English';
+
+  if (uk) {
+    return `${cmd}
+
+Ти — conductor наступної рольової сесії для зміни \`${name}\`.
+Мова відповіді: ${languageName} (\`project.agent_language: ${agentLanguage}\`).
+НЕ змішуй фази. НЕ починай наступну роль у цьому ж чаті, доки ця фаза не закрита за HARD STOP.
+
+## Хто ти і що робити
+- Команда цієї сесії: \`${cmd}\`
+- Наступна роль / субагент фази: \`${spawnName || fields.nextRole || 'див. таблицю маршрутизації'}\`
+- Amp: заспавни isolated skill \`${ampWrapper}\` зі свіжим контекстом. Виконувати тіло спеціаліста в головному треді Amp — порушення протоколу.
+- Cursor / Claude: заспавни \`.cursor/agents/${spawnName || '<name>'}.md\` / \`.claude/agents/${spawnName || '<name>'}.md\`.
+- Батьківська сесія — лише conductor: перевіряє звіт, не виконує роботу спеціаліста.
+
+## Обов'язковий старт (до будь-якої роботи спеціаліста)
+1. Виконай pasted-команду \`${cmd}\` і оголоси роль.
+2. \`npx agent-orchestrator-kit status\`
+3. \`npx agent-orchestrator-kit handoff ${name} --restore\`
+4. Прочитай Memory MCP: \`Change:${name}\`, \`Handoff:${name}\`, \`Decision:*\`.
+5. Якщо Memory порожнє або MCP недоступний — прочитай \`openspec/changes/${name}/handoff.md\`. Відсутність Memory НЕ блокує сесію, коли є файл.
+6. Заспавни \`session-handoff\` у режимі restore, якщо брифінг неповний (Amp: isolated \`subagent-session-handoff\`).
+7. Лише після цього заспавни субагента фази. Free-form «продовжуй» / «далі» при одній активній зміні = \`Handoff.next_command\`.
+
+## Повний контекст попередньої сесії (самодостатній — не покладайся лише на Memory)
+- Закрита роль: ${fields.closedRole || 'не вказано'}
+- Зміна: ${fields.change || name}
+- Зроблено:
+${fields.done || 'не вказано'}
+- Рішення:
+${fields.decisions || 'none'}
+- Блокери:
+${fields.blocked || 'none'}
+- Attach:
+${fields.attach || `- \`openspec/changes/${name}/\``}
+- Субагенти цієї сесії:
+${fields.spawn || `- \`${spawnName || 'phase specialist'}\``}
+- Обмеження:
+${fields.constraints || 'не змішувати фази; не писати поза дозволеними шляхами ролі'}
+${fields.status ? `- status: ${fields.status}` : ''}
+${fields.tasks ? `- tasks: ${fields.tasks}` : ''}
+${fields.review ? `- review: ${fields.review}` : ''}
+
+## HARD STOP на виході (ти НЕ закінчив, поки це не виконано)
+1. Заспавни \`session-handoff\` у режимі persist (Amp: isolated \`subagent-session-handoff\`). Якщо spawn недоступний — зроби persist сам, ніколи не пропускай.
+2. Запиши \`openspec/changes/${name}/handoff.md\` з усіма секціями шаблону.
+3. \`npx agent-orchestrator-kit handoff ${name}\` — exit 0 обов'язковий. CLI записує Memory JSON абсолютним шляхом і друкує розширений промпт у stdout.
+4. Якщо Memory MCP живий — онови \`Change:${name}\`, \`Handoff:${name}\`, \`Decision:*\` відповідно до файлу.
+5. Встав stdout CLI у чат одним fenced-блоком. Не скорочуй. Без службового ярлика. Перший рядок — \`/opsx:…\`.
+6. Зупинись. Наступна роль починається в НОВОМУ чаті з цим промптом.
+
+OpenSpec-файли — source of truth для вимог і тасків. Memory і handoff.md — індекс фази. Цей промпт — повний операційний бриф наступного треду, навіть якщо Amp проігнорує Memory MCP.`;
+  }
+
+  return `${cmd}
+
+You are the conductor for the next role session of change \`${name}\`.
+Reply language: ${languageName} (\`project.agent_language: ${agentLanguage}\`).
+Do not mix phases. Do not start the following role in this chat until this phase is closed via HARD STOP.
+
+## Who you are and what to do
+- This session command: \`${cmd}\`
+- Next role / phase subagent: \`${spawnName || fields.nextRole || 'see routing table'}\`
+- Amp: spawn isolated skill \`${ampWrapper}\` with fresh context. Running the specialist body in Amp's main thread is a protocol violation.
+- Cursor / Claude: spawn \`.cursor/agents/${spawnName || '<name>'}.md\` / \`.claude/agents/${spawnName || '<name>'}.md\`.
+- The parent session is conductor-only: verify the report, do not do the specialist's work.
+
+## Mandatory start (before any specialist work)
+1. Honor the pasted \`${cmd}\` command and announce the role.
+2. \`npx agent-orchestrator-kit status\`
+3. \`npx agent-orchestrator-kit handoff ${name} --restore\`
+4. Read Memory MCP: \`Change:${name}\`, \`Handoff:${name}\`, \`Decision:*\`.
+5. If Memory is empty or MCP is down, read \`openspec/changes/${name}/handoff.md\`. Missing Memory does not block the session when the file exists.
+6. Spawn \`session-handoff\` in restore mode if the briefing is incomplete (Amp: isolated \`subagent-session-handoff\`).
+7. Only then spawn the phase specialist. Free-form "continue" / "next" with one active change means \`Handoff.next_command\`.
+
+## Full previous-session context (self-contained — do not rely on Memory alone)
+- Closed role: ${fields.closedRole || 'not set'}
+- Change: ${fields.change || name}
+- Done:
+${fields.done || 'not set'}
+- Decisions:
+${fields.decisions || 'none'}
+- Blocked:
+${fields.blocked || 'none'}
+- Attach:
+${fields.attach || `- \`openspec/changes/${name}/\``}
+- Subagents for this session:
+${fields.spawn || `- \`${spawnName || 'phase specialist'}\``}
+- Constraints:
+${fields.constraints || 'do not mix phases; do not write outside the role allowed paths'}
+${fields.status ? `- status: ${fields.status}` : ''}
+${fields.tasks ? `- tasks: ${fields.tasks}` : ''}
+${fields.review ? `- review: ${fields.review}` : ''}
+
+## Exit HARD STOP (you are NOT done until this succeeds)
+1. Spawn \`session-handoff\` in persist mode (Amp: isolated \`subagent-session-handoff\`). If spawn is unavailable, persist yourself — never skip.
+2. Write \`openspec/changes/${name}/handoff.md\` with every template section.
+3. \`npx agent-orchestrator-kit handoff ${name}\` — exit 0 is required. The CLI upserts Memory JSON with an absolute path and prints the expanded prompt on stdout.
+4. If Memory MCP tools work, also update \`Change:${name}\`, \`Handoff:${name}\`, \`Decision:*\` to match the file.
+5. Paste CLI stdout into chat as one fenced block. Do not shorten it. No service banner. First line is \`/opsx:…\`.
+6. Stop. The next role starts in a NEW chat with that prompt.
+
+OpenSpec files are the source of truth for requirements and tasks. Memory and handoff.md index the phase. This prompt is the next thread's full operating brief even if Amp ignores Memory MCP.`;
+}
+
+function loadMemoryItems(filePath) {
+  if (!existsSync(filePath)) return [];
+  const raw = readFileSync(filePath, 'utf-8').trim();
+  if (!raw) return [];
+  if (raw.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(raw);
+      const entities = (parsed.entities || []).map((entity) => ({ type: 'entity', ...entity }));
+      const relations = (parsed.relations || []).map((relation) => ({ type: 'relation', ...relation }));
+      return [...entities, ...relations];
+    } catch {
+      return [];
+    }
+  }
+  return raw
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+}
+
+function saveMemoryItems(filePath, items) {
+  mkdirSync(dirname(filePath), { recursive: true });
+  const body = items.map((item) => JSON.stringify(item)).join('\n');
+  writeFileSync(filePath, body ? `${body}\n` : '');
+}
+
+function upsertMemoryEntity(items, name, entityType, observations) {
+  const entity = { type: 'entity', name, entityType, observations };
+  const idx = items.findIndex((item) => item.type === 'entity' && item.name === name);
+  if (idx >= 0) items[idx] = entity;
+  else items.push(entity);
+}
+
+function parseDecisionItems(text) {
+  return String(text || '')
+    .split('\n')
+    .map((line) => line.replace(/^\s*[-*]\s*/, '').trim())
+    .filter((line) => line && !/^none$/i.test(line));
+}
+
+function persistMemoryFromHandoff(projectDir, fields) {
+  const filePath = resolve(projectDir, MEMORY_FILE_REL);
+  const items = loadMemoryItems(filePath);
+  const name = fields.changeName;
+  const changeObs = [
+    fields.status ? `status: ${fields.status}` : null,
+    fields.tasks ? `tasks: ${fields.tasks}` : null,
+    fields.closedRole ? `last_role: ${fields.closedRole}` : null,
+    fields.review ? `review: ${fields.review}` : null,
+    fields.summary ? `summary: ${fields.summary}` : null,
+  ].filter(Boolean);
+  if (changeObs.length) upsertMemoryEntity(items, `Change:${name}`, 'Change', changeObs);
+
+  const handoffObs = [
+    fields.nextRole ? `next_role: ${fields.nextRole}` : null,
+    fields.nextCommand ? `next_command: ${fields.nextCommand}` : null,
+    fields.sessionCount ? `session_count: ${fields.sessionCount}` : null,
+    fields.summary ? `summary: ${fields.summary}` : null,
+    fields.blocked ? `blocked: ${fields.blocked}` : null,
+  ].filter(Boolean);
+  if (handoffObs.length) upsertMemoryEntity(items, `Handoff:${name}`, 'Handoff', handoffObs);
+
+  for (const decision of parseDecisionItems(fields.decisions)) {
+    const topicMatch = decision.match(/^([^:]+):/);
+    const topic = (topicMatch ? topicMatch[1] : decision).trim().slice(0, 80) || decision.slice(0, 80);
+    upsertMemoryEntity(items, `Decision:${topic}`, 'Decision', [`chosen: ${decision}`]);
+  }
+
+  saveMemoryItems(filePath, items);
+  return filePath;
+}
+
+function resolveHandoffChange(projectDir, requested) {
+  if (requested) return requested;
+  const changes = listActiveChanges(projectDir);
+  if (changes.length === 1) return changes[0];
+  if (changes.length === 0) return null;
+  return { ambiguous: changes };
+}
+
+function readHandoffFields(projectDir, changeName) {
+  const filePath = join(projectDir, 'openspec', 'changes', changeName, 'handoff.md');
+  if (!existsSync(filePath)) return { filePath, fields: null };
+  const sections = parseHandoffMarkdown(readFileSync(filePath, 'utf-8'));
+  return { filePath, fields: fieldsFromSections(changeName, sections) };
 }
 
 function parseFigmaUrl(url) {
@@ -643,7 +1056,7 @@ function generateAmpSubagentSkills(projectDir) {
         '',
         `<!-- AUTO-GENERATED from .agents/subagents/${file} — edit the source file, then run: npx agent-orchestrator-kit sync -->`,
         '',
-        'Parent MUST spawn this skill as an isolated subagent with fresh context. Do not execute it in the main thread. Return only the structured subagent report.',
+        AMP_SPAWN_PREAMBLE,
         '',
         parsed[2].trim(),
         '',
@@ -774,6 +1187,10 @@ program
     log.title('Updating .gitignore');
     mergeGitignore(projectDir, GITIGNORE_LINES);
 
+    log.title('Configuring Memory MCP');
+    refreshMemoryManagedFiles(projectDir);
+    ensureMemoryMcpEntry(projectDir);
+
     log.title('Done');
     log.ok(`agent-orchestrator-kit v${KIT_VERSION} installed`);
     printNextSteps(profile, projectDir, ci, specVerify);
@@ -825,6 +1242,9 @@ program
 
     log.title('Refreshing Figma setup templates');
     refreshFigmaManagedFiles(projectDir);
+    log.title('Configuring Memory MCP');
+    refreshMemoryManagedFiles(projectDir);
+    ensureMemoryMcpEntry(projectDir);
     mergeGitignore(projectDir, GITIGNORE_LINES);
 
     log.ok(`Updated to v${KIT_VERSION}`);
@@ -888,6 +1308,9 @@ program
     if (syncAmpTarget) {
       syncAmp(projectDir);
     }
+
+    log.title('Configuring Memory MCP');
+    ensureMemoryMcpEntry(projectDir);
 
     mergeGitignore(projectDir, GITIGNORE_LINES);
 
@@ -1137,6 +1560,139 @@ program
       log.err(`Figma API error: ${error.message}`);
       process.exitCode = 1;
     }
+  });
+
+program
+  .command('memory-setup')
+  .description('Install memory MCP launcher and rewrite Cursor/Amp configs to use an absolute MEMORY_FILE_PATH')
+  .action(() => {
+    const projectDir = process.cwd();
+    log.title('agent-orchestrator memory-setup');
+    refreshMemoryManagedFiles(projectDir);
+    mergeGitignore(projectDir, GITIGNORE_LINES);
+    ensureMemoryMcpEntry(projectDir);
+    log.ok(`Memory file: ${resolve(projectDir, MEMORY_FILE_REL)}`);
+    log.info('Restart Cursor / Amp after this change');
+  });
+
+program
+  .command('handoff [change-name]')
+  .description('Persist or restore session handoff: write handoff.md, upsert Memory JSON, print the expanded next-thread prompt')
+  .option('--restore', 'Print the restore briefing instead of persisting', false)
+  .option('--closed-role <role>', 'Closed role for persist')
+  .option('--next-command <command>', 'Next /opsx:* command')
+  .option('--next-role <role>', 'Next role or subagent name')
+  .option('--summary <text>', 'Persisted summary (also fills Done when Done is empty)')
+  .option('--done <text>', 'Done section')
+  .option('--decisions <text>', 'Decisions section')
+  .option('--blocked <text>', 'Blocked section')
+  .option('--attach <text>', 'Attach section')
+  .option('--spawn <text>', 'Subagents to spawn')
+  .option('--constraints <text>', 'Constraints section')
+  .option('--status <status>', 'Change status observation')
+  .option('--tasks <progress>', 'Task progress n/m')
+  .option('--review <verdict>', 'Review verdict')
+  .option('--session-count <n>', 'Handoff session_count')
+  .action((changeName, opts) => {
+    const projectDir = process.cwd();
+    const resolved = resolveHandoffChange(projectDir, changeName);
+    if (!resolved) {
+      log.err('No active change found. Pass a name: npx agent-orchestrator-kit handoff <name>');
+      process.exitCode = 1;
+      return;
+    }
+    if (resolved.ambiguous) {
+      log.err(`Multiple active changes: ${resolved.ambiguous.join(', ')}. Pass the change name argument.`);
+      process.exitCode = 1;
+      return;
+    }
+
+    const name = resolved;
+    const { agentLanguage } = readOrchestratorMeta(projectDir);
+    const changeDir = join(projectDir, 'openspec', 'changes', name);
+
+    if (opts.restore) {
+      log.title(`handoff restore  ${name}`);
+      const { filePath, fields } = readHandoffFields(projectDir, name);
+      const memoryPath = resolve(projectDir, MEMORY_FILE_REL);
+      const memoryItems = loadMemoryItems(memoryPath).filter(
+        (item) => item.type === 'entity' && String(item.name || '').includes(name),
+      );
+      if (!fields && memoryItems.length === 0) {
+        log.err(`No handoff.md or Memory entities for ${name}`);
+        log.info(`Expected: ${filePath}`);
+        process.exitCode = 1;
+        return;
+      }
+      if (fields) {
+        log.ok(`handoff.md: ${filePath}`);
+        console.log(`next_command: ${fields.nextCommand || '(missing)'}`);
+        console.log(`next_role: ${fields.nextRole || '(missing)'}`);
+        console.log(`closed_role: ${fields.closedRole || '(missing)'}`);
+        console.log('');
+        console.log(fields.done || '');
+      } else {
+        log.warn('handoff.md missing — using Memory JSON only');
+      }
+      if (memoryItems.length) {
+        log.ok(`Memory entities: ${memoryItems.length} (${memoryPath})`);
+      } else {
+        log.warn(`Memory JSON empty or missing at ${memoryPath}`);
+      }
+      return;
+    }
+
+    console.error(pc.bold(pc.white(`\nhandoff persist  ${name}`)));
+    if (!existsSync(changeDir)) {
+      log.err(`change not found: ${name}`);
+      process.exitCode = 1;
+      return;
+    }
+
+    const existing = readHandoffFields(projectDir, name);
+    const extra = {
+      closedRole: opts.closedRole,
+      nextCommand: opts.nextCommand,
+      nextRole: opts.nextRole,
+      summary: opts.summary,
+      done: opts.done,
+      decisions: opts.decisions,
+      blocked: opts.blocked,
+      attach: opts.attach,
+      spawn: opts.spawn,
+      constraints: opts.constraints,
+      status: opts.status,
+      tasks: opts.tasks,
+      review: opts.review,
+      sessionCount: opts.sessionCount,
+    };
+    const sections = existing.fields ? parseHandoffMarkdown(readFileSync(existing.filePath, 'utf-8')) : {};
+    const fields = fieldsFromSections(name, sections, extra);
+    const missing = missingHandoffFields(fields);
+    if (missing.length) {
+      log.err(`handoff.md incomplete — missing: ${missing.join(', ')}`);
+      log.err('Write the file sections or pass --closed-role, --done/--summary, and --next-command');
+      process.exitCode = 1;
+      return;
+    }
+
+    const progress = parseTasksProgress(changeDir);
+    if (!fields.tasks && progress) fields.tasks = `${progress.done}/${progress.total}`;
+    if (!fields.review) fields.review = parseReviewVerdict(changeDir) || '';
+    if (!fields.status) {
+      fields.status = fields.review && /^APPROVE/i.test(fields.review) ? 'spec-approved' : 'in-progress';
+    }
+
+    const prompt = buildNextSessionPrompt(fields, agentLanguage).replace(/^\n+|\n+$/g, '');
+    fields.prompt = prompt;
+    writeFileSync(existing.filePath, `${buildHandoffMarkdown(fields).trim()}\n`);
+    console.error(pc.green('  ✓'), existing.filePath.replace(`${projectDir}/`, ''));
+
+    const memoryPath = persistMemoryFromHandoff(projectDir, fields);
+    console.error(pc.green('  ✓'), `Memory JSON upserted: ${memoryPath}`);
+
+    console.error(pc.dim('Copy the prompt below into the next chat as one fenced block. Do not include this line.'));
+    process.stdout.write(`${prompt}\n`);
   });
 
 program.parse();

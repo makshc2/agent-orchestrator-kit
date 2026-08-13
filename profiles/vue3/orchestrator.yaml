@@ -51,10 +51,13 @@ handoff:
   restore_on_start: true
   persist_on_exit: true
   emit_next_session_prompt: true
+  prompt_self_contained: true
+  spawn_handoff_subagent: true
 
 memory:
   enabled: true
   file: .cursor/memory.json
+  launcher: scripts/memory-mcp-launcher.cjs
 
 mcp:
   baseline:

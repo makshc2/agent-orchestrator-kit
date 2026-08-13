@@ -13,7 +13,8 @@ Amp Code і багато агентських shell **не мають** глоб
 | Замість (ламає Amp) | Використовуй |
 |---------------------|--------------|
 | `agent-orchestrator-kit status` | `npx agent-orchestrator-kit status` (або `npm run agent:status`, якщо script є) |
-| `agent-orchestrator-kit gate-check` | `npx agent-orchestrator-kit gate-check` (або `npm run agent:gate-check`) |
+| `agent-orchestrator-kit handoff` | `npx agent-orchestrator-kit handoff <name>` |
+| `agent-orchestrator-kit memory-setup` | `npx agent-orchestrator-kit memory-setup` |
 | `openspec list` | `npx openspec list` (або `npm run openspec:list`) |
 | `openspec validate --strict` | **ніколи без цілі** → `npx openspec validate <name> --strict --type change` |
 | `openspec validate --all --strict` | `npx openspec validate --all --strict` (або `npm run openspec:validate` / `verify:openspec`) |

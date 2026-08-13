@@ -27,7 +27,7 @@ Kit SHALL постачати таблицю маршрутизації «фаз�
 #### Scenario: Init installs routing in always-apply rule
 
 - **WHEN** виконується `agent-orchestrator-kit init`
-- **THEN** `.agents/rules/agent-orchestration.mdc` містить таблицю з рядками для `codebase-explorer`, `spec-architect`, `spec-reviewer`, `code-writer`, `spec-archiver`
+- **THEN** `.agents/rules/agent-orchestration.mdc` містить таблицю з рядками для `session-handoff`, `codebase-explorer`, `spec-architect`, `spec-reviewer`, `code-writer`, `spec-archiver`
 
 #### Scenario: Spec review is not code review
 
@@ -37,12 +37,12 @@ Kit SHALL постачати таблицю маршрутизації «фаз�
 
 ### Requirement: Stage subagents for every OpenSpec phase
 
-Kit SHALL постачати в `templates/.agents/subagents/` агентів: `openspec-guide`, `setup-doctor`, `codebase-explorer`, `design-intake`, `spec-architect`, `spec-reviewer`, `design-implementer`, `code-writer`, `test-writer`, `code-reviewer`, `spec-archiver`. Нові агенти MUST синхронізуватись у `.cursor/agents/` і `.claude/agents/` так само, як існуючі.
+Kit SHALL постачати в `templates/.agents/subagents/` агентів: `openspec-guide`, `setup-doctor`, `session-handoff`, `codebase-explorer`, `design-intake`, `spec-architect`, `spec-reviewer`, `design-implementer`, `code-writer`, `test-writer`, `code-reviewer`, `spec-archiver`. Нові агенти MUST синхронізуватись у `.cursor/agents/` і `.claude/agents/` так само, як існуючі.
 
 #### Scenario: Init installs new stage subagents
 
 - **WHEN** виконується `agent-orchestrator-kit init`
-- **THEN** у проєкті існують `.agents/subagents/codebase-explorer.md`, `design-intake.md`, `spec-architect.md`, `spec-reviewer.md`, `spec-archiver.md`
+- **THEN** у проєкті існують `.agents/subagents/session-handoff.md`, `codebase-explorer.md`, `design-intake.md`, `spec-architect.md`, `spec-reviewer.md`, `spec-archiver.md`
 
 #### Scenario: Sync copies them to Cursor and Claude
 

@@ -1,9 +1,10 @@
 {
   "mcpServers": {
     "memory": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-memory"],
-      "env": { "MEMORY_FILE_PATH": ".cursor/memory.json" }
+      "command": "node",
+      "args": [
+        "templates/scripts/memory-mcp-launcher.cjs"
+      ]
     }
   }
 }
