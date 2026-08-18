@@ -5,78 +5,31 @@ alwaysApply: true
 
 # Agent Orchestration Rules
 
-This project uses a spec-driven role pipeline. Read `.agents/orchestrator.yaml` for config.
+Spec-driven pipeline. Read `.agents/orchestrator.yaml`. Details: skill `agent-orchestration`. Handoff: `.agents/rules/session-handoff.mdc`. CLI: `npx` only (`.agents/rules/cli-via-npm.mdc`).
 
-## Role Commands
-- `/opsx:explore` → read-only thinking, no code
-- `/opsx:design <name>` → writes only `design-brief.md` + `assets/` (optional design intake)
-- `/opsx:propose <name>` → creates `openspec/changes/<name>/` artifacts only
-- `/opsx:review <name>` → read-only spec review, writes `review.md`, outputs Approve or Request Changes
-- `/opsx:apply <name>` → writes `src/`, marks `tasks.md [x]` (blocked if no review when `require_spec_review: true`)
-- `/opsx:quick <name>` → MVP: propose + apply in one session (when `require_spec_review: false`)
-- `/opsx:archive` → merges delta specs, moves change to archive
+## Commands
+`/opsx:explore` read-only · `/opsx:design <name>` brief+assets only · `/opsx:propose <name>` change artifacts · `/opsx:review <name>` review.md · `/opsx:apply <name>` code (blocked without Approve when `require_spec_review`) · `/opsx:quick <name>` MVP propose+apply · `/opsx:archive`
 
-## Conductor Routing (Mandatory and Exclusive)
+The parent `/opsx:*` session is the **conductor**. It MUST spawn the one routed specialist, verify the structured report, and MUST NOT do that specialist's work. Only the conductor marks `tasks.md`, after `Status: done` and file check. `spec-reviewer` ≠ `code-reviewer`.
 
-The parent `/opsx:*` session is the conductor. For specialist work it MUST spawn the one subagent selected below with a self-contained prompt, MUST verify the structured report, and MUST NOT perform that specialist's work itself. One signal maps to one primary subagent; do not substitute a generic agent.
+| Signal | MUST spawn |
+|--------|------------|
+| Status / gate / next command | `openspec-guide` |
+| Restore if CLI briefing missing; persist on exit | `session-handoff` |
+| Broken kit / MCP / sync | `setup-doctor` |
+| `/opsx:explore` | `codebase-explorer` |
+| `/opsx:design` | `design-intake` |
+| `/opsx:propose` | `spec-architect` |
+| `/opsx:review` | `spec-reviewer` |
+| Apply + design brief/Figma/image | `design-implementer` |
+| Apply ordinary task | `code-writer` |
+| Apply tests | `test-writer` |
+| Apply pre-PR | `code-reviewer` |
+| `/opsx:archive` | `spec-archiver` |
 
-| Phase / signal | MUST spawn | Specialist scope the conductor MUST NOT do |
-|----------------|------------|--------------------------------------------|
-| Status, gate failure, next command | `openspec-guide` | Pipeline diagnosis |
-| Session start restore / session exit persist | `session-handoff` | Memory, `handoff.md`, next-thread prompt |
-| Broken kit, MCP, or generated-file sync | `setup-doctor` | Kit setup repair |
-| `/opsx:explore` repository investigation | `codebase-explorer` | Repository research; no specs or code |
-| `/opsx:design` | `design-intake` | `design-brief.md` and `assets/` |
-| `/opsx:propose` | `spec-architect` | Change proposal/design/specs/tasks |
-| `/opsx:review` | `spec-reviewer` | Pre-apply spec verdict and `review.md` |
-| Apply task with design brief/Figma/image | `design-implementer` | UI implementation |
-| Apply ordinary implementation task | `code-writer` | One task's production code |
-| Apply after implementation | `test-writer` | Automated tests |
-| Apply before PR/MR | `code-reviewer` | Post-implementation spec review |
-| `/opsx:archive` | `spec-archiver` | Delta merge and archive move |
+## Session
+Start: honor pasted `/opsx:*` → `npx agent-orchestrator-kit status` → `handoff --restore`. Spawn `session-handoff` restore **only if** restore CLI failed or printed no briefing (Amp: isolated `subagent-session-handoff`). Then spawn the phase specialist isolated. Free-form continue → `Handoff.next_command`.
 
-`spec-reviewer` is never interchangeable with `code-reviewer`. During apply, only the conductor may mark a `tasks.md` checkbox, and only after a subagent reports `Status: done` and the conductor verifies the reported files.
+Exit HARD STOP: persist via `session-handoff` → `handoff.md` → `npx agent-orchestrator-kit handoff <name>` (exit 0) → paste CLI stdout as one fenced `/opsx:*` prompt. Do not start the next phase here.
 
-## Session Start Protocol (Before Any Specialist Work)
-
-1. Honor the pasted `/opsx:<phase> <name>` command and announce that role.
-2. Run `npx agent-orchestrator-kit status` or `npx openspec list --json`; resolve the active change without exceeding `max_active_changes`.
-3. Run `npx agent-orchestrator-kit handoff --restore` (or `handoff <name> --restore`). Use the printed briefing.
-4. Read Memory entities `Change:<name>`, `Handoff:<name>`, and `Decision:*` when MCP works.
-5. If restore CLI fails and Memory is empty, read `openspec/changes/<name>/handoff.md`. Memory failure alone MUST NOT block the session when the file exists.
-6. Spawn `session-handoff` in restore mode when context is incomplete (Amp: isolated `subagent-session-handoff`, never the main thread).
-7. Only after context is restored, spawn the routed phase specialist. Amp MUST spawn `subagent-<name>` isolated.
-
-If the user says “continue” / “next” / «продовжуй» / «далі» without a command and exactly one active change has `Handoff.next_command` (from Memory, CLI restore, or `handoff.md`), execute that command instead of asking which phase to run.
-
-Follow `.agents/rules/session-handoff.mdc`.
-
-## Session Exit Protocol (HARD STOP)
-
-A phase is not closed until the conductor performs these steps in order. FORBIDDEN: saying done/готово, starting the next phase, or omitting the fenced prompt.
-
-1. Spawn `session-handoff` in persist mode (Amp: isolated `subagent-session-handoff`). If spawn fails, persist in the parent — never skip.
-2. Write `openspec/changes/<name>/handoff.md` with sections **Closed role**, **Change**, **Done**, **Decisions**, **Blocked**, **Next command**, **Next role**, **Attach**, **Subagents to spawn**, and **Constraints**. Do this even if Memory MCP is unavailable.
-3. Run `npx agent-orchestrator-kit handoff <name>` and require exit 0. The CLI upserts `.cursor/memory.json` with an absolute path and prints the expanded self-contained next-session prompt on stdout.
-4. If Memory MCP tools work, also update `Change:<name>` (`status`, `tasks n/m`, `last_role`, `review`), `Handoff:<name>` (`next_role`, `next_command`, `session_count`, `summary`, `blocked`), and each new `Decision:<topic>` (`chosen`, `reason`).
-5. Paste the CLI stdout as one fenced copy/paste prompt. First line MUST be `/opsx:<next> <name>`; body MUST use `project.agent_language`; MUST keep Done/Decisions/Blocked/spawn/HARD STOP complete. Do not add a banner or shorten the prompt. Amp often skips Memory MCP — the pasted prompt is the next thread's operating brief.
-6. Do NOT start the next phase in this chat.
-
-## Session Rules
-- One active change at a time (unless mvp profile: up to 3)
-- Each role = new chat session (except `/opsx:quick` combines propose+apply)
-- No code in explore, design, or review sessions
-- Design Intake may write only `openspec/changes/<name>/design-brief.md` and `assets/`
-- No apply without review when `pipeline.require_spec_review: true` — check `review.md` or Approve in context
-- When `require_design_brief: true` and the change touches UI — need `design-brief.md`, or `Design: none` in `proposal.md` for non-UI
-- Apply uses the design brief, not live Figma MCP
-- After apply: build + lint before PR
-- After merge: run `/opsx:archive` (when `archive_after_merge: true`)
-- CLI: `npx agent-orchestrator-kit status`, `npx openspec …` — never bare globals (see `cli-via-npm.mdc`)
-
-## Never
-- Mix propose and apply in one session
-- Edit `src/` during explore, design, or review
-- Skip spec review before apply
-- Call live Figma MCP during apply when a design brief exists
-- Leave changes un-archived after merge
+Never mix propose+apply (except `/opsx:quick`). No `src/` in explore/design/review. Skip live Figma during apply when a brief exists.

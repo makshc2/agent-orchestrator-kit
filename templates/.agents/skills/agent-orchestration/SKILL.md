@@ -136,7 +136,7 @@ After PR merged + CI green:
 3. Run `npx agent-orchestrator-kit handoff --restore` (or `handoff <name> --restore`).
 4. Read Memory entities `Change:<name>`, `Handoff:<name>`, and `Decision:*` when MCP works.
 5. If restore CLI fails and Memory is empty, read `openspec/changes/<name>/handoff.md`; Memory failure alone is not a blocker.
-6. Spawn `session-handoff` in restore mode when context is incomplete (Amp: isolated `subagent-session-handoff`).
+6. Spawn `session-handoff` in restore mode **only if** `handoff --restore` failed or printed no briefing (Amp: isolated `subagent-session-handoff`). Skip this spawn when CLI restore exits 0.
 7. Only after restoration, spawn the routed phase specialist. If the user said “continue” / “next” and exactly one active change has `Handoff.next_command`, execute it instead of asking for a phase.
 
 **During session:**

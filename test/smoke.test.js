@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execSync } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, statSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -1185,7 +1185,7 @@ test('init installs memory launcher and session-handoff assets', () => {
 
     const rule = readFileSync(join(dir, '.agents/rules/session-handoff.mdc'), 'utf-8');
     assert.match(rule, /HARD STOP/);
-    assert.match(rule, /self-contained/);
+    assert.match(rule, /[Ss]elf-contained/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -1329,4 +1329,26 @@ test('english project gets english next-session prompt body', () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('always-apply rules stay within a context budget', () => {
+  const rulesDir = join(KIT_ROOT, 'templates/.agents/rules');
+  let alwaysChars = 0;
+  let figmaAlways = true;
+  for (const name of readdirSync(rulesDir).filter((f) => f.endsWith('.mdc'))) {
+    const text = readFileSync(join(rulesDir, name), 'utf-8');
+    const always = /^alwaysApply:\s*true\s*$/m.test(text);
+    if (name === 'figma-token-setup.mdc') {
+      figmaAlways = always;
+    }
+    if (always) alwaysChars += text.length;
+  }
+  assert.equal(figmaAlways, false, 'figma-token-setup must not be alwaysApply');
+  assert.ok(
+    alwaysChars < 12_000,
+    `always-apply rule bodies are ${alwaysChars} chars; keep under 12000`,
+  );
+
+  const agents = readFileSync(join(KIT_ROOT, 'templates/AGENTS.md'), 'utf-8');
+  assert.ok(agents.length < 4_000, `AGENTS.md is ${agents.length} chars; keep under 4000`);
 });

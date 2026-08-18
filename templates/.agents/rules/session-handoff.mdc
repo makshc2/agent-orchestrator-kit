@@ -3,44 +3,26 @@ description: Mandatory session restore, Memory persist, subagent spawn, and next
 alwaysApply: true
 ---
 
-# Session Handoff — HARD STOP (Amp / Cursor / Claude)
+# Session Handoff — HARD STOP
 
-This rule overrides convenience. A `/opsx:*` session that skips these steps is incomplete.
+A `/opsx:*` session is incomplete without persist + the fenced next-thread prompt. FORBIDDEN until persist succeeds: done/готово, next phase, or omitting the prompt.
 
-Amp ignores soft reminders. Treat every MUST below as a gate. If a spawn tool exists, use it. If it does not, run the CLI yourself. Never skip persist because “the user already knows”.
+## Start (before specialist work)
+1. Honor pasted `/opsx:<phase> <name>`.
+2. `npx agent-orchestrator-kit status`
+3. `npx agent-orchestrator-kit handoff --restore` (or `handoff <name> --restore`)
+4. Read Memory `Change:<name>`, `Handoff:<name>`, `Decision:*` when MCP works
+5. If restore CLI failed and Memory is empty → `openspec/changes/<name>/handoff.md`. Memory failure is not a blocker when the file exists.
+6. Spawn `session-handoff` restore **only if** step 3 failed or printed no briefing (Amp: isolated `subagent-session-handoff`). Skip this spawn when CLI restore exit 0.
+7. Spawn the routed phase specialist. Amp: isolated `subagent-<name>`. Do not do specialist work in the parent.
+8. Free-form continue/next/«далі» with one active change → execute `Handoff.next_command`.
 
-## You are not done
+## Exit (order)
+1. Spawn `session-handoff` persist (Amp isolated). If spawn fails, persist in the parent — never skip.
+2. Write `handoff.md`: Closed role, Change, Done, Decisions, Blocked, Next command, Next role, Attach, Subagents to spawn, Constraints.
+3. `npx agent-orchestrator-kit handoff <name>` — require exit 0 (upserts absolute-path Memory JSON, prints the prompt).
+4. Update Memory entities when tools work.
+5. Paste CLI stdout as one fenced block. First line `/opsx:…`. Body uses `project.agent_language`. Self-contained (Done/Decisions/Blocked/spawn/HARD STOP). No banner.
+6. Stop. Next role = new chat.
 
-FORBIDDEN until persist succeeds: saying done / готово, starting the next phase, or omitting the fenced next-thread prompt.
-
-## Session start (before any specialist work)
-
-1. Honor the pasted `/opsx:<phase> <name>` command and announce that role.
-2. Run `npx agent-orchestrator-kit status`.
-3. Run `npx agent-orchestrator-kit handoff --restore` (or `handoff <name> --restore`). Use the printed briefing.
-4. Read Memory `Change:<name>`, `Handoff:<name>`, `Decision:*` when MCP works.
-5. If restore CLI fails and Memory is empty, read `openspec/changes/<name>/handoff.md`. Memory failure is not a blocker when the file exists.
-6. Spawn `session-handoff` in restore mode when context is incomplete (Amp: isolated `subagent-session-handoff`, never the main thread).
-7. Spawn the routed phase specialist from `.agents/rules/agent-orchestration.mdc`. Amp: isolated `subagent-<name>`. Executing specialist work in the parent thread is a protocol violation.
-8. Free-form “continue” / “next” / «продовжуй» / «далі» with one active change → execute `Handoff.next_command`. Do not ask which phase.
-
-## Session exit (mandatory order)
-
-1. Spawn `session-handoff` in persist mode (Amp: isolated `subagent-session-handoff`). If spawn fails, do the persist steps in the parent — never skip.
-2. Write `openspec/changes/<name>/handoff.md` with: Closed role, Change, Done, Decisions, Blocked, Next command, Next role, Attach, Subagents to spawn, Constraints.
-3. Run `npx agent-orchestrator-kit handoff <name>` and require exit 0. The CLI upserts `.cursor/memory.json` with an absolute path and prints the expanded prompt on stdout.
-4. If Memory MCP tools work, also update `Change:<name>`, `Handoff:<name>`, `Decision:*` to match.
-5. Paste the CLI stdout into chat as one fenced block. Keep it complete. No `NEXT_SESSION_PROMPT` banner. First line is `/opsx:…`. Body uses `project.agent_language`.
-6. Stop. The next role starts in a **new** chat with that pasted prompt.
-
-## Next-thread prompt must be self-contained
-
-The prompt is the next thread’s operating brief. It MUST include: role, change name, language, hard constraints, start checklist, which subagent to spawn (including Amp isolated wrapper name), full Done / Decisions / Blocked / tasks / review / attach, and the exit HARD STOP. Do not emit a thin “read Memory” stub. Amp often skips Memory MCP; the pasted prompt must still be enough to work.
-
-## Memory path
-
-Never configure Memory MCP with a relative `MEMORY_FILE_PATH`. Relative `.cursor/memory.json` resolves inside npx `dist/` and looks like “memory ignored”. Use `node scripts/memory-mcp-launcher.cjs` (Cursor `.mcp.json` and Amp `.amp/settings.json`). Run `npx agent-orchestrator-kit memory-setup` when the launcher is missing or the path is relative.
-
-## Amp isolation
-
-Every `subagent-*` skill MUST be spawned as an isolated subagent with fresh context. Running the wrapper body in the main Amp thread is a protocol violation. If spawn is unavailable, STOP and report blocked — do not impersonate the specialist.
+Memory MCP: launcher `node scripts/memory-mcp-launcher.cjs`, never a relative `MEMORY_FILE_PATH`.

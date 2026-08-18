@@ -1,6 +1,6 @@
 ---
 description: Figma personal access token setup — local env file, never ask for token in chat
-alwaysApply: true
+alwaysApply: false
 ---
 
 # Figma Token Setup

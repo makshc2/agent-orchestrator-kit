@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **Context budget** — thinned always-apply rules and `AGENTS.md` / `CLAUDE.md`; details stay in on-demand skills. `figma-token-setup.mdc` is no longer `alwaysApply`. Restore spawn of `session-handoff` is skipped when `handoff --restore` already printed a briefing.
+
 ## [0.1.14] - 2026-08-13
 
 ### Added
