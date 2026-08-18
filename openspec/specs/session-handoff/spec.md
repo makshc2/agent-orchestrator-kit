@@ -6,7 +6,12 @@
 
 ### Requirement: Restore context at session start
 
-На початку кожної рольової сесії (`/opsx:explore`, `design`, `propose`, `review`, `apply`, `archive`, `quick`) агент MUST відновити контекст **до** будь-якої роботи спеціаліста, у такому порядку: (1) виконати `/opsx:<phase>` з pasted промпта, якщо він є, (2) виконати `npx agent-orchestrator-kit handoff --restore`, (3) **прочитати Memory** entities `Change:<name>`, `Handoff:<name>`, `Decision:*`, (4) якщо restore CLI і Memory MCP недоступні або entities порожні — прочитати `openspec/changes/<active>/handoff.md`, (5) заспавнити `session-handoff` у режимі restore, якщо контекст неповний. Відсутність Memory MCP MUST NOT блокувати сесію, якщо є `handoff.md`.
+На початку кожної рольової сесії агент MUST відновити контекст **до** будь-якої роботи, у такому порядку: (1) виконати `/opsx:<phase>` з pasted промпта, якщо він є, (2) виконати `npx agent-orchestrator-kit handoff --restore` — CLI друкує briefing із memory.json/handoff.md, (3) якщо CLI недоступний або впав — прочитати `openspec/changes/<active>/handoff.md`, (4) заспавнити `session-handoff` у режимі restore ЛИШЕ якщо і CLI, і handoff.md недоступні. Окремий крок читання Memory MCP entities НЕ вимагається — CLI-briefing є канонічним. Відсутність Memory MCP MUST NOT блокувати сесію.
+
+#### Scenario: CLI briefing достатній без субагента
+
+- **WHEN** `npx agent-orchestrator-kit handoff --restore` завершився exit 0 і надрукував briefing
+- **THEN** сесія продовжується без спавну `session-handoff` і без читання Memory MCP entities
 
 #### Scenario: Free-form continue uses handoff file
 
@@ -14,41 +19,20 @@
 - **AND** користувач у новому чаті пише «продовжуй» або «далі» без paste
 - **THEN** інструкції start-протоколу вимагають виконати `/opsx:apply <name>`, а не питати «яка фаза?»
 
-#### Scenario: Memory down still starts from file
-
-- **WHEN** Memory MCP недоступний
-- **AND** `openspec/changes/<name>/handoff.md` існує
-- **THEN** сесія продовжується з файлу і не зупиняється через Memory
-
 ### Requirement: Persist Memory and handoff on session exit
 
-Агент MUST NOT оголошувати фазу закритою, поки не виконає кроки **в цьому порядку**: (1) заспавнити `session-handoff` у режимі persist (Amp: isolated `subagent-session-handoff`; якщо spawn недоступний — persist у батькові), (2) записати `openspec/changes/<name>/handoff.md`, (3) виконати `npx agent-orchestrator-kit handoff <name>` з exit 0 (CLI upsert `.cursor/memory.json` абсолютним шляхом і друкує розширений промпт у stdout), (4) якщо Memory MCP tools доступні — оновити entities `Change:<name>`, `Handoff:<name>` і всі нові `Decision:<topic>`, (5) вставити stdout CLI у чат як один fenced промпт. Промпт MUST починатися з `/opsx:<command>`, MUST NOT містити ярлик `NEXT_SESSION_PROMPT`, MUST бути **самодостатнім**: роль, change name, мова, HARD STOP старту, який субагент спавнити (включно з Amp wrapper `subagent-<name>`), Done, Decisions, Blocked, attach, constraints, HARD STOP виходу. Промпт MUST NOT бути тонким stub «прочитай Memory». Якщо Memory MCP недоступний на кроці (4), кроки (2), (3) і (5) все одно MUST виконатись.
+Агент MUST NOT оголошувати фазу закритою, поки не виконає кроки **в цьому порядку в батьківській сесії**: (1) записати `openspec/changes/<name>/handoff.md`, (2) виконати `npx agent-orchestrator-kit handoff <name>` з exit 0 (CLI upsert memory.json абсолютним шляхом і друкує розширений промпт у stdout), (3) вставити stdout CLI у чат як один fenced промпт. Спавн `session-handoff` у режимі persist дозволений ЛИШЕ як fallback, коли крок (2) повернув помилку. Оновлення Memory MCP entities — опційне дзеркало (одним викликом, якщо tools доступні); його відсутність MUST NOT блокувати закриття. Вимоги до змісту промпта не змінюються: перший рядок `/opsx:<command>`, самодостатній, без службового ярлика.
 
-#### Scenario: Propose exit writes handoff and prompt
+#### Scenario: Exit без субагента
 
-- **WHEN** `/opsx:propose <name>` завершив артефакти і `openspec validate --strict` пройшов
-- **THEN** існує `openspec/changes/<name>/handoff.md` з `next_command` на `/opsx:review <name>`
-- **AND** фінальне повідомлення агента містить fenced блок, перший рядок якого — `/opsx:review <name>`, без рядка `NEXT_SESSION_PROMPT`
-- **AND** цей блок наказує прочитати Memory `Change:<name>`, `Handoff:<name>`, `Decision:*`
-- **AND** цей блок містить Done/Decisions/Blocked і ім'я субагента наступної сесії, щоб тред міг працювати без Memory MCP
+- **WHEN** фаза завершена і `npx agent-orchestrator-kit handoff <name>` повернув exit 0
+- **THEN** батьківська сесія вставляє stdout-промпт і закривається без спавну `session-handoff`
 
-#### Scenario: Prompt is emitted only after Memory write is attempted
+#### Scenario: Archive закриває пайплайн без next-prompt
 
-- **WHEN** сесія закриває фазу
-- **THEN** інструкція вимагає оновити Memory entities до виводу промпта в чат
-
-#### Scenario: New-session prompt is self-contained
-
-- **WHEN** агент виводить промпт наступної сесії
-- **THEN** текст містить задачу прочитати Memory entities активної зміни
-- **AND** містить операційний контекст попередньої сесії (Done, Decisions, Blocked, attach, spawn)
-- **AND** містить HARD STOP виходу і ім'я Amp wrapper `subagent-<name>`
-
-#### Scenario: Paste prompt has no banner label
-
-- **WHEN** агент виводить промпт наступної сесії
-- **THEN** скопійований текст не містить підрядка `NEXT_SESSION_PROMPT`
-- **AND** починається з `/opsx:`
+- **WHEN** `npx agent-orchestrator-kit archive <name>` завершився exit 0
+- **THEN** фінальний `handoff.md` записаний в архівній папці з `next_command: none`
+- **AND** fenced next-prompt не вимагається
 
 ### Requirement: Next-session prompt follows agent_language
 
@@ -131,3 +115,12 @@ Kit SHALL постачати команду `npx agent-orchestrator-kit handoff 
 - **WHEN** виконується `/opsx:quick <name>`
 - **THEN** інструкція quick забороняє mid-session prompt між створенням артефактів і імплементацією
 - **AND** вимагає один промпт наступної сесії наприкінці сесії (без ярлика `NEXT_SESSION_PROMPT`)
+
+### Requirement: Спільні Session Start/Exit блоки живуть в одному rule
+
+Канонічний текст протоколів Session Start і Session Exit SHALL існувати лише в `templates/.agents/rules/session-handoff.mdc` (`alwaysApply: true`). Команди `templates/.agents/commands/opsx-*.md` MUST посилатися на протокол одним-двома рядками і MUST NOT дублювати його текст.
+
+#### Scenario: Команди без дубльованих блоків
+
+- **WHEN** після `init`/`update` читаються файли `.agents/commands/opsx-*.md`
+- **THEN** жоден не містить повного тексту start/exit протоколу, лише посилання на `.agents/rules/session-handoff.mdc`

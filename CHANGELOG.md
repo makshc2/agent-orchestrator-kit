@@ -4,7 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **`npx agent-orchestrator-kit archive <name>`** — deterministic archive CLI: gates (APPROVE, all tasks `[x]`, free target), delta-spec merge into main specs with `--sync` (ADDED append / MODIFIED replace / REMOVED delete), explicit refusal without a sync decision (`--sync` or `--no-sync --force`), snapshot + full rollback when `openspec validate --all --strict` fails, final `handoff.md` (`next_command: none`) + memory upsert
+- **Task contract lint** — `gate-check --tasks <name>` enforces `Files:` / `Do:` / `Done-when:` per task, rejects vague phrasing and nonexistent `Files:` paths without `new file:`; controlled by `pipeline.task_contract: warn|strict|off` (default `warn`, mvp `off`)
+- **Tiered review** — `gate-check --review <name> [--json]` is deterministic Tier 1 (strict validation, task-contract lint, proposal `Non-goals`/`Acceptance criteria`, non-empty delta sections); `spec-reviewer` runs only after Tier 1 passes and writes `apply-notes.md` (≤ 20 lines) on APPROVE
+
 ### Changed
+- **Lean delegation model** — apply is parent-driven (implementer reads `tasks.md` + `apply-notes.md`, spawns subagents only for ≥ 2 independent tasks or on request, STOP escape valve instead of improvisation); archive is CLI-only with `spec-archiver` demoted to fallback; propose/review specialists remain mandatory
+- **Parent-driven session handoff** — canonical Session Start/Exit protocol consolidated in `.agents/rules/session-handoff.mdc`; `/opsx:*` commands reference it instead of duplicating it; `session-handoff` subagent and Memory MCP mirror are fallbacks (`handoff.spawn_handoff_subagent: false` in all profiles); `opsx-archive.md` slimmed to a ≤ 1.5 KB CLI wrapper
 - **Context budget** — thinned always-apply rules and `AGENTS.md` / `CLAUDE.md`; details stay in on-demand skills. `figma-token-setup.mdc` is no longer `alwaysApply`. Restore spawn of `session-handoff` is skipped when `handoff --restore` already printed a briefing.
 
 ## [0.1.14] - 2026-08-13

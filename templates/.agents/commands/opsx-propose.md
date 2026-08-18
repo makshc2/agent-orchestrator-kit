@@ -5,9 +5,9 @@ category: Workflow
 description: Propose a new change - create it and generate all artifacts in one step
 ---
 
-## Session Start (Before Any Work)
+## Session Start
 
-Honor the pasted command and announce the Architect role. Run `npx agent-orchestrator-kit status` or `npx openspec list --json`, then `npx agent-orchestrator-kit handoff --restore` (or `handoff <name> --restore`). Read Memory `Change:<name>`, `Handoff:<name>`, and `Decision:*` when MCP works. If restore CLI fails and Memory is empty, read `openspec/changes/<name>/handoff.md`; this fallback is not a blocker. Spawn `session-handoff` in restore mode when context is incomplete (Amp: isolated `subagent-session-handoff`). For free-form “continue” / “next” with one active change, execute its `Handoff.next_command` instead of asking for the phase. Only then spawn the routed phase specialist (Amp: isolated `subagent-<name>`, never the main thread). Follow `.agents/rules/session-handoff.mdc`.
+Follow the canonical Session Start protocol in `.agents/rules/session-handoff.mdc`, then announce the Architect role.
 
 Propose a new change - create the change and generate all artifacts in one step.
 
@@ -23,6 +23,17 @@ When ready to implement, run /opsx:apply
 **Input**: The argument after `/opsx:propose` is the change name (kebab-case), OR a description of what the user wants to build.
 
 **Conductor delegation is mandatory:** spawn `spec-architect` with the resolved name, decision brief, design brief if present, and artifact instructions. The parent MUST NOT create or edit proposal/design/specs/tasks; after the structured report it may only verify files, run status, and run strict validation.
+
+**Task contract (mandatory tasks.md format):** every task must carry indented `Files:`, `Do:`, `Done-when:` fields:
+
+```markdown
+- [ ] 2.1 Short title
+  Files: src/router/index.js, new file: src/stores/auth.js
+  Do: concrete change in 1–3 lines — no vague wording ("as needed", "if necessary", "as appropriate")
+  Done-when: verifiable condition or command
+```
+
+Each task must be self-contained for a blind implementer — executable without reading design.md. `Files:` paths must exist unless prefixed with `new file:`. Lint: `npx agent-orchestrator-kit gate-check --tasks <name>` (mode via `pipeline.task_contract: warn|strict|off`).
 
 **Steps**
 
@@ -103,14 +114,7 @@ After completing all artifacts, summarize:
 
 ## Session Exit (HARD STOP)
 
-You have NOT finished until every step succeeds. Do not say done/готово, do not start review, and do not omit the fenced next-thread prompt.
-
-1. Spawn `session-handoff` in persist mode (Amp: isolated `subagent-session-handoff`). If spawn fails, persist in the parent — never skip.
-2. Write `openspec/changes/<name>/handoff.md` with: Closed role, Change, Done, Decisions, Blocked, Next command, Next role, Attach, Subagents to spawn, Constraints.
-3. Run `npx agent-orchestrator-kit handoff <name>` and require exit 0. The CLI upserts Memory JSON (absolute path) and prints the expanded self-contained prompt on stdout.
-4. If Memory MCP tools work, also update `Change:<name>`, `Handoff:<name>`, and new `Decision:*`.
-5. Paste CLI stdout into chat as one fenced block beginning `/opsx:review <name>`. Keep it complete. No banner.
-6. Stop. Do not start review in this chat.
+Close via the canonical Session Exit protocol in `.agents/rules/session-handoff.mdc`. First line of the pasted prompt is `/opsx:review <name>`. Do not start review in this chat.
 
 **Artifact Creation Guidelines**
 

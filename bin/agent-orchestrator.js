@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { program } from 'commander';
 import pc from 'picocolors';
-import { readFileSync, existsSync, mkdirSync, copyFileSync, readdirSync, statSync, writeFileSync, rmSync } from 'fs';
+import { readFileSync, existsSync, mkdirSync, copyFileSync, readdirSync, statSync, writeFileSync, rmSync, renameSync } from 'fs';
 import { join, dirname, basename, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
@@ -747,8 +747,8 @@ function parseReviewVerdict(changeDir) {
   const reviewPath = join(changeDir, 'review.md');
   if (!existsSync(reviewPath)) return null;
   const content = readFileSync(reviewPath, 'utf-8');
-  const match = content.match(/\*\*Verdict:\*\*\s*(.+)/);
-  return match ? match[1].trim() : 'unknown';
+  const match = content.match(/^(?:#{1,6}\s*)?\*{0,2}Verdict:\*{0,2}\s*(.+?)\s*$/m);
+  return match ? match[1].replace(/\*+\s*$/, '').trim() : 'unknown';
 }
 
 function parseDesignBrief(changeDir) {
@@ -769,11 +769,235 @@ function readPipelineConfig(projectDir) {
   const requireReviewMatch = content.match(/require_spec_review:\s*(true|false)/);
   const requireBriefMatch = content.match(/require_design_brief:\s*(true|false)/);
   const maxActiveMatch = content.match(/max_active_changes:\s*(\d+)/);
+  const taskContractMatch = content.match(/task_contract:\s*(warn|strict|off)/);
   return {
     requireSpecReview: requireReviewMatch ? requireReviewMatch[1] === 'true' : true,
     requireDesignBrief: requireBriefMatch ? requireBriefMatch[1] === 'true' : false,
     maxActiveChanges: maxActiveMatch ? parseInt(maxActiveMatch[1], 10) : null,
+    taskContract: taskContractMatch ? taskContractMatch[1] : 'warn',
   };
+}
+
+// --- Task-contract lint (gate-check --tasks) ---
+
+const VAGUE_DO_PATTERNS = [/\bas needed\b/i, /\bif necessary\b/i, /\bas appropriate\b/i, /де потрібно/i, /за потреби/i];
+
+function taskContractMode(projectDir) {
+  const config = readPipelineConfig(projectDir);
+  return config ? config.taskContract : 'warn';
+}
+
+function parseTaskContracts(content) {
+  const tasks = [];
+  let current = null;
+  for (const line of content.split('\n')) {
+    const taskMatch = line.match(/^\s*- \[[ xX]\]\s+(.*)$/);
+    if (taskMatch) {
+      current = { title: taskMatch[1].trim(), files: null, do: null, doneWhen: null };
+      tasks.push(current);
+      continue;
+    }
+    if (!current) continue;
+    const fieldMatch = line.match(/^\s+(Files|Do|Done-when):\s*(.*)$/);
+    if (fieldMatch) {
+      const value = fieldMatch[2].trim();
+      if (fieldMatch[1] === 'Files') current.files = value;
+      else if (fieldMatch[1] === 'Do') current.do = value;
+      else current.doneWhen = value;
+    } else if (/^\S/.test(line)) {
+      current = null;
+    }
+  }
+  return tasks;
+}
+
+function lintTaskContracts(projectDir, tasksPath) {
+  const errors = [];
+  const tasks = parseTaskContracts(readFileSync(tasksPath, 'utf-8'));
+  for (const task of tasks) {
+    const label = `task "${task.title.slice(0, 60)}"`;
+    if (!task.files) errors.push(`${label}: missing Files:`);
+    if (!task.do) errors.push(`${label}: missing Do:`);
+    if (!task.doneWhen) errors.push(`${label}: missing Done-when:`);
+    if (task.do) {
+      for (const pattern of VAGUE_DO_PATTERNS) {
+        const match = task.do.match(pattern);
+        if (match) errors.push(`${label}: vague wording in Do: "${match[0]}"`);
+      }
+    }
+    if (task.files) {
+      for (const entry of task.files.split(',').map((s) => s.trim()).filter(Boolean)) {
+        if (/^new file:/i.test(entry)) continue;
+        if (!existsSync(join(projectDir, entry))) errors.push(`${label}: Files: path does not exist: ${entry} (prefix with "new file:" if intentional)`);
+      }
+    }
+  }
+  return errors;
+}
+
+function runTasksLint(projectDir, name, { quiet = false } = {}) {
+  const mode = taskContractMode(projectDir);
+  const report = { mode, errors: [], warnings: [] };
+  if (mode === 'off') return report;
+  const tasksPath = join(projectDir, 'openspec', 'changes', name, 'tasks.md');
+  if (!existsSync(tasksPath)) {
+    report.warnings.push(`tasks.md not found: ${tasksPath}`);
+    return report;
+  }
+  const findings = lintTaskContracts(projectDir, tasksPath);
+  if (mode === 'strict') report.errors = findings;
+  else report.warnings = [...report.warnings, ...findings];
+  if (!quiet) {
+    for (const e of report.errors) log.err(e);
+    for (const w of report.warnings) log.warn(w);
+  }
+  return report;
+}
+
+// --- Tier 1 review (gate-check --review) ---
+
+// Change names are interpolated into shell commands and paths; keep them slugs.
+function isSafeChangeName(name) {
+  return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name);
+}
+
+function runTier1Review(projectDir, name) {
+  const errors = [];
+  if (!isSafeChangeName(name)) {
+    return { pass: false, errors: [`invalid change name: ${name}`] };
+  }
+  const changeDir = join(projectDir, 'openspec', 'changes', name);
+  if (!existsSync(changeDir)) {
+    return { pass: false, errors: [`change not found: ${name}`] };
+  }
+
+  try {
+    execSync(`npx openspec validate ${name} --strict --type change`, {
+      cwd: projectDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      encoding: 'utf-8',
+    });
+  } catch (e) {
+    const detail = `${e.stdout || ''}${e.stderr || ''}`.trim().split('\n')[0] || 'non-zero exit';
+    errors.push(`openspec validate --strict failed: ${detail}`);
+  }
+
+  const lint = runTasksLint(projectDir, name, { quiet: true });
+  errors.push(...lint.errors);
+
+  const proposalPath = join(changeDir, 'proposal.md');
+  if (!existsSync(proposalPath)) {
+    errors.push('proposal.md not found');
+  } else {
+    const proposal = readFileSync(proposalPath, 'utf-8');
+    if (!/^#{2,}\s*Non-goals\b/im.test(proposal)) errors.push('proposal.md: missing "Non-goals" section');
+    if (!/^#{2,}\s*Acceptance criteria\b/im.test(proposal)) errors.push('proposal.md: missing "Acceptance criteria" section');
+  }
+
+  for (const deltaPath of listDeltaSpecFiles(changeDir)) {
+    const rel = deltaPath.replace(`${projectDir}/`, '');
+    const sections = parseDeltaSpec(readFileSync(deltaPath, 'utf-8'));
+    const total = sections.ADDED.length + sections.MODIFIED.length + sections.REMOVED.length;
+    if (total === 0) errors.push(`${rel}: no non-empty ADDED/MODIFIED/REMOVED Requirements section`);
+  }
+
+  return { pass: errors.length === 0, errors, warnings: lint.warnings };
+}
+
+// --- Delta spec sync (archive --sync) ---
+
+function listDeltaSpecFiles(changeDir) {
+  const specsDir = join(changeDir, 'specs');
+  if (!existsSync(specsDir)) return [];
+  const files = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) walk(full);
+      else if (entry.endsWith('.md')) files.push(full);
+    }
+  };
+  walk(specsDir);
+  return files.sort();
+}
+
+function splitRequirementBlocks(sectionBody) {
+  return String(sectionBody || '')
+    .split(/^### Requirement: /m)
+    .slice(1)
+    .map((part) => {
+      const nl = part.indexOf('\n');
+      const name = (nl === -1 ? part : part.slice(0, nl)).trim();
+      const body = nl === -1 ? '' : part.slice(nl + 1);
+      return { name, block: `### Requirement: ${name}\n${body}`.replace(/\s+$/, '') };
+    });
+}
+
+function parseDeltaSpec(content) {
+  const sections = { ADDED: [], MODIFIED: [], REMOVED: [] };
+  const parts = String(content || '').split(/^## /m);
+  for (const part of parts.slice(1)) {
+    const nl = part.indexOf('\n');
+    const title = (nl === -1 ? part : part.slice(0, nl)).trim();
+    const body = nl === -1 ? '' : part.slice(nl + 1);
+    const match = title.match(/^(ADDED|MODIFIED|REMOVED) Requirements$/);
+    if (match) sections[match[1]] = splitRequirementBlocks(body);
+  }
+  return sections;
+}
+
+function findRequirementSpan(content, name) {
+  const header = `### Requirement: ${name}`;
+  const idx = content.indexOf(header);
+  if (idx === -1) return null;
+  const rest = content.slice(idx + header.length);
+  const relEnd = rest.search(/\n### Requirement: |\n## /);
+  const end = relEnd === -1 ? content.length : idx + header.length + relEnd;
+  return [idx, end];
+}
+
+function planSpecSync(projectDir, deltaSpecPaths, changeName) {
+  const plan = [];
+  const conflicts = [];
+  for (const deltaPath of deltaSpecPaths) {
+    const capability = basename(dirname(deltaPath));
+    const mainPath = join(projectDir, 'openspec', 'specs', capability, 'spec.md');
+    const delta = parseDeltaSpec(readFileSync(deltaPath, 'utf-8'));
+    if (delta.ADDED.length + delta.MODIFIED.length + delta.REMOVED.length === 0) continue;
+    const existed = existsSync(mainPath);
+    const dirExisted = existsSync(dirname(mainPath));
+    const oldContent = existed ? readFileSync(mainPath, 'utf-8') : null;
+    let content = existed
+      ? oldContent
+      : `## Purpose\n\n${capability} — requirements merged from change ${changeName}.\n\n## Requirements\n`;
+
+    for (const req of delta.REMOVED) {
+      const span = findRequirementSpan(content, req.name);
+      if (!span) {
+        conflicts.push(`${capability}: REMOVED requirement not found in main spec: "${req.name}"`);
+        continue;
+      }
+      content = `${content.slice(0, span[0]).replace(/\n+$/, '\n\n')}${content.slice(span[1]).replace(/^\n+/, '')}`;
+    }
+    for (const req of delta.MODIFIED) {
+      const span = findRequirementSpan(content, req.name);
+      if (!span) {
+        conflicts.push(`${capability}: MODIFIED requirement not found in main spec: "${req.name}"`);
+        continue;
+      }
+      content = `${content.slice(0, span[0])}${req.block}\n\n${content.slice(span[1]).replace(/^\n+/, '')}`;
+    }
+    for (const req of delta.ADDED) {
+      if (findRequirementSpan(content, req.name)) {
+        conflicts.push(`${capability}: ADDED requirement already exists in main spec: "${req.name}"`);
+        continue;
+      }
+      content = `${content.replace(/\s+$/, '')}\n\n${req.block}\n`;
+    }
+    if (!content.endsWith('\n')) content += '\n';
+    plan.push({ mainPath, existed, dirExisted, oldContent, newContent: content });
+  }
+  return { plan, conflicts };
 }
 
 // Returns true/false when the diff is known, or null when it could not be
@@ -1354,8 +1578,46 @@ program
   .description('Deterministically check the review gate before apply/merge (exit non-zero if unmet)')
   .option('--src-glob <glob>', 'source path filter used to detect code changes', 'src/')
   .option('--base <ref>', 'git ref to diff against', 'HEAD~1')
+  .option('--tasks <name>', 'lint task contracts (Files/Do/Done-when) of a change')
+  .option('--review <name>', 'run deterministic Tier 1 review checks on a change')
+  .option('--json', 'with --review: print a {pass, errors[]} JSON report to stdout', false)
   .action((changeName, opts) => {
     const projectDir = process.cwd();
+
+    if (opts.tasks) {
+      log.title(`gate-check --tasks  ${opts.tasks}`);
+      const mode = taskContractMode(projectDir);
+      if (mode === 'off') {
+        log.info('task contract lint disabled (pipeline.task_contract: off)');
+        return;
+      }
+      const report = runTasksLint(projectDir, opts.tasks);
+      if (report.errors.length) {
+        console.error(`task contract gate failed — ${report.errors.length} error(s) (pipeline.task_contract: strict)`);
+        process.exitCode = 1;
+      } else if (report.warnings.length) {
+        log.warn(`task contract: ${report.warnings.length} issue(s) — warn mode, not blocking`);
+      } else {
+        log.ok('all tasks follow the contract (Files/Do/Done-when)');
+      }
+      return;
+    }
+
+    if (opts.review) {
+      const result = runTier1Review(projectDir, opts.review);
+      if (opts.json) {
+        console.log(JSON.stringify({ pass: result.pass, errors: result.errors }, null, 2));
+      } else {
+        log.title(`gate-check --review  ${opts.review}`);
+        for (const e of result.errors) log.err(e);
+        for (const w of result.warnings || []) log.warn(w);
+        if (result.pass) log.ok('Tier 1 review passed — proceed to spec-reviewer (Tier 2)');
+        else log.err(`Tier 1 review failed — ${result.errors.length} error(s)`);
+      }
+      if (!result.pass) process.exitCode = 1;
+      return;
+    }
+
     log.title('agent-orchestrator gate-check');
 
     const config = readPipelineConfig(projectDir);
@@ -1425,6 +1687,146 @@ program
         process.exitCode = 1;
       }
     }
+  });
+
+program
+  .command('archive <name>')
+  .description('Archive a completed change: check gates, optionally sync delta specs, move to a dated archive, validate, write final handoff')
+  .option('--sync', 'merge delta specs into openspec/specs/ before archiving')
+  .option('--no-sync', 'skip delta-spec merge (requires --force when delta specs exist)')
+  .option('--force', 'confirm archiving without merge when delta specs exist', false)
+  .action((name, opts) => {
+    const projectDir = process.cwd();
+    const fail = (msg) => {
+      console.error(msg);
+      process.exitCode = 1;
+    };
+    log.title(`agent-orchestrator archive  ${name}`);
+
+    if (!isSafeChangeName(name)) return fail(`invalid change name: ${name}`);
+
+    let status;
+    try {
+      const out = execSync(`npx openspec status --change ${name} --json`, {
+        cwd: projectDir,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        encoding: 'utf-8',
+      });
+      status = JSON.parse(out);
+    } catch (e) {
+      const detail = `${(e.stderr || e.stdout || e.message || '')}`.trim().split('\n')[0];
+      return fail(`could not resolve change "${name}" via openspec status: ${detail}`);
+    }
+
+    const changeRoot = status.changeRoot || join(projectDir, 'openspec', 'changes', name);
+    const changesDir = (status.planningHome && status.planningHome.changesDir) || join(projectDir, 'openspec', 'changes');
+    if (!existsSync(changeRoot)) return fail(`change not found: ${changeRoot}`);
+
+    // Gate 1: review verdict (only when required by pipeline config)
+    const config = readPipelineConfig(projectDir);
+    const requireReview = config ? config.requireSpecReview : true;
+    if (requireReview) {
+      const verdict = parseReviewVerdict(changeRoot);
+      if (!(verdict && /^APPROVE/i.test(verdict))) {
+        return fail(`review gate failed — change "${name}" has ${verdict ? `verdict "${verdict}"` : 'no review.md'} (require_spec_review: true)`);
+      }
+    }
+
+    // Gate 2: all tasks checked (skipped when the schema has no tasks artifact)
+    const tasksPaths = (status.artifactPaths && status.artifactPaths.tasks && status.artifactPaths.tasks.existingOutputPaths) || [];
+    for (const tasksPath of tasksPaths) {
+      if (/^\s*- \[ \]/m.test(readFileSync(tasksPath, 'utf-8'))) {
+        return fail(`tasks gate failed — ${tasksPath.replace(`${projectDir}/`, '')} still has unchecked "- [ ]" items`);
+      }
+    }
+
+    // Gate 3: target archive must not exist
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    const targetDir = join(changesDir, 'archive', `${dateStamp}-${name}`);
+    const targetRel = targetDir.replace(`${projectDir}/`, '');
+    if (existsSync(targetDir)) return fail(`archive gate failed — target already exists: ${targetRel}`);
+
+    // Sync decision for delta specs
+    const deltaSpecs = listDeltaSpecFiles(changeRoot);
+    let plan = [];
+    let syncStatus = 'no delta specs';
+    if (deltaSpecs.length) {
+      if (opts.sync === undefined) {
+        return fail(`change "${name}" has ${deltaSpecs.length} delta spec(s) — pass --sync to merge them into openspec/specs/, or --no-sync --force to archive without merging`);
+      }
+      if (opts.sync === false && !opts.force) {
+        return fail('refusing --no-sync without --force — delta specs would be archived without merging into openspec/specs/');
+      }
+      if (opts.sync) {
+        const result = planSpecSync(projectDir, deltaSpecs, name);
+        if (result.conflicts.length) {
+          for (const conflict of result.conflicts) console.error(`sync conflict: ${conflict}`);
+          return fail('delta-spec merge refused — resolve conflicts manually with the openspec-sync-specs skill, then re-run archive');
+        }
+        plan = result.plan;
+        // Snapshots of affected main specs are held in plan[].oldContent for rollback.
+        for (const entry of plan) {
+          mkdirSync(dirname(entry.mainPath), { recursive: true });
+          writeFileSync(entry.mainPath, entry.newContent);
+        }
+        syncStatus = `synced ${plan.length} main spec file(s)`;
+      } else {
+        syncStatus = 'skipped (--no-sync --force)';
+      }
+    }
+
+    // Move change into the dated archive
+    mkdirSync(dirname(targetDir), { recursive: true });
+    renameSync(changeRoot, targetDir);
+
+    // Strict validation with full rollback on failure
+    try {
+      execSync('npx openspec validate --all --strict', {
+        cwd: projectDir,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        encoding: 'utf-8',
+      });
+    } catch (e) {
+      renameSync(targetDir, changeRoot);
+      for (const entry of plan) {
+        if (entry.existed) writeFileSync(entry.mainPath, entry.oldContent);
+        else if (entry.dirExisted) rmSync(entry.mainPath, { force: true });
+        else rmSync(dirname(entry.mainPath), { recursive: true, force: true });
+      }
+      const detail = `${e.stdout || ''}${e.stderr || ''}`.trim() || 'non-zero exit';
+      console.error(detail);
+      return fail('openspec validate --all --strict failed — rolled back: change restored, main specs reverted to pre-sync state');
+    }
+
+    // Final handoff: pipeline is complete, no next-session prompt
+    const progress = parseTasksProgress(targetDir);
+    const fields = {
+      changeName: name,
+      closedRole: 'Archiver',
+      change: `- name: ${name}\n- status: archived`,
+      done: `Change archived to ${targetRel}. Delta spec sync: ${syncStatus}. openspec validate --all --strict passed.`,
+      decisions: 'none',
+      blocked: 'none',
+      nextCommand: 'none',
+      nextRole: 'none',
+      attach: `- \`${targetRel}/\``,
+      spawn: 'none',
+      constraints: 'Pipeline complete — no next session.',
+      status: 'archived',
+      tasks: progress ? `${progress.done}/${progress.total}` : '',
+      review: parseReviewVerdict(targetDir) || '',
+      summary: `archived to ${targetRel}`,
+    };
+    writeFileSync(join(targetDir, 'handoff.md'), `${buildHandoffMarkdown(fields).trim()}\n`);
+    const memoryPath = persistMemoryFromHandoff(projectDir, fields);
+
+    console.log(`change:   ${name}`);
+    console.log(`schema:   ${status.schemaName || 'unknown'}`);
+    console.log(`archive:  ${targetRel}`);
+    console.log(`sync:     ${syncStatus}`);
+    console.log(`handoff:  ${join(targetRel, 'handoff.md')} (next_command: none)`);
+    console.log(`memory:   ${memoryPath.replace(`${projectDir}/`, '')}`);
+    log.ok(`archived ${name}`);
   });
 
 program

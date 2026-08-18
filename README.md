@@ -34,17 +34,18 @@ Each role runs in a **separate agent session**. The parent `/opsx:*` session is 
 | `spec-archiver` | Delta merge and completed-change archive |
 | `session-handoff` | Restore/persist Memory + `handoff.md` + expanded next-thread prompt |
 
-The conductor uses one exclusive route per signal:
+Delegation is **differentiated per phase** (lean model): thinking-heavy phases spawn a mandatory specialist, apply is parent-driven, archive is a deterministic CLI:
 
-| Phase / signal | Subagent |
-|----------------|----------|
+| Phase / signal | Delegation |
+|----------------|------------|
 | Status / gates / next command | `openspec-guide` |
-| Session start restore / session exit persist | `session-handoff` |
+| Session start restore / session exit persist | parent-driven CLI (`handoff --restore` / `handoff <name>`); `session-handoff` is a fallback only |
 | Kit / MCP / sync repair | `setup-doctor` |
-| Explore repository research | `codebase-explorer` |
-| Design / propose / spec review | `design-intake` / `spec-architect` / `spec-reviewer` |
-| Apply UI / ordinary task / tests / pre-PR review | `design-implementer` / `code-writer` / `test-writer` / `code-reviewer` |
-| Archive | `spec-archiver` |
+| Explore repository research | `codebase-explorer` (mandatory) |
+| Design / propose / spec review | `design-intake` / `spec-architect` / `spec-reviewer` (mandatory) |
+| Apply | parent implements from `tasks.md` + `apply-notes.md`; `code-writer` / `test-writer` optional for ≥ 2 independent tasks or explicit request; `design-implementer` for design-brief/Figma tasks |
+| Pre-PR code review | `code-reviewer` |
+| Archive | `npx agent-orchestrator-kit archive <name>` (CLI — no subagent; `spec-archiver` is a fallback when the CLI is unavailable) |
 
 - **Cursor** → `.cursor/agents/` (native subagents)
 - **Claude Code** → `.claude/agents/` (native subagents)
@@ -351,13 +352,13 @@ npx openspec validate <name> --strict --type change  # must be ✓
 **Model:** medium or strong.
 **Purpose:** Review artifacts. Output **Approve ✓** or **Request Changes ✗**.
 
-The conductor spawns `spec-reviewer` (not `code-reviewer`) and verifies its `review.md`.
+Review is **two-tiered**. Tier 1 is deterministic: `npx agent-orchestrator-kit gate-check --review <name>` runs strict OpenSpec validation, the task-contract lint, and structural checks (Non-goals / Acceptance criteria in `proposal.md`, non-empty delta-spec sections). If Tier 1 fails, the verdict is REQUEST CHANGES without spawning anyone. Only on a Tier 1 pass does the conductor spawn `spec-reviewer` (not `code-reviewer`) for Tier 2 judgment and verify its `review.md`. On APPROVE the reviewer also writes `apply-notes.md` (≤ 20 lines of constraints and pitfalls for the implementer).
 
-Checks:
-- Acceptance criteria are testable
-- Tasks ≤ ~2 hours each
+Tier 2 checks (judgment only — no duplication of Tier 1):
+- Consistency proposal ↔ design ↔ tasks
 - No scope creep vs Non-goals
 - No conflicts with existing domain specs
+- Tasks self-sufficient for a blind implementer (Files / Do / Done-when)
 
 ```
 /opsx:review add-bulk-camera-export
@@ -475,6 +476,18 @@ npx agent-orchestrator-kit gate-check [change-name] [--src-glob src/] [--base HE
 
 Fails (non-zero exit) when `pipeline.require_spec_review: true`, the diff against `--base` touches `--src-glob`, and the active change has no `review.md` with `Verdict: APPROVE`. When `pipeline.require_design_brief: true` and `src/` changed, it also requires `design-brief.md` (or a `Design: none` line in `proposal.md` for non-UI changes). It degrades gracefully to exit 0 (with a message, not silently) when: `.agents/orchestrator.yaml` is missing, neither review nor design brief is required, the diff can't be computed (e.g. shallow clone), or nothing under `--src-glob` changed. It also warns (never fails) when active changes exceed `pipeline.max_active_changes`. Both `agent-verify.yml` fragments (GitHub and GitLab) call `gate-check` automatically.
 
+```bash
+npx agent-orchestrator-kit gate-check --tasks <change-name>
+```
+
+Lints the task contract in `tasks.md`: every task needs `Files:` / `Do:` / `Done-when:`, no vague phrasing (`as needed`, `if necessary`, …), and every `Files:` path must exist unless prefixed `new file:`. Behavior follows `pipeline.task_contract` in `orchestrator.yaml`: `warn` (default) exits 0 with warnings, `strict` exits 1 on violations, `off` skips the lint.
+
+```bash
+npx agent-orchestrator-kit gate-check --review <change-name> [--json]
+```
+
+Deterministic Tier 1 of the review phase: strict OpenSpec validation, the task-contract lint, `Non-goals` / `Acceptance criteria` sections in `proposal.md`, and non-empty ADDED/MODIFIED/REMOVED sections in delta specs. Human-readable stdout, or `--json` for a `{pass, errors[]}` report.
+
 ---
 
 ### Design intake: `/opsx:design`
@@ -525,7 +538,13 @@ After PR merged + CI green:
 /opsx:archive add-bulk-camera-export
 ```
 
-Merges delta specs into `openspec/specs/` and moves change to `archive/`.
+Archive is a **deterministic CLI**, not an agent workflow:
+
+```bash
+npx agent-orchestrator-kit archive <name> [--sync | --no-sync --force]
+```
+
+It checks the gates (APPROVE in `review.md` when required, all tasks `[x]`, target folder free), merges delta specs into `openspec/specs/` (`--sync`: ADDED append, MODIFIED replace, REMOVED delete), moves the change to `openspec/changes/archive/YYYY-MM-DD-<name>`, and runs `npx openspec validate --all --strict` with a full rollback on failure (main specs restored, new spec files deleted, move reverted). With delta specs present you must decide: `--sync` merges, `--no-sync --force` archives without merging, and no flag refuses with exit 1. It finishes by writing the final `handoff.md` (`next_command: none`) and updating memory. The `/opsx:archive` command is a thin wrapper that calls this CLI; the `spec-archiver` subagent remains only as a fallback when the CLI is unavailable.
 
 ## Configuration
 
@@ -674,7 +693,7 @@ Handoff:add-bulk-export    next_role: implementer, next_command: /opsx:apply add
                            session_count: 2, summary: ..., blocked: none
 ```
 
-Every `/opsx:*` session restores via `npx agent-orchestrator-kit handoff --restore`, then Memory `Change:<name>`, `Handoff:<name>`, `Decision:*`, falling back to `handoff.md` if Memory is unavailable. At exit it MUST spawn `session-handoff`, write `handoff.md`, run `npx agent-orchestrator-kit handoff <name>` (upserts `.cursor/memory.json` with an absolute path), and paste the CLI stdout prompt. The prompt is self-contained — Amp often skips Memory MCP, so the next thread must be able to work from the pasted text alone. Never configure Memory with a relative `MEMORY_FILE_PATH`; use `scripts/memory-mcp-launcher.cjs` (`npx agent-orchestrator-kit memory-setup`). The next phase always starts in a new chat.
+Session boundaries are **parent-driven** (no routine subagent): every `/opsx:*` session restores via `npx agent-orchestrator-kit handoff --restore` (the CLI briefing already reads memory.json and `handoff.md`), falling back to reading `handoff.md` directly if the CLI fails. At exit the parent itself writes `handoff.md`, runs `npx agent-orchestrator-kit handoff <name>` (upserts `.cursor/memory.json` with an absolute path), and pastes the CLI stdout prompt. The `session-handoff` subagent is spawned only when the CLI path fails; Memory MCP is an optional mirror. The prompt is self-contained — Amp often skips Memory MCP, so the next thread must be able to work from the pasted text alone. Never configure Memory with a relative `MEMORY_FILE_PATH`; use `scripts/memory-mcp-launcher.cjs` (`npx agent-orchestrator-kit memory-setup`). The next phase always starts in a new chat. The canonical Session Start / Exit protocol lives in one place — `.agents/rules/session-handoff.mdc` — and the `/opsx:*` commands reference it instead of duplicating it.
 
 ## Amp Code — Deep Integration Notes
 

@@ -2,7 +2,7 @@
 
 > Powered by [agent-orchestrator-kit](https://github.com/makshc2/agent-orchestrator-kit) v{{KIT_VERSION}}
 
-Spec-driven OpenSpec pipeline. Each phase is a **separate chat**. The parent `/opsx:*` session is a **conductor**: restore, spawn the specialist, verify the report — never do specialist work in-thread.
+Spec-driven OpenSpec pipeline. Each phase is a **separate chat**. Delegation is differentiated (lean model): explore/design/propose/review spawn a mandatory specialist; **apply is parent-driven** — the parent implements from `tasks.md` + `apply-notes.md`, subagents are optional (≥ 2 independent tasks or explicit request; `design-implementer` for design-brief/Figma); **archive is a CLI** (`npx agent-orchestrator-kit archive <name> [--sync]`), no subagent.
 
 ```
 explore → [design] → propose → review → apply → verify → archive
@@ -23,9 +23,9 @@ Routing table, HARD STOP, and CLI forms: `.agents/rules/` (`agent-orchestration`
 | Quick (MVP) | `/opsx:quick <name>` |
 | Archive | `/opsx:archive` |
 
-Start: `npx agent-orchestrator-kit status` then `handoff --restore`. Spawn `session-handoff` restore only if that CLI failed. Then spawn the routed specialist (Amp: isolated `subagent-<name>`).
+Session Start / Exit are **parent-driven** — canonical protocol in `.agents/rules/session-handoff.mdc`. Start: `status` → `handoff --restore` → `handoff.md` fallback. Exit HARD STOP: parent writes `handoff.md` → `npx agent-orchestrator-kit handoff <name>` (exit 0) → paste the CLI `/opsx:*` prompt. `session-handoff` subagent = fallback only. Do not start the next phase here.
 
-Exit HARD STOP: persist `session-handoff` → `handoff.md` → `npx agent-orchestrator-kit handoff <name>` (exit 0) → paste the CLI `/opsx:*` prompt. Do not start the next phase here.
+Quality gates: `gate-check --tasks <name>` lints the task contract (Files/Do/Done-when, `pipeline.task_contract: warn|strict|off`); `gate-check --review <name>` is deterministic Tier 1 of review — spec-reviewer (Tier 2) is spawned only after it passes and writes `apply-notes.md` on APPROVE.
 
 ## Hard rules
 - One active change (unless mvp profile).

@@ -58,7 +58,8 @@ test('init installs orchestration and openspec skills', () => {
       assert.match(orchestrationRule, new RegExp(`\\b${name}\\b`), `missing route: ${name}`);
     }
     assert.match(orch, /prompt_self_contained:\s*true/);
-    assert.match(orch, /spawn_handoff_subagent:\s*true/);
+    assert.match(orch, /spawn_handoff_subagent:\s*false/);
+    assert.match(orch, /task_contract:\s*warn/);
     assert.match(orch, /launcher:\s*scripts\/memory-mcp-launcher\.cjs/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -1351,4 +1352,339 @@ test('always-apply rules stay within a context budget', () => {
 
   const agents = readFileSync(join(KIT_ROOT, 'templates/AGENTS.md'), 'utf-8');
   assert.ok(agents.length < 4_000, `AGENTS.md is ${agents.length} chars; keep under 4000`);
+});
+
+// --- lean-pipeline-v2: archive CLI, task-contract lint, tiered review ---
+
+const OPENSPEC_STUB = `#!/usr/bin/env node
+// Deterministic openspec stub for smoke tests (resolved by npx via PATH).
+const fs = require('fs');
+const path = require('path');
+const args = process.argv.slice(2);
+if (args[0] === 'status') {
+  const i = args.indexOf('--change');
+  const name = args[i + 1];
+  const changesDir = path.join(process.cwd(), 'openspec', 'changes');
+  const changeRoot = path.join(changesDir, name);
+  if (!fs.existsSync(changeRoot)) {
+    console.error('Change not found: ' + name);
+    process.exit(1);
+  }
+  const tasksPath = path.join(changeRoot, 'tasks.md');
+  console.log(JSON.stringify({
+    schemaName: 'spec-driven',
+    changeRoot,
+    planningHome: { changesDir },
+    artifactPaths: { tasks: { existingOutputPaths: fs.existsSync(tasksPath) ? [tasksPath] : [] } },
+  }));
+  process.exit(0);
+}
+if (args[0] === 'validate') {
+  if (fs.existsSync(path.join(process.cwd(), '.openspec-validate-fail'))) {
+    console.error('Validation failed (stub)');
+    process.exit(1);
+  }
+  console.log('valid (stub)');
+  process.exit(0);
+}
+process.exit(0);
+`;
+
+function installOpenspecStub(dir) {
+  // Install as a local package so `npx openspec` resolves it before any
+  // real openspec from the registry or npx cache (deterministic, offline).
+  const pkgDir = join(dir, 'node_modules', 'openspec');
+  const binDir = join(dir, 'node_modules', '.bin');
+  mkdirSync(pkgDir, { recursive: true });
+  mkdirSync(binDir, { recursive: true });
+  writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name: 'openspec', version: '0.0.0', bin: { openspec: './cli.js' } }));
+  writeFileSync(join(pkgDir, 'cli.js'), OPENSPEC_STUB, { mode: 0o755 });
+  writeFileSync(join(binDir, 'openspec'), '#!/bin/sh\nexec node "$(dirname "$0")/../openspec/cli.js" "$@"\n', { mode: 0o755 });
+  return binDir;
+}
+
+function runCliStub(dir, args) {
+  return execSync(`node "${CLI}" ${args}`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' });
+}
+
+const CONTRACT_TASKS = `# Tasks
+- [x] 1.1 Do the thing
+  Files: src/thing.js
+  Do: implement the thing exactly as specified
+  Done-when: thing test passes
+`;
+
+const DELTA_SPEC = `## ADDED Requirements
+
+### Requirement: New Req
+
+The system SHALL support the new behavior.
+
+#### Scenario: new works
+- WHEN the new path runs
+- THEN it succeeds
+
+## MODIFIED Requirements
+
+### Requirement: Old Req
+
+The system SHALL use the updated behavior.
+
+#### Scenario: updated works
+- WHEN the old path runs
+- THEN it uses the update
+
+## REMOVED Requirements
+
+### Requirement: Dead Req
+
+**Reason**: obsolete
+`;
+
+const MAIN_SPEC = `## Purpose
+
+Auth capability.
+
+## Requirements
+
+### Requirement: Old Req
+
+The system SHALL use the original behavior.
+
+#### Scenario: original works
+- WHEN the old path runs
+- THEN it stays original
+
+### Requirement: Dead Req
+
+The system SHALL do something obsolete.
+
+#### Scenario: obsolete
+- WHEN legacy runs
+- THEN it is obsolete
+`;
+
+function makeArchiveFixture(dir, name, { approve = true, allChecked = true, withDelta = true } = {}) {
+  const changeDir = join(dir, 'openspec/changes', name);
+  mkdirSync(changeDir, { recursive: true });
+  writeFileSync(join(changeDir, 'proposal.md'), '# Proposal\n\n## Why\n\nBecause.\n\n## Non-goals\n\n- none\n\n## Acceptance criteria\n\n- works\n');
+  writeFileSync(join(changeDir, 'tasks.md'), allChecked ? CONTRACT_TASKS : CONTRACT_TASKS.replace('- [x]', '- [ ]'));
+  if (approve) writeFileSync(join(changeDir, 'review.md'), '# Spec Review\n\n**Verdict:** APPROVE\n');
+  if (withDelta) {
+    mkdirSync(join(changeDir, 'specs/auth'), { recursive: true });
+    writeFileSync(join(changeDir, 'specs/auth/spec.md'), DELTA_SPEC);
+    mkdirSync(join(changeDir, 'specs/newcap'), { recursive: true });
+    writeFileSync(join(changeDir, 'specs/newcap/spec.md'), '## ADDED Requirements\n\n### Requirement: Fresh Req\n\nThe system SHALL be fresh.\n\n#### Scenario: fresh\n- WHEN created\n- THEN fresh\n');
+    mkdirSync(join(dir, 'openspec/specs/auth'), { recursive: true });
+    writeFileSync(join(dir, 'openspec/specs/auth/spec.md'), MAIN_SPEC);
+  }
+  mkdirSync(join(dir, 'src'), { recursive: true });
+  writeFileSync(join(dir, 'src/thing.js'), 'export const thing = 1;\n');
+  return changeDir;
+}
+
+test('archive refuses on an open gate (no APPROVE) with exit != 0', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-archive-gate-'));
+  try {
+    runInit(dir, '--profile generic --name ArchiveGate --lang en');
+    makeArchiveFixture(dir, 'add-auth', { approve: false });
+    installOpenspecStub(dir);
+    assert.throws(
+      () => runCliStub(dir, 'archive add-auth --sync'),
+      (err) => {
+        assert.notEqual(err.status, 0);
+        assert.match(String(err.stderr), /review gate/);
+        return true;
+      },
+    );
+    assert.ok(existsSync(join(dir, 'openspec/changes/add-auth')), 'change must stay in place');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('archive refuses unchecked tasks and a missing sync decision', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-archive-tasks-'));
+  try {
+    runInit(dir, '--profile generic --name ArchiveTasks --lang en');
+    makeArchiveFixture(dir, 'add-auth', { allChecked: false });
+    installOpenspecStub(dir);
+    assert.throws(
+      () => runCliStub(dir, 'archive add-auth --sync'),
+      (err) => {
+        assert.match(String(err.stderr), /tasks gate failed/);
+        return true;
+      },
+    );
+    writeFileSync(join(dir, 'openspec/changes/add-auth/tasks.md'), CONTRACT_TASKS);
+    assert.throws(
+      () => runCliStub(dir, 'archive add-auth'),
+      (err) => {
+        assert.match(String(err.stderr), /--sync/);
+        return true;
+      },
+      'delta specs without a sync decision must refuse',
+    );
+    assert.throws(
+      () => runCliStub(dir, 'archive add-auth --no-sync'),
+      (err) => {
+        assert.match(String(err.stderr), /--force/);
+        return true;
+      },
+      '--no-sync without --force must refuse',
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('archive --sync merges ADDED/MODIFIED/REMOVED and moves the change', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-archive-sync-'));
+  try {
+    runInit(dir, '--profile generic --name ArchiveSync --lang en');
+    makeArchiveFixture(dir, 'add-auth');
+    installOpenspecStub(dir);
+    const out = runCliStub(dir, 'archive add-auth --sync');
+    assert.match(out, /archived add-auth/);
+
+    assert.ok(!existsSync(join(dir, 'openspec/changes/add-auth')), 'change moved out of active changes');
+    const archiveRoot = join(dir, 'openspec/changes/archive');
+    const entry = readdirSync(archiveRoot).find((d) => d.endsWith('-add-auth'));
+    assert.ok(entry, 'dated archive folder exists');
+    assert.match(entry, /^\d{4}-\d{2}-\d{2}-add-auth$/);
+    assert.ok(existsSync(join(archiveRoot, entry, 'handoff.md')), 'final handoff.md written');
+    assert.match(readFileSync(join(archiveRoot, entry, 'handoff.md'), 'utf-8'), /## Next command\s*\n+`?none`?/i);
+
+    const mainSpec = readFileSync(join(dir, 'openspec/specs/auth/spec.md'), 'utf-8');
+    assert.match(mainSpec, /New Req/, 'ADDED requirement appended');
+    assert.match(mainSpec, /SHALL use the updated behavior/, 'MODIFIED requirement replaced');
+    assert.doesNotMatch(mainSpec, /SHALL use the original behavior/, 'old body removed by MODIFIED');
+    assert.doesNotMatch(mainSpec, /Dead Req/, 'REMOVED requirement deleted');
+    assert.ok(existsSync(join(dir, 'openspec/specs/newcap/spec.md')), 'new capability spec created');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('archive rolls back move and main specs when strict validation fails', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-archive-rollback-'));
+  try {
+    runInit(dir, '--profile generic --name ArchiveRollback --lang en');
+    makeArchiveFixture(dir, 'add-auth');
+    writeFileSync(join(dir, '.openspec-validate-fail'), '1');
+    installOpenspecStub(dir);
+    assert.throws(
+      () => runCliStub(dir, 'archive add-auth --sync'),
+      (err) => {
+        assert.match(String(err.stderr), /rolled back/);
+        return true;
+      },
+    );
+    assert.ok(existsSync(join(dir, 'openspec/changes/add-auth')), 'change restored to original path');
+    const archiveRoot = join(dir, 'openspec/changes/archive');
+    if (existsSync(archiveRoot)) {
+      assert.equal(readdirSync(archiveRoot).filter((d) => d.endsWith('-add-auth')).length, 0, 'no archived copy left');
+    }
+    assert.equal(readFileSync(join(dir, 'openspec/specs/auth/spec.md'), 'utf-8'), MAIN_SPEC, 'main spec restored to pre-sync content');
+    assert.ok(!existsSync(join(dir, 'openspec/specs/newcap')), 'newly created spec file removed');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('gate-check --tasks strict fails on a task without Done-when or with a missing path', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-tasks-strict-'));
+  try {
+    runInit(dir, '--profile generic --name TasksStrict --lang en');
+    const orchPath = join(dir, '.agents/orchestrator.yaml');
+    writeFileSync(orchPath, readFileSync(orchPath, 'utf-8').replace('task_contract: warn', 'task_contract: strict'));
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+
+    writeFileSync(join(changeDir, 'tasks.md'), '- [ ] 1.1 No done-when\n  Files: new file: src/a.js\n  Do: implement exactly one function\n');
+    assert.throws(
+      () => runCli(dir, 'gate-check --tasks add-thing'),
+      (err) => {
+        assert.match(String(err.stderr), /task contract gate failed/);
+        assert.match(String(err.stdout), /missing Done-when/);
+        return true;
+      },
+    );
+
+    writeFileSync(join(changeDir, 'tasks.md'), '- [ ] 1.1 Bad path\n  Files: src/does-not-exist.js\n  Do: implement exactly one function\n  Done-when: tests pass\n');
+    assert.throws(
+      () => runCli(dir, 'gate-check --tasks add-thing'),
+      (err) => {
+        assert.match(String(err.stdout), /path does not exist/);
+        return true;
+      },
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('gate-check --tasks warn mode exits 0 with a warning for a non-contract task', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-tasks-warn-'));
+  try {
+    runInit(dir, '--profile generic --name TasksWarn --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'tasks.md'), '- [ ] 1.1 Vague task with no fields\n- [ ] 1.2 Update code as needed\n  Files: new file: src/b.js\n  Do: refactor helpers as needed\n  Done-when: build passes\n');
+    const out = runCli(dir, 'gate-check --tasks add-thing');
+    assert.match(out, /warn mode, not blocking/);
+    assert.match(out, /missing Files/);
+    assert.match(out, /vague wording/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('gate-check --review returns pass true on a valid fixture and pass false without Non-goals', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-review-tier1-'));
+  try {
+    runInit(dir, '--profile generic --name ReviewTier1 --lang en');
+    makeArchiveFixture(dir, 'add-auth');
+    installOpenspecStub(dir);
+
+    const ok = JSON.parse(runCliStub(dir, 'gate-check --review add-auth --json'));
+    assert.equal(ok.pass, true);
+    assert.deepEqual(ok.errors, []);
+
+    writeFileSync(join(dir, 'openspec/changes/add-auth/proposal.md'), '# Proposal\n\n## Why\n\nBecause.\n\n## Acceptance criteria\n\n- works\n');
+    assert.throws(
+      () => runCliStub(dir, 'gate-check --review add-auth --json'),
+      (err) => {
+        const report = JSON.parse(String(err.stdout));
+        assert.equal(report.pass, false);
+        assert.ok(report.errors.some((e) => /Non-goals/.test(e)), 'error names the missing Non-goals section');
+        return true;
+      },
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('init installs the lean archive command and apply/config defaults', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-lean-init-'));
+  try {
+    runInit(dir, '--profile generic --name LeanInit --lang en');
+
+    const archiveCmd = join(dir, '.agents/commands/opsx-archive.md');
+    assert.ok(statSync(archiveCmd).size <= 1536, `opsx-archive.md is ${statSync(archiveCmd).size} bytes; keep <= 1536`);
+    const archiveText = readFileSync(archiveCmd, 'utf-8');
+    assert.doesNotMatch(archiveText, /spec-archiver/);
+    assert.match(archiveText, /agent-orchestrator-kit archive/);
+
+    const applyText = readFileSync(join(dir, '.agents/commands/opsx-apply.md'), 'utf-8');
+    assert.doesNotMatch(applyText, /delegation is mandatory/i);
+    assert.match(applyText, /apply-notes\.md/);
+
+    const orch = readFileSync(join(dir, '.agents/orchestrator.yaml'), 'utf-8');
+    assert.match(orch, /task_contract:/);
+    assert.match(orch, /spawn_handoff_subagent:\s*false/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

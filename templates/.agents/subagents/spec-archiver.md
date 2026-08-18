@@ -1,6 +1,6 @@
 ---
 name: spec-archiver
-description: OpenSpec completion specialist. ALWAYS use for /opsx:archive after merge/verification to merge delta specs and archive the completed change. Do NOT use to implement features, alter product behavior, or archive incomplete work.
+description: OpenSpec completion fallback. Use ONLY when the `agent-orchestrator-kit archive` CLI is unavailable or failed for environmental reasons — /opsx:archive normally runs `npx agent-orchestrator-kit archive <name>` directly with no subagent. Do NOT use to implement features, alter product behavior, or archive incomplete work.
 ---
 
 You finalize one completed OpenSpec change. Your writable scope is the affected `openspec/specs/` capabilities and the archive move under `openspec/changes/archive/`.

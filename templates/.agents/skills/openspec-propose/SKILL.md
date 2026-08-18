@@ -24,6 +24,17 @@ When ready to implement, run /opsx:apply
 
 **Conductor delegation is mandatory:** spawn `spec-architect` with the resolved name, decision brief, design brief if present, and artifact instructions. The parent MUST NOT create or edit proposal/design/specs/tasks; after the structured report it may only verify paths, run status, and run strict validation.
 
+**Task contract (mandatory tasks.md format):** every task must carry indented `Files:`, `Do:`, `Done-when:` fields:
+
+```markdown
+- [ ] 2.1 Short title
+  Files: src/router/index.js, new file: src/stores/auth.js
+  Do: concrete change in 1–3 lines — no vague wording ("as needed", "if necessary", "as appropriate")
+  Done-when: verifiable condition or command
+```
+
+Each task must be self-contained for a blind implementer — executable without reading design.md. `Files:` paths must exist unless prefixed with `new file:`. Lint: `npx agent-orchestrator-kit gate-check --tasks <name>` (mode via `pipeline.task_contract: warn|strict|off`).
+
 **Steps**
 
 1. **If no clear input provided, ask what they want to build**

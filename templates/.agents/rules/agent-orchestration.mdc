@@ -10,22 +10,21 @@ Spec-driven pipeline. Read `.agents/orchestrator.yaml`. Details: skill `agent-or
 ## Commands
 `/opsx:explore` read-only · `/opsx:design <name>` brief+assets only · `/opsx:propose <name>` change artifacts · `/opsx:review <name>` review.md · `/opsx:apply <name>` code (blocked without Approve when `require_spec_review`) · `/opsx:quick <name>` MVP propose+apply · `/opsx:archive`
 
-The parent `/opsx:*` session is the **conductor**. It MUST spawn the one routed specialist, verify the structured report, and MUST NOT do that specialist's work. Only the conductor marks `tasks.md`, after `Status: done` and file check. `spec-reviewer` ≠ `code-reviewer`.
+The parent `/opsx:*` session is the **conductor**. Delegation is differentiated by phase: propose/review MUST spawn their specialist; apply is parent-driven with optional subagents; archive is a CLI call with phase subagents forbidden. Only the parent marks `tasks.md`. `spec-reviewer` ≠ `code-reviewer`.
 
-| Signal | MUST spawn |
-|--------|------------|
-| Status / gate / next command | `openspec-guide` |
-| Restore if CLI briefing missing; persist on exit | `session-handoff` |
-| Broken kit / MCP / sync | `setup-doctor` |
-| `/opsx:explore` | `codebase-explorer` |
-| `/opsx:design` | `design-intake` |
-| `/opsx:propose` | `spec-architect` |
-| `/opsx:review` | `spec-reviewer` |
-| Apply + design brief/Figma/image | `design-implementer` |
-| Apply ordinary task | `code-writer` |
-| Apply tests | `test-writer` |
-| Apply pre-PR | `code-reviewer` |
-| `/opsx:archive` | `spec-archiver` |
+| Phase / signal | Subagent | Status |
+|--------|------------|--------|
+| Status / gate / next command | `openspec-guide` | optional |
+| Restore/persist when handoff CLI failed | `session-handoff` | fallback only |
+| Broken kit / MCP / sync | `setup-doctor` | on signal |
+| `/opsx:explore` | `codebase-explorer` | mandatory |
+| `/opsx:design` | `design-intake` | mandatory |
+| `/opsx:propose` | `spec-architect` | mandatory |
+| `/opsx:review` (after `gate-check --review` passes) | `spec-reviewer` | mandatory |
+| Apply + design brief/Figma/image | `design-implementer` | mandatory on signal |
+| Apply: ≥ 2 independent tasks, no shared files, or explicit request | `code-writer` / `test-writer` | optional |
+| Apply pre-PR | `code-reviewer` | optional |
+| `/opsx:archive` | — use `npx agent-orchestrator-kit archive <name>` | CLI; subagent forbidden (`spec-archiver` = CLI-failure fallback only) |
 
 ## Session
 Start: honor pasted `/opsx:*` → `npx agent-orchestrator-kit status` → `handoff --restore`. Spawn `session-handoff` restore **only if** restore CLI failed or printed no briefing (Amp: isolated `subagent-session-handoff`). Then spawn the phase specialist isolated. Free-form continue → `Handoff.next_command`.

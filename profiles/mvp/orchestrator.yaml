@@ -15,6 +15,7 @@ pipeline:
   max_active_changes: 3
   archive_after_merge: false
   quick_mode_enabled: true
+  task_contract: off
 
 roles:
   explorer:
@@ -55,7 +56,7 @@ handoff:
   persist_on_exit: true
   emit_next_session_prompt: true
   prompt_self_contained: true
-  spawn_handoff_subagent: true
+  spawn_handoff_subagent: false
 
 memory:
   enabled: true

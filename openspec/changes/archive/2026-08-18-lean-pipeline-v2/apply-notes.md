@@ -1,0 +1,12 @@
+# Apply Notes: lean-pipeline-v2
+- Implement only the 16 contracts in `tasks.md`; do not improvise beyond their Files/Do/Done-when scope.
+- Archive `--sync` must snapshot every affected main spec before merge.
+- Validation failure must restore prior main-spec content, delete newly created specs, revert the move, and exit 1.
+- Preserve the five archive flag outcomes from design §1, including explicit refusal when delta specs have no sync decision.
+- Task-contract strict mode must reject missing paths unless the entry uses `new file:`; warn mode must exit 0 with a warning.
+- Keep Tier 1 review deterministic and report both human output and `{pass, errors[]}` JSON.
+- Keep apply parent-driven, but STOP and return to propose when the task contract and these notes are insufficient.
+- Do not weaken review, task-completion, validation, or handoff gates.
+- Keep archive command ≤ 1.5 KB and free of phase-subagent/manual merge instructions.
+- Run `npm test`.
+- Run `npx openspec validate lean-pipeline-v2 --strict --type change`.

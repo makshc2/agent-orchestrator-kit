@@ -42,26 +42,25 @@ Read `.agents/orchestrator.yaml` for project-specific config (language, flags, M
 | Quick (MVP) | `/opsx:quick <name>` | specs+code | strong | `openspec/changes/` + `src/` |
 | Verifier | CI / local scripts | — | — | exit codes |
 
-## Conductor Routing (Mandatory and Exclusive)
+## Conductor Routing (Differentiated by Phase)
 
-The parent `/opsx:*` session is the conductor. It MUST spawn the selected specialist with a self-contained prompt, MUST verify the structured report, and MUST NOT do the specialist's work itself. Each signal has exactly one primary subagent.
+The parent `/opsx:*` session is the conductor. Delegation cost must match phase uncertainty: **propose and review MUST spawn their specialist** (the parent never writes artifacts or the verdict); **apply is parent-driven** — the parent writes code and tests itself from `tasks.md` + `apply-notes.md`, subagents are optional; **archive is one CLI call** — phase subagents are forbidden.
 
-| Phase / signal | MUST spawn | Specialist scope |
-|----------------|------------|------------------|
-| Status, gate failure, next command | `openspec-guide` | Read-only pipeline diagnosis |
-| Session start restore / session exit persist | `session-handoff` | Memory, `handoff.md`, next-thread prompt |
-| Broken kit, MCP, or generated-file sync | `setup-doctor` | Kit setup repair only |
-| `/opsx:explore` repository investigation | `codebase-explorer` | Read-only repository research |
-| `/opsx:design` | `design-intake` | `design-brief.md` and `assets/` only |
-| `/opsx:propose` | `spec-architect` | Change artifacts only |
-| `/opsx:review` | `spec-reviewer` | Pre-apply verdict and `review.md` only |
-| Apply task with design brief/Figma/image | `design-implementer` | UI implementation |
-| Apply ordinary implementation task | `code-writer` | One production-code task |
-| Apply after implementation | `test-writer` | Automated tests |
-| Apply before PR/MR | `code-reviewer` | Post-implementation spec review |
-| `/opsx:archive` | `spec-archiver` | Delta merge and archive move |
+| Phase / signal | Subagent | Status |
+|----------------|------------|--------|
+| Status, gate failure, next command | `openspec-guide` | optional |
+| Restore/persist when handoff CLI failed | `session-handoff` | fallback only |
+| Broken kit, MCP, or generated-file sync | `setup-doctor` | on signal |
+| `/opsx:explore` repository investigation | `codebase-explorer` | mandatory |
+| `/opsx:design` | `design-intake` | mandatory |
+| `/opsx:propose` | `spec-architect` | mandatory |
+| `/opsx:review` (Tier 2, after `gate-check --review` passes) | `spec-reviewer` | mandatory |
+| Apply task with design brief/Figma/image | `design-implementer` | mandatory on signal |
+| Apply: ≥ 2 independent tasks with no shared files, or explicit user request | `code-writer` / `test-writer` | optional |
+| Apply before PR/MR | `code-reviewer` | optional |
+| `/opsx:archive` | — run `npx agent-orchestrator-kit archive <name>` | CLI; phase subagent forbidden (`spec-archiver` = CLI-failure fallback only) |
 
-`spec-reviewer` is not `code-reviewer`. During apply, specialists MUST NOT edit `tasks.md`; only the conductor may mark a checkbox after a `Status: done` report and verification that the reported files exist.
+`spec-reviewer` is not `code-reviewer`. Spawned specialists MUST NOT edit `tasks.md`; the parent checks a box only after verifying the task's Done-when condition. If an apply task requires information beyond its Files/Do/Done-when contract + `apply-notes.md` + referenced artifacts, STOP: record the gap in `handoff.md` and route back to `/opsx:propose <name>` — improvisation is forbidden.
 
 ## Handoff Protocol
 
@@ -127,6 +126,7 @@ After PR merged + CI green:
 ```
 /opsx:archive <name>
 ```
+Archive is one deterministic CLI call — `npx agent-orchestrator-kit archive <name> [--sync | --no-sync --force]` — which checks gates, merges delta specs on `--sync`, moves the change to the dated archive, validates with rollback, and writes the final handoff. No phase subagent.
 
 ## Session Rules
 
@@ -145,12 +145,11 @@ After PR merged + CI green:
 - Never edit files outside your role's allowed output
 
 **End of each session (HARD STOP — you are NOT done):**
-1. Spawn `session-handoff` in persist mode (Amp: isolated `subagent-session-handoff`). If spawn fails, persist in the parent — never skip.
-2. Write `openspec/changes/<name>/handoff.md` using the template below even if Memory MCP fails.
-3. Run `npx agent-orchestrator-kit handoff <name>` and require exit 0. The CLI upserts Memory JSON with an absolute path and prints the expanded self-contained prompt on stdout.
-4. If Memory MCP tools work, also update `Change:<name>`, `Handoff:<name>`, and new `Decision:<topic>` entities.
-5. Paste the CLI stdout as one fenced next-session prompt. First line is `/opsx:<next> <name>`; body uses `project.agent_language`; keep Done/Decisions/Blocked/spawn/HARD STOP complete. No banner. Do not emit a thin “read Memory” stub.
-6. Do not start the next phase in this chat. If apply, include build/lint status in the persisted Done section.
+1. Write `openspec/changes/<name>/handoff.md` in the parent using the template below.
+2. Run `npx agent-orchestrator-kit handoff <name>` and require exit 0. The CLI upserts Memory JSON with an absolute path and prints the expanded self-contained prompt on stdout. Spawn `session-handoff` in persist mode ONLY if this CLI step failed.
+3. If Memory MCP tools are available, mirror `Change:<name>`, `Handoff:<name>`, and new `Decision:<topic>` entities in one call — optional; its absence never blocks closing.
+4. Paste the CLI stdout as one fenced next-session prompt. First line is `/opsx:<next> <name>`; body uses `project.agent_language`; keep Done/Decisions/Blocked/spawn/HARD STOP complete. No banner. Do not emit a thin “read Memory” stub.
+5. Do not start the next phase in this chat. If apply, include build/lint status in the persisted Done section.
 
 `handoff.md` template:
 
@@ -213,9 +212,9 @@ The Prompt section is overwritten by `npx agent-orchestrator-kit handoff <name>`
 
 ## Mandatory Memory and Handoff Protocol
 
-Before specialist work, the conductor MUST restore context in order: honor the pasted `/opsx:*` command; run `npx agent-orchestrator-kit handoff --restore`; read Memory entities `Change:<name>`, `Handoff:<name>`, and `Decision:*`; if restore CLI and Memory fail, read `openspec/changes/<name>/handoff.md`. Memory failure is not a blocker when the file exists. With one active change, free-form “continue” uses `Handoff.next_command` instead of asking for the phase. Amp MUST spawn `session-handoff` and the phase specialist as isolated `subagent-*` skills.
+Before specialist work, the parent MUST restore context in order: honor the pasted `/opsx:*` command; run `npx agent-orchestrator-kit handoff --restore` (the CLI briefing is canonical — no separate Memory MCP read step); if the CLI failed, read `openspec/changes/<name>/handoff.md`; spawn `session-handoff` in restore mode ONLY when both failed. Missing Memory MCP never blocks a session. With one active change, free-form “continue” uses `Handoff.next_command` instead of asking for the phase. Amp spawns any needed subagent as an isolated `subagent-*` skill.
 
-Before declaring a session closed, the conductor MUST, in order: (1) spawn `session-handoff` persist, (2) write `openspec/changes/<name>/handoff.md`, (3) run `npx agent-orchestrator-kit handoff <name>` (exit 0), (4) paste the CLI stdout prompt whose first line is `/opsx:<next> <name>`. The prompt has no `NEXT_SESSION_PROMPT` label, uses `project.agent_language`, and MUST be self-contained (Done, Decisions, Blocked, attach, spawn, HARD STOP) so the next thread can run if Memory MCP is ignored. Never start the next phase in the current chat.
+Before declaring a session closed, the parent MUST, in order: (1) write `openspec/changes/<name>/handoff.md` itself, (2) run `npx agent-orchestrator-kit handoff <name>` (exit 0) — spawn `session-handoff` persist ONLY if this CLI step failed, (3) paste the CLI stdout prompt whose first line is `/opsx:<next> <name>`. Memory MCP mirroring is an optional single call. The prompt has no `NEXT_SESSION_PROMPT` label, uses `project.agent_language`, and MUST be self-contained (Done, Decisions, Blocked, attach, spawn, HARD STOP) so the next thread can run if Memory MCP is ignored. Never start the next phase in the current chat.
 
 | Entity | Required fields |
 |--------|-----------------|

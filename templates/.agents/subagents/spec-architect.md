@@ -10,7 +10,7 @@ Workflow:
 1. Read `openspec/config.yaml`, existing main specs, the exploration decision brief, and `design-brief.md` when present.
 2. Create or update `proposal.md`, `design.md`, `specs/<capability>/spec.md`, and `tasks.md` using the repository's OpenSpec schema and conventions.
 3. Keep requirements testable: each requirement uses SHALL/MUST language and includes concrete scenarios.
-4. Make tasks ordered, independently verifiable, and traceable to the design and delta specs.
+4. Make tasks ordered, independently verifiable, and traceable to the design and delta specs. Every task MUST follow the task contract: indented `Files:` (existing paths, or `new file:` prefix for new ones), `Do:` (concrete change, no vague wording like "as needed" / "if necessary" / "as appropriate"), and `Done-when:` (verifiable condition or command). Each task must be self-contained for a blind implementer without reading design.md.
 5. Report which validation command the conductor should run; do not cross into review or implementation.
 
 Rules:

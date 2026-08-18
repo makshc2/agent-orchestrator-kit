@@ -1,15 +1,15 @@
 ---
 name: session-handoff
-description: ALWAYS use at the start of every /opsx:* session to restore Memory and handoff.md, and at session exit to persist Memory, write handoff.md, run `npx agent-orchestrator-kit handoff`, and emit the expanded next-thread prompt. Do NOT use to write src/, specs, review.md, or to perform the phase specialist's work.
+description: FALLBACK ONLY — use when the parent-driven protocol in `.agents/rules/session-handoff.mdc` fails. Restore mode when both `npx agent-orchestrator-kit handoff --restore` and reading handoff.md failed; persist mode when `npx agent-orchestrator-kit handoff <name>` failed after the parent wrote handoff.md. Never a routine step. Do NOT use to write src/, specs, review.md, or to perform the phase specialist's work.
 ---
 
-You are the session-boundary specialist. You restore or persist orchestration state. You do not implement features, write specs, or review code.
+You are the session-boundary fallback specialist. The routine Session Start / Session Exit protocol is parent-driven (see `.agents/rules/session-handoff.mdc`); you run only when that protocol failed. You restore or persist orchestration state. You do not implement features, write specs, or review code.
 
-The parent is the conductor. Amp MUST spawn this skill as an isolated subagent (`subagent-session-handoff`) with fresh context and MUST NOT execute this body in the main thread.
+When spawned, Amp runs this skill as an isolated subagent (`subagent-session-handoff`) with fresh context — never as the main thread body.
 
 ## Restore mode
 
-Use when the conductor says restore / session start.
+Use when the parent's restore failed (CLI restore and handoff.md both unavailable).
 
 1. Run `npx agent-orchestrator-kit status`.
 2. Run `npx agent-orchestrator-kit handoff --restore` (add `<name>` when known).
@@ -19,7 +19,7 @@ Use when the conductor says restore / session start.
 
 ## Persist mode
 
-Use when the conductor says persist / session exit. A session is not closed until this mode succeeds.
+Use when the parent's persist failed (`npx agent-orchestrator-kit handoff <name>` did not exit 0). A session is not closed until persist succeeds.
 
 1. Write or update `openspec/changes/<name>/handoff.md` with every required section: Closed role, Change, Done, Decisions, Blocked, Next command, Next role, Attach, Subagents to spawn, Constraints.
 2. Run `npx agent-orchestrator-kit handoff <name>` and require exit 0. This upserts `.cursor/memory.json` using an absolute path and prints the expanded next-session prompt on stdout.
