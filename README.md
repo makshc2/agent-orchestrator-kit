@@ -74,7 +74,7 @@ npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-veri
 
 See [Installation](#installation) for profile/CI options.
 
-**🔄 Already have the kit installed? Upgrade to latest (hardened handoff CLI + Memory launcher in v0.1.14+, conductor in v0.1.13+, Figma PAT in v0.1.11+):**
+**🔄 Already have the kit installed? Upgrade to latest (lean pipeline v2 / archive CLI in v0.3.0+, handoff CLI in v0.1.14+, Figma PAT in v0.1.11+):**
 
 ```bash
 npx agent-orchestrator-kit@latest update
@@ -189,7 +189,7 @@ your-project/
 | OpenSpec skills | All 7 skills for `/opsx:*` workflow |
 | IDE sync | Cursor + Claude Code sync script (`--delete` semantics — removes stale skills/subagents) |
 | Subagents | 12 exclusive routes: guide/setup/session-handoff, explore/design/propose/review/archive stage agents, and apply implementation/test/code-review agents — native in Cursor + Claude Code, isolated Amp `subagent-*` wrappers |
-| CLI gates | `npx agent-orchestrator-kit status` / `gate-check` / `handoff` / `memory-setup` — deterministic review-gate and session-handoff (always via `npx`; see `cli-via-npm.mdc`) |
+| CLI gates | `npx agent-orchestrator-kit status` / `gate-check` / `archive` / `handoff` / `memory-setup` — deterministic review-gate, archive, and session-handoff (always via `npx`; see `cli-via-npm.mdc`) |
 | CI | `agent-verify.yml` — GitHub (default) or GitLab fragment + `prebuild` hook, both run `gate-check` |
 | AI Spec Verifier | `spec-verify.yml` + verifier scripts — GitLab or GitHub, opt-in (`--spec-verify`) |
 | MCP templates | Memory MCP for Cursor and Amp |
@@ -755,9 +755,15 @@ npx agent-orchestrator-kit status
 npx agent-orchestrator-kit gate-check [change-name] [options]
   --src-glob <glob>  Source path filter used to detect code changes (default: src/)
   --base <ref>       Git ref to diff against (default: HEAD~1)
+  --tasks <name>     Lint task contracts (Files / Do / Done-when)
+  --review <name>    Deterministic Tier 1 review (optional --json)
   Exit non-zero when require_spec_review is true, src/ changed, and the
   active change has no review.md with Verdict: APPROVE. Graceful no-op
   otherwise (missing config, review not required, no relevant diff).
+
+npx agent-orchestrator-kit archive <name> [--sync | --no-sync --force]
+  Gate-check a completed change, optionally merge delta specs, move to
+  openspec/changes/archive/YYYY-MM-DD-<name>, validate, write final handoff
 ```
 
 ## Directory Reference
@@ -794,6 +800,15 @@ openspec/                # Committed — spec-driven workflow
 ```
 
 ## Changelog
+
+### 0.3.0
+- **`archive` CLI** — deterministic archive with gates, `--sync` delta merge, and rollback on validate failure
+- **Task contract** — `gate-check --tasks` enforces `Files:` / `Do:` / `Done-when:` (`pipeline.task_contract: warn|strict|off`)
+- **Tiered review** — `gate-check --review` is machine Tier 1; `spec-reviewer` writes `apply-notes.md` on APPROVE
+- Lean apply (parent-driven) and parent-driven session handoff; `opsx-archive.md` is a thin CLI wrapper
+
+### 0.2.0
+- Thinned always-apply rules and `AGENTS.md` / `CLAUDE.md` (context budget); details stay in on-demand skills
 
 ### 0.1.14
 - **HARD STOP session handoff** — `session-handoff` subagent at start/exit; Amp isolated `subagent-session-handoff`
