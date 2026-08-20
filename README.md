@@ -799,6 +799,15 @@ openspec/                # Committed — spec-driven workflow
   changes/               # Active work; <name>/handoff.md indexes session state
 ```
 
+## Roadmap
+
+The kit moves toward an Agentic Factory in four phases. **One phase = one OpenSpec change**; the next phase does not start until the previous change is archived.
+1. `add-factory-gates-and-mcp` — local review gate on commit and Figma-style MCP launchers (GitHub / GitLab / browser).
+2. `add-factory-memory-and-skills` — git-canonical decisions with Memory MCP as a mirror, plus a machine skill inventory.
+3. `add-cloud-agent-handoff` — session artifacts exist only on git-tracked paths.
+4. Phase 4 (`add-factory-control-plane`) is an opt-in platform decision, not the next sprint.
+Phase bounds and non-goals: [`openspec/specs/agentic-factory-roadmap/spec.md`](openspec/specs/agentic-factory-roadmap/spec.md).
+
 ## Changelog
 
 ### 0.3.0

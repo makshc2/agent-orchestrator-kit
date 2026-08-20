@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **`agentic-factory-roadmap`** — planning (docs-only) capability: sequences factory phases 1–4 and records platform-level non-goals; implementation stays in later changes
+
 ## [0.3.0] - 2026-08-18
 
 ### Added
