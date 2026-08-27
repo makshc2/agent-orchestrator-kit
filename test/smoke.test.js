@@ -2046,3 +2046,323 @@ test('update installs new MCP launchers, hook script, and env gitignore lines', 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+function localIsoDate(now = new Date()) {
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function parseSkillsInventoryFixture(content) {
+  const kit = [];
+  const stack = [];
+  let external = '';
+  let found = false;
+  let inSkills = false;
+  let section = null;
+  for (const line of String(content || '').split(/\r?\n/)) {
+    if (/^skills:\s*$/.test(line)) {
+      found = true;
+      inSkills = true;
+      section = null;
+      continue;
+    }
+    if (inSkills && /^\S/.test(line)) break;
+    if (!inSkills) continue;
+    if (/^\s+kit:\s*$/.test(line) || /^\s+kit:\s*\[\s*\]\s*$/.test(line)) {
+      section = 'kit';
+      continue;
+    }
+    if (/^\s+stack:\s*$/.test(line) || /^\s+stack:\s*\[\s*\]\s*$/.test(line)) {
+      section = 'stack';
+      continue;
+    }
+    const ext = line.match(/^\s+external:\s*(.*?)\s*$/);
+    if (ext) {
+      section = null;
+      let raw = ext[1];
+      if (
+        (raw.startsWith('"') && raw.endsWith('"') && raw.length >= 2) ||
+        (raw.startsWith("'") && raw.endsWith("'") && raw.length >= 2)
+      ) {
+        raw = raw.slice(1, -1);
+      }
+      external = raw;
+      continue;
+    }
+    const item = line.match(/^\s+-\s+([A-Za-z0-9_-]+)\s*$/);
+    if (item && section === 'kit') kit.push(item[1]);
+    else if (item && section === 'stack') stack.push(item[1]);
+  }
+  return { kit, stack, external, found };
+}
+
+function stripSkillsSection(yaml) {
+  const out = [];
+  let skip = false;
+  for (const line of yaml.split('\n')) {
+    if (/^skills:\s*$/.test(line)) {
+      skip = true;
+      continue;
+    }
+    if (skip) {
+      if (line === '' || /^\s/.test(line) || line.startsWith('#')) continue;
+      skip = false;
+    }
+    out.push(line);
+  }
+  return out.join('\n');
+}
+
+function writeHandoffFixture(changeDir, name, decisions) {
+  writeFileSync(
+    join(changeDir, 'handoff.md'),
+    `# Session Handoff
+
+## Closed role
+Architect — validate --strict passed
+
+## Done
+- Created proposal, design, specs, and tasks.
+
+## Decisions
+${decisions}
+
+## Blocked
+none
+
+## Next command
+\`/opsx:review ${name}\`
+
+## Next role
+spec-reviewer
+
+## Attach
+- \`openspec/changes/${name}/\`
+
+## Subagents to spawn
+- \`spec-reviewer\`
+
+## Constraints
+- no src edits
+`,
+  );
+}
+
+function memoryEntities(dir) {
+  const raw = readFileSync(join(dir, '.cursor/memory.json'), 'utf-8').trim();
+  if (!raw) return [];
+  return raw.split('\n').map((line) => JSON.parse(line));
+}
+
+function setHandoffDecisions(handoffPath, decisions) {
+  const body = readFileSync(handoffPath, 'utf-8');
+  const next = body.replace(/## Decisions\n[\s\S]*?\n## Blocked/, `## Decisions\n${decisions}\n\n## Blocked`);
+  writeFileSync(handoffPath, next);
+}
+
+test('handoff persist appends decisions.md without duplicates and keeps topic history', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-decisions-append-'));
+  try {
+    runInit(dir, '--profile generic --name DecisionsAppend --lang en');
+    const name = 'add-bulk-export';
+    const changeDir = join(dir, 'openspec/changes', name);
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'tasks.md'), '- [ ] 1.1 pending\n');
+    writeHandoffFixture(changeDir, name, '- foo-topic: variant A');
+
+    execSync(`node "${CLI}" handoff ${name}`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' });
+    const decisionsPath = join(changeDir, 'decisions.md');
+    assert.ok(existsSync(decisionsPath));
+    const first = readFileSync(decisionsPath, 'utf-8');
+    assert.match(first, new RegExp(`# Decisions — ${name}`));
+    assert.match(first, /append-only/);
+    assert.match(first, new RegExp(`- ${localIsoDate()} foo-topic: variant A`));
+
+    execSync(`node "${CLI}" handoff ${name}`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' });
+    assert.equal(readFileSync(decisionsPath, 'utf-8'), first);
+
+    setHandoffDecisions(join(changeDir, 'handoff.md'), '- foo-topic: variant B');
+    execSync(`node "${CLI}" handoff ${name}`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' });
+    const second = readFileSync(decisionsPath, 'utf-8');
+    assert.match(second, /foo-topic: variant A/);
+    assert.match(second, /foo-topic: variant B/);
+    assert.equal(second.split('foo-topic: variant A').length - 1, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('handoff persist does not create decisions.md when Decisions is none', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-decisions-none-'));
+  try {
+    runInit(dir, '--profile generic --name DecisionsNone --lang en');
+    const name = 'add-thing';
+    const changeDir = join(dir, 'openspec/changes', name);
+    mkdirSync(changeDir, { recursive: true });
+    writeHandoffFixture(changeDir, name, 'none');
+    execSync(`node "${CLI}" handoff ${name}`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' });
+    assert.ok(!existsSync(join(changeDir, 'decisions.md')));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('persistMemoryFromHandoff mirrors Decision:* from decisions.md last topic wins', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-decisions-mirror-'));
+  try {
+    runInit(dir, '--profile generic --name DecisionsMirror --lang en');
+    const name = 'add-bulk-export';
+    const changeDir = join(dir, 'openspec/changes', name);
+    mkdirSync(changeDir, { recursive: true });
+    writeHandoffFixture(changeDir, name, '- foo-topic: variant A');
+    execSync(`node "${CLI}" handoff ${name}`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' });
+    setHandoffDecisions(join(changeDir, 'handoff.md'), '- foo-topic: variant B');
+    execSync(`node "${CLI}" handoff ${name}`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' });
+
+    const entities = memoryEntities(dir);
+    const decision = entities.find((item) => item.name === 'Decision:foo-topic');
+    assert.ok(decision);
+    assert.match(decision.observations.join('\n'), /variant B/);
+    assert.doesNotMatch(decision.observations.join('\n'), /variant A/);
+    assert.ok(entities.find((item) => item.name === `Change:${name}`));
+    assert.ok(entities.find((item) => item.name === `Handoff:${name}`));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('handoff --restore prints decisions.md or decisions: none', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-decisions-restore-'));
+  try {
+    runInit(dir, '--profile generic --name DecisionsRestore --lang en');
+    const missing = 'add-thing';
+    const missingDir = join(dir, 'openspec/changes', missing);
+    mkdirSync(missingDir, { recursive: true });
+    writeHandoffFixture(missingDir, missing, 'none');
+    execSync(`node "${CLI}" handoff ${missing}`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' });
+    const noneOut = execSync(`node "${CLI}" handoff ${missing} --restore`, {
+      cwd: dir,
+      encoding: 'utf-8',
+    });
+    assert.match(noneOut, /decisions: none/);
+    assert.equal(noneOut.includes('Memory entities') || noneOut.includes('Memory JSON'), true);
+
+    const name = 'add-bulk-export';
+    const changeDir = join(dir, 'openspec/changes', name);
+    mkdirSync(changeDir, { recursive: true });
+    writeHandoffFixture(changeDir, name, '- export-format: xlsx — matches existing reports');
+    execSync(`node "${CLI}" handoff ${name}`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' });
+    const restored = execSync(`node "${CLI}" handoff ${name} --restore`, {
+      cwd: dir,
+      encoding: 'utf-8',
+    });
+    assert.match(restored, /decisions\.md:/);
+    assert.match(restored, /export-format: xlsx/);
+    assert.doesNotMatch(restored, /decisions: none/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('parseSkillsInventory parses a full skills section and falls back without one', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-skills-parse-'));
+  try {
+    runInit(dir, '--profile vue3 --name SkillsParse --lang en');
+    const orchPath = join(dir, '.agents/orchestrator.yaml');
+    let orch = readFileSync(orchPath, 'utf-8');
+    const parsed = parseSkillsInventoryFixture(orch);
+    assert.equal(parsed.found, true);
+    assert.ok(parsed.kit.includes('agent-orchestration'));
+    assert.deepEqual(parsed.stack, ['vue-core', 'vue-pinia', 'vue-axios', 'vue-router']);
+    assert.equal(parsed.external, 'frontend-agent-skills');
+    assert.doesNotMatch(orch, /notes:\s*"Use vue-core/);
+
+    orch = orch.replace(/^(\s+kit:\s*)$/m, '$1\n    - sentinel-kit-skill');
+    writeFileSync(orchPath, orch);
+    const withSentinel = execSync(`node "${CLI}" status`, { cwd: dir, encoding: 'utf-8' });
+    assert.match(withSentinel, /sentinel-kit-skill/);
+    assert.match(withSentinel, /vue-core\s+missing/);
+    assert.match(withSentinel, /npx frontend-agent-skills install --agent all --yes/);
+
+    writeFileSync(orchPath, stripSkillsSection(readFileSync(orchPath, 'utf-8')));
+    const fallback = execSync(`node "${CLI}" status`, { cwd: dir, encoding: 'utf-8' });
+    assert.doesNotMatch(fallback, /sentinel-kit-skill/);
+    assert.doesNotMatch(fallback, /vue-core/);
+    assert.match(fallback, /agent-orchestration/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('skills.kit in template and profiles matches templates/.agents/skills/', () => {
+  const skillsDir = join(KIT_ROOT, 'templates/.agents/skills');
+  const dirs = readdirSync(skillsDir)
+    .filter((name) => {
+      if (name.startsWith('subagent-')) return false;
+      return statSync(join(skillsDir, name)).isDirectory();
+    })
+    .sort();
+  const yamlFiles = [
+    'templates/orchestrator.yaml',
+    'profiles/generic/orchestrator.yaml',
+    'profiles/vue3/orchestrator.yaml',
+    'profiles/node/orchestrator.yaml',
+    'profiles/mvp/orchestrator.yaml',
+  ];
+  for (const rel of yamlFiles) {
+    const parsed = parseSkillsInventoryFixture(readFileSync(join(KIT_ROOT, rel), 'utf-8'));
+    assert.equal(parsed.found, true, `${rel} missing skills:`);
+    assert.deepEqual([...parsed.kit].sort(), dirs, `${rel} skills.kit drifted from templates/.agents/skills/`);
+  }
+});
+
+test('status Skill health reports missing and stale without failing', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-skill-health-'));
+  try {
+    runInit(dir, '--profile generic --name SkillHealth --lang en');
+    execSync(`node "${CLI}" sync`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' });
+
+    let out = execSync(`node "${CLI}" status`, { cwd: dir, encoding: 'utf-8' });
+    assert.match(out, /Skill health/);
+    assert.match(out, /openspec-howto\s+ok/);
+    assert.match(out, /subagent wrappers: ok \(/);
+
+    rmSync(join(dir, '.cursor/skills/openspec-howto'), { recursive: true, force: true });
+    out = execSync(`node "${CLI}" status`, { cwd: dir, encoding: 'utf-8' });
+    assert.match(out, /openspec-howto\s+stale/);
+
+    rmSync(join(dir, '.agents/skills/openspec-howto'), { recursive: true, force: true });
+    out = execSync(`node "${CLI}" status`, { cwd: dir, encoding: 'utf-8' });
+    assert.match(out, /openspec-howto\s+missing/);
+    assert.doesNotMatch(out, /npx frontend-agent-skills install/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('init and update still ship the eight kit skills', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-kit-skills-'));
+  try {
+    runInit(dir, '--profile generic --name KitSkills --lang en');
+    const expected = [
+      'agent-orchestration',
+      'openspec-howto',
+      'openspec-explore',
+      'openspec-propose',
+      'openspec-apply-change',
+      'openspec-archive-change',
+      'openspec-sync-specs',
+      'spec-workflow-openspec',
+    ];
+    for (const name of expected) {
+      assert.ok(existsSync(join(dir, `.agents/skills/${name}/SKILL.md`)), `init missing ${name}`);
+    }
+    rmSync(join(dir, '.agents/skills/openspec-sync-specs'), { recursive: true, force: true });
+    execSync(`node "${CLI}" update`, { cwd: dir, stdio: 'pipe' });
+    assert.ok(existsSync(join(dir, '.agents/skills/openspec-sync-specs/SKILL.md')));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

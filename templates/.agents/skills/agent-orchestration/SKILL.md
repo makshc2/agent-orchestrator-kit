@@ -133,7 +133,7 @@ Archive is one deterministic CLI call — `npx agent-orchestrator-kit archive <n
 **Start of each session:**
 1. Honor the pasted `/opsx:<phase> <name>` command and announce that role.
 2. Run `npx agent-orchestrator-kit status` (or `npx openspec list --json`) and read `orchestrator.yaml`; resolve the active change and gates.
-3. Run `npx agent-orchestrator-kit handoff --restore` (or `handoff <name> --restore`).
+3. Run `npx agent-orchestrator-kit handoff --restore` (or `handoff <name> --restore`). Accumulated decisions print from git-tracked `openspec/changes/<name>/decisions.md`, not from Memory.
 4. Read Memory entities `Change:<name>`, `Handoff:<name>`, and `Decision:*` when MCP works.
 5. If restore CLI fails and Memory is empty, read `openspec/changes/<name>/handoff.md`; Memory failure alone is not a blocker.
 6. Spawn `session-handoff` in restore mode **only if** `handoff --restore` failed or printed no briefing (Amp: isolated `subagent-session-handoff`). Skip this spawn when CLI restore exits 0.
@@ -146,7 +146,7 @@ Archive is one deterministic CLI call — `npx agent-orchestrator-kit archive <n
 
 **End of each session (HARD STOP — you are NOT done):**
 1. Write `openspec/changes/<name>/handoff.md` in the parent using the template below.
-2. Run `npx agent-orchestrator-kit handoff <name>` and require exit 0. The CLI upserts Memory JSON with an absolute path and prints the expanded self-contained prompt on stdout. Spawn `session-handoff` in persist mode ONLY if this CLI step failed.
+2. Run `npx agent-orchestrator-kit handoff <name>` and require exit 0. The CLI appends non-empty Decisions into append-only `openspec/changes/<name>/decisions.md` (the git canon), upserts Memory JSON with an absolute path (`Decision:*` is a file→Memory mirror only), and prints the expanded self-contained prompt on stdout. Spawn `session-handoff` in persist mode ONLY if this CLI step failed.
 3. If Memory MCP tools are available, mirror `Change:<name>`, `Handoff:<name>`, and new `Decision:<topic>` entities in one call — optional; its absence never blocks closing.
 4. Paste the CLI stdout as one fenced next-session prompt. First line is `/opsx:<next> <name>`; body uses `project.agent_language`; keep Done/Decisions/Blocked/spawn/HARD STOP complete. No banner. Do not emit a thin “read Memory” stub.
 5. Do not start the next phase in this chat. If apply, include build/lint status in the persisted Done section.
@@ -214,7 +214,7 @@ The Prompt section is overwritten by `npx agent-orchestrator-kit handoff <name>`
 
 Before specialist work, the parent MUST restore context in order: honor the pasted `/opsx:*` command; run `npx agent-orchestrator-kit handoff --restore` (the CLI briefing is canonical — no separate Memory MCP read step); if the CLI failed, read `openspec/changes/<name>/handoff.md`; spawn `session-handoff` in restore mode ONLY when both failed. Missing Memory MCP never blocks a session. With one active change, free-form “continue” uses `Handoff.next_command` instead of asking for the phase. Amp spawns any needed subagent as an isolated `subagent-*` skill.
 
-Before declaring a session closed, the parent MUST, in order: (1) write `openspec/changes/<name>/handoff.md` itself, (2) run `npx agent-orchestrator-kit handoff <name>` (exit 0) — spawn `session-handoff` persist ONLY if this CLI step failed, (3) paste the CLI stdout prompt whose first line is `/opsx:<next> <name>`. Memory MCP mirroring is an optional single call. The prompt has no `NEXT_SESSION_PROMPT` label, uses `project.agent_language`, and MUST be self-contained (Done, Decisions, Blocked, attach, spawn, HARD STOP) so the next thread can run if Memory MCP is ignored. Never start the next phase in the current chat.
+Before declaring a session closed, the parent MUST, in order: (1) write `openspec/changes/<name>/handoff.md` itself, (2) run `npx agent-orchestrator-kit handoff <name>` (exit 0) — this CLI appends `decisions.md` and mirrors `Decision:*` file→Memory; spawn `session-handoff` persist ONLY if this CLI step failed, (3) paste the CLI stdout prompt whose first line is `/opsx:<next> <name>`. Memory MCP mirroring is an optional single call. Never write Memory back into `decisions.md`. The prompt has no `NEXT_SESSION_PROMPT` label, uses `project.agent_language`, and MUST be self-contained (Done, Decisions, Blocked, attach, spawn, HARD STOP) so the next thread can run if Memory MCP is ignored. Never start the next phase in the current chat.
 
 | Entity | Required fields |
 |--------|-----------------|

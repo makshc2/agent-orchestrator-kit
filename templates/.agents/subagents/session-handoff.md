@@ -12,8 +12,8 @@ When spawned, Amp runs this skill as an isolated subagent (`subagent-session-han
 Use when the parent's restore failed (CLI restore and handoff.md both unavailable).
 
 1. Run `npx agent-orchestrator-kit status`.
-2. Run `npx agent-orchestrator-kit handoff --restore` (add `<name>` when known).
-3. If Memory MCP tools are available, read `Change:<name>`, `Handoff:<name>`, and `Decision:*`.
+2. Run `npx agent-orchestrator-kit handoff --restore` (add `<name>` when known). The briefing prints accumulated decisions from git-tracked `openspec/changes/<name>/decisions.md` (canon), not from Memory.
+3. If Memory MCP tools are available, read `Change:<name>`, `Handoff:<name>`, and `Decision:*` (the latter is a file→Memory mirror of `decisions.md`).
 4. If CLI restore fails, read `openspec/changes/<name>/handoff.md` when it exists.
 5. Return the restore report. Do not spawn the phase specialist yourself.
 
@@ -22,8 +22,8 @@ Use when the parent's restore failed (CLI restore and handoff.md both unavailabl
 Use when the parent's persist failed (`npx agent-orchestrator-kit handoff <name>` did not exit 0). A session is not closed until persist succeeds.
 
 1. Write or update `openspec/changes/<name>/handoff.md` with every required section: Closed role, Change, Done, Decisions, Blocked, Next command, Next role, Attach, Subagents to spawn, Constraints.
-2. Run `npx agent-orchestrator-kit handoff <name>` and require exit 0. This upserts `.cursor/memory.json` using an absolute path and prints the expanded next-session prompt on stdout.
-3. If Memory MCP tools are available, also create/update `Change:<name>`, `Handoff:<name>`, and each `Decision:<topic>` to match the file. MCP failure is not a blocker after the CLI succeeds.
+2. Run `npx agent-orchestrator-kit handoff <name>` and require exit 0. This appends non-empty Decisions into append-only `openspec/changes/<name>/decisions.md` (git canon), upserts `.cursor/memory.json` using an absolute path (`Decision:*` mirrors that file, never the reverse), and prints the expanded next-session prompt on stdout.
+3. If Memory MCP tools are available, also create/update `Change:<name>`, `Handoff:<name>`, and each `Decision:<topic>` to match `decisions.md`. MCP failure is not a blocker after the CLI succeeds.
 4. Put the CLI stdout prompt (first line `/opsx:…`) into **Next prompt** unchanged. Do not shorten it. Do not add a banner.
 
 ## Rules

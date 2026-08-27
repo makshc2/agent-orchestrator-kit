@@ -12,22 +12,23 @@ const KIT_VERSION = JSON.parse(readFileSync(join(KIT_ROOT, 'package.json'), 'utf
 
 const VALID_PROFILES = ['generic', 'vue3', 'node', 'mvp'];
 
-const KIT_SKILL_DIRS = [
-  'agent-orchestration',
-  'openspec-howto',
-  'openspec-explore',
-  'openspec-propose',
-  'openspec-apply-change',
-  'openspec-archive-change',
-  'openspec-sync-specs',
-  'spec-workflow-openspec',
-];
+function listTemplateKitSkillDirs() {
+  const skillsDir = join(KIT_ROOT, 'templates', '.agents', 'skills');
+  if (!existsSync(skillsDir)) return [];
+  return readdirSync(skillsDir)
+    .filter((name) => {
+      if (name.startsWith('subagent-')) return false;
+      const full = join(skillsDir, name);
+      return existsSync(full) && statSync(full).isDirectory();
+    })
+    .sort();
+}
 
 const KIT_MANAGED_PATHS = [
   '.agents/commands',
   '.agents/rules',
   '.agents/subagents',
-  ...KIT_SKILL_DIRS.map((s) => `.agents/skills/${s}`),
+  ...listTemplateKitSkillDirs().map((s) => `.agents/skills/${s}`),
   'scripts/sync-local-agent-skills.sh',
 ];
 
@@ -603,6 +604,59 @@ function readMcpInventory(projectDir) {
   return parsed;
 }
 
+function parseSkillsInventory(content) {
+  const kit = [];
+  const stack = [];
+  let external = '';
+  let found = false;
+  let inSkills = false;
+  let section = null;
+  for (const line of String(content || '').split(/\r?\n/)) {
+    if (/^skills:\s*$/.test(line)) {
+      found = true;
+      inSkills = true;
+      section = null;
+      continue;
+    }
+    if (inSkills && /^\S/.test(line)) break;
+    if (!inSkills) continue;
+    if (/^\s+kit:\s*$/.test(line) || /^\s+kit:\s*\[\s*\]\s*$/.test(line)) {
+      section = 'kit';
+      continue;
+    }
+    if (/^\s+stack:\s*$/.test(line) || /^\s+stack:\s*\[\s*\]\s*$/.test(line)) {
+      section = 'stack';
+      continue;
+    }
+    const ext = line.match(/^\s+external:\s*(.*?)\s*$/);
+    if (ext) {
+      section = null;
+      let raw = ext[1];
+      if (
+        (raw.startsWith('"') && raw.endsWith('"') && raw.length >= 2) ||
+        (raw.startsWith("'") && raw.endsWith("'") && raw.length >= 2)
+      ) {
+        raw = raw.slice(1, -1);
+      }
+      external = raw;
+      continue;
+    }
+    const item = line.match(/^\s+-\s+([A-Za-z0-9_-]+)\s*$/);
+    if (item && section === 'kit') kit.push(item[1]);
+    else if (item && section === 'stack') stack.push(item[1]);
+  }
+  return { kit, stack, external, found };
+}
+
+function readSkillsInventory(projectDir) {
+  const fallback = { kit: listTemplateKitSkillDirs(), stack: [], external: '' };
+  const orchPath = join(projectDir, '.agents', 'orchestrator.yaml');
+  if (!existsSync(orchPath)) return fallback;
+  const parsed = parseSkillsInventory(readFileSync(orchPath, 'utf-8'));
+  if (!parsed.found) return fallback;
+  return { kit: parsed.kit, stack: parsed.stack, external: parsed.external };
+}
+
 function printMcpHealth(projectDir) {
   const inventory = readMcpInventory(projectDir);
   const tools = [...new Set([...inventory.baseline, ...inventory.optional])];
@@ -1007,6 +1061,58 @@ function parseDecisionItems(text) {
     .filter((line) => line && !/^none$/i.test(line));
 }
 
+function decisionTopic(text) {
+  const value = String(text || '');
+  const topicMatch = value.match(/^([^:]+):/);
+  return (topicMatch ? topicMatch[1] : value).trim().slice(0, 80) || value.slice(0, 80);
+}
+
+function normalizeDecisionText(text) {
+  return String(text || '')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+function localIsoDate(now = new Date()) {
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function decisionsFilePath(projectDir, changeName) {
+  return join(projectDir, 'openspec', 'changes', changeName, 'decisions.md');
+}
+
+function parseDecisionsFileEntries(content) {
+  const entries = [];
+  for (const line of String(content || '').split(/\r?\n/)) {
+    const match = line.match(/^- (\d{4}-\d{2}-\d{2}) (.+)$/);
+    if (match) entries.push({ date: match[1], text: match[2] });
+  }
+  return entries;
+}
+
+function appendDecisionsFromHandoff(projectDir, changeName, decisionsText) {
+  const items = parseDecisionItems(decisionsText);
+  if (!items.length) return;
+  const filePath = decisionsFilePath(projectDir, changeName);
+  const header = `# Decisions — ${changeName}\n\n<!-- append-only; пише npx agent-orchestrator-kit handoff <name> з handoff.md ## Decisions -->\n\n`;
+  let body = existsSync(filePath) ? readFileSync(filePath, 'utf-8') : header;
+  const seen = new Set(parseDecisionsFileEntries(body).map((entry) => normalizeDecisionText(entry.text)));
+  const date = localIsoDate();
+  const additions = [];
+  for (const item of items) {
+    const norm = normalizeDecisionText(item);
+    if (seen.has(norm)) continue;
+    seen.add(norm);
+    additions.push(`- ${date} ${item}`);
+  }
+  if (!additions.length) return;
+  if (!body.endsWith('\n')) body += '\n';
+  writeFileSync(filePath, `${body}${additions.join('\n')}\n`);
+}
+
 function persistMemoryFromHandoff(projectDir, fields) {
   const filePath = resolve(projectDir, MEMORY_FILE_REL);
   const items = loadMemoryItems(filePath);
@@ -1029,10 +1135,11 @@ function persistMemoryFromHandoff(projectDir, fields) {
   ].filter(Boolean);
   if (handoffObs.length) upsertMemoryEntity(items, `Handoff:${name}`, 'Handoff', handoffObs);
 
-  for (const decision of parseDecisionItems(fields.decisions)) {
-    const topicMatch = decision.match(/^([^:]+):/);
-    const topic = (topicMatch ? topicMatch[1] : decision).trim().slice(0, 80) || decision.slice(0, 80);
-    upsertMemoryEntity(items, `Decision:${topic}`, 'Decision', [`chosen: ${decision}`]);
+  const decisionsPath = decisionsFilePath(projectDir, name);
+  if (existsSync(decisionsPath)) {
+    for (const entry of parseDecisionsFileEntries(readFileSync(decisionsPath, 'utf-8'))) {
+      upsertMemoryEntity(items, `Decision:${decisionTopic(entry.text)}`, 'Decision', [`chosen: ${entry.text}`]);
+    }
   }
 
   saveMemoryItems(filePath, items);
@@ -1673,6 +1780,92 @@ function listAmpSubagentWrappers(projectDir) {
   return readdirSync(skillsDir).filter((entry) => entry.startsWith(AMP_SUBAGENT_SKILL_PREFIX));
 }
 
+function parseAmpSubagentSource(content) {
+  const parsed = String(content || '').match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+  const name = parsed?.[1].match(/^name:\s*(.+)$/m)?.[1]?.trim();
+  const description = parsed?.[1].match(/^description:\s*(.+)$/m)?.[1]?.trim();
+  if (!parsed || !name || !description) return null;
+  return { parsed, name, description };
+}
+
+function buildAmpSubagentSkillContent(file, parsed) {
+  const name = parsed[1].match(/^name:\s*(.+)$/m)?.[1]?.trim();
+  const description = parsed[1].match(/^description:\s*(.+)$/m)?.[1]?.trim();
+  return [
+    '---',
+    `name: ${AMP_SUBAGENT_SKILL_PREFIX}${name}`,
+    `description: ${description}`,
+    '---',
+    '',
+    `<!-- AUTO-GENERATED from .agents/subagents/${file} — edit the source file, then run: npx agent-orchestrator-kit sync -->`,
+    '',
+    AMP_SPAWN_PREAMBLE,
+    '',
+    parsed[2].trim(),
+    '',
+  ].join('\n');
+}
+
+function skillHealthState(projectDir, name) {
+  const source = join(projectDir, '.agents', 'skills', name, 'SKILL.md');
+  if (!existsSync(source)) return 'missing';
+  const sourceBytes = readFileSync(source);
+  for (const ide of ['.cursor', '.claude']) {
+    const copy = join(projectDir, ide, 'skills', name, 'SKILL.md');
+    if (!existsSync(copy)) return 'stale';
+    if (Buffer.compare(sourceBytes, readFileSync(copy)) !== 0) return 'stale';
+  }
+  return 'ok';
+}
+
+function printSkillHealth(projectDir) {
+  const inventory = readSkillsInventory(projectDir);
+  const names = [...inventory.kit, ...inventory.stack];
+  console.log(pc.bold('\nSkill health'));
+  for (const name of names) {
+    const state = skillHealthState(projectDir, name);
+    const isStack = inventory.stack.includes(name);
+    let line = `  ${name.padEnd(28)} ${state}`;
+    if (state === 'missing' && isStack && inventory.external) {
+      line += `  npx ${inventory.external} install --agent all --yes`;
+    }
+    console.log(line);
+  }
+
+  const subagentsDir = join(projectDir, '.agents', 'subagents');
+  const issues = [];
+  let ok = 0;
+  let total = 0;
+  if (existsSync(subagentsDir)) {
+    for (const file of readdirSync(subagentsDir).filter((f) => f.endsWith('.md'))) {
+      const parsedWrap = parseAmpSubagentSource(readFileSync(join(subagentsDir, file), 'utf-8'));
+      if (!parsedWrap) continue;
+      total += 1;
+      const expected = Buffer.from(buildAmpSubagentSkillContent(file, parsedWrap.parsed));
+      const wrapperPath = join(
+        projectDir,
+        '.agents',
+        'skills',
+        `${AMP_SUBAGENT_SKILL_PREFIX}${parsedWrap.name}`,
+        'SKILL.md',
+      );
+      if (!existsSync(wrapperPath) || Buffer.compare(expected, readFileSync(wrapperPath)) !== 0) {
+        issues.push(`${AMP_SUBAGENT_SKILL_PREFIX}${parsedWrap.name}`);
+      } else {
+        ok += 1;
+      }
+    }
+  }
+  if (!total) {
+    console.log('  subagent wrappers: ok (0/0)');
+  } else if (!issues.length) {
+    console.log(`  subagent wrappers: ok (${ok}/${total})`);
+  } else {
+    console.log(`  subagent wrappers: ${issues.join(', ')} stale/missing (${ok}/${total} ok)`);
+  }
+  console.log('');
+}
+
 function generateAmpSubagentSkills(projectDir) {
   const subagentsDir = join(projectDir, '.agents', 'subagents');
   const skillsDir = join(projectDir, '.agents', 'skills');
@@ -1681,31 +1874,16 @@ function generateAmpSubagentSkills(projectDir) {
   if (existsSync(subagentsDir)) {
     for (const file of readdirSync(subagentsDir).filter((f) => f.endsWith('.md'))) {
       const content = readFileSync(join(subagentsDir, file), 'utf-8');
-      const parsed = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
-      const name = parsed?.[1].match(/^name:\s*(.+)$/m)?.[1]?.trim();
-      const description = parsed?.[1].match(/^description:\s*(.+)$/m)?.[1]?.trim();
-      if (!name || !description) {
+      const parsedWrap = parseAmpSubagentSource(content);
+      if (!parsedWrap) {
         log.warn(`skip Amp wrapper (missing name/description frontmatter): .agents/subagents/${file}`);
         continue;
       }
 
-      const skillName = `${AMP_SUBAGENT_SKILL_PREFIX}${name}`;
+      const skillName = `${AMP_SUBAGENT_SKILL_PREFIX}${parsedWrap.name}`;
       expected.add(skillName);
       mkdirSync(join(skillsDir, skillName), { recursive: true });
-      const skill = [
-        '---',
-        `name: ${skillName}`,
-        `description: ${description}`,
-        '---',
-        '',
-        `<!-- AUTO-GENERATED from .agents/subagents/${file} — edit the source file, then run: npx agent-orchestrator-kit sync -->`,
-        '',
-        AMP_SPAWN_PREAMBLE,
-        '',
-        parsed[2].trim(),
-        '',
-      ].join('\n');
-      writeFileSync(join(skillsDir, skillName, 'SKILL.md'), skill);
+      writeFileSync(join(skillsDir, skillName, 'SKILL.md'), buildAmpSubagentSkillContent(file, parsedWrap.parsed));
       log.ok(`.agents/skills/${skillName}/SKILL.md (Amp wrapper)`);
     }
   }
@@ -1968,7 +2146,7 @@ program
 
 program
   .command('status')
-  .description('Show status of active OpenSpec changes (tasks progress, review verdict, archive readiness)')
+  .description('Show status of active OpenSpec changes (tasks progress, review verdict, archive readiness, MCP and skill health)')
   .action(() => {
     const projectDir = process.cwd();
     log.title('agent-orchestrator status');
@@ -1996,6 +2174,7 @@ program
     }
 
     printMcpHealth(projectDir);
+    printSkillHealth(projectDir);
   });
 
 program
@@ -2491,6 +2670,16 @@ program
       } else {
         log.warn('handoff.md missing — using Memory JSON only');
       }
+      const decisionsPath = decisionsFilePath(projectDir, name);
+      if (existsSync(decisionsPath)) {
+        log.ok(`decisions.md: ${decisionsPath}`);
+        const entries = parseDecisionsFileEntries(readFileSync(decisionsPath, 'utf-8'));
+        for (const entry of entries) {
+          console.log(`- ${entry.date} ${entry.text}`);
+        }
+      } else {
+        console.log('decisions: none');
+      }
       if (memoryItems.length) {
         log.ok(`Memory entities: ${memoryItems.length} (${memoryPath})`);
       } else {
@@ -2545,6 +2734,7 @@ program
     writeFileSync(existing.filePath, `${buildHandoffMarkdown(fields).trim()}\n`);
     console.error(pc.green('  ✓'), existing.filePath.replace(`${projectDir}/`, ''));
 
+    appendDecisionsFromHandoff(projectDir, name, fields.decisions);
     const memoryPath = persistMemoryFromHandoff(projectDir, fields);
     console.error(pc.green('  ✓'), `Memory JSON upserted: ${memoryPath}`);
 

@@ -67,6 +67,19 @@ mcp:
     - gitlab
     - browser
 
+skills:
+  kit:
+    - agent-orchestration
+    - openspec-howto
+    - openspec-explore
+    - openspec-propose
+    - openspec-apply-change
+    - openspec-archive-change
+    - openspec-sync-specs
+    - spec-workflow-openspec
+  stack: []
+  external: ""
+
 figma:
   env_file: .agents/figma.local.env
   token_key: FIGMA_ACCESS_TOKEN

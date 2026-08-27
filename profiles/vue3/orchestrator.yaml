@@ -36,7 +36,6 @@ roles:
     command: /opsx:apply
     mode: code
     model_hint: strong
-    notes: "Use vue-core, vue-pinia, vue-axios, vue-router skills during apply"
   verifier:
     type: ci
     gates:
@@ -68,6 +67,23 @@ mcp:
     - github
     - gitlab
     - browser
+
+skills:
+  kit:
+    - agent-orchestration
+    - openspec-howto
+    - openspec-explore
+    - openspec-propose
+    - openspec-apply-change
+    - openspec-archive-change
+    - openspec-sync-specs
+    - spec-workflow-openspec
+  stack:
+    - vue-core
+    - vue-pinia
+    - vue-axios
+    - vue-router
+  external: frontend-agent-skills
 
 figma:
   env_file: .agents/figma.local.env

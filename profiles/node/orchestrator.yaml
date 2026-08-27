@@ -36,7 +36,6 @@ roles:
     command: /opsx:apply
     mode: code
     model_hint: strong
-    notes: "Use javascript-core, javascript-node, javascript-testing skills during apply"
   verifier:
     type: ci
     gates:
@@ -69,6 +68,22 @@ mcp:
     - github
     - gitlab
     - browser
+
+skills:
+  kit:
+    - agent-orchestration
+    - openspec-howto
+    - openspec-explore
+    - openspec-propose
+    - openspec-apply-change
+    - openspec-archive-change
+    - openspec-sync-specs
+    - spec-workflow-openspec
+  stack:
+    - javascript-core
+    - javascript-node
+    - javascript-testing
+  external: frontend-agent-skills
 
 figma:
   env_file: .agents/figma.local.env

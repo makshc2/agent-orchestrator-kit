@@ -9,4 +9,4 @@ If `.mcp.json` / `.amp/settings.json` lacks `memory`, or `MEMORY_FILE_PATH` is r
 
 Use `node scripts/memory-mcp-launcher.cjs` (no relative `MEMORY_FILE_PATH`). Shared file: `.cursor/memory.json` (gitignored). Do not delete other MCP servers.
 
-Entities: `Change:<name>` (status, tasks n/m, last_role, review) · `Handoff:<name>` (next_role, next_command, session_count, summary, blocked) · `Decision:<topic>` (chosen, reason). Writer: `npx agent-orchestrator-kit handoff <name>`. Notify once: “Memory MCP connected.”
+Entities: `Change:<name>` (status, tasks n/m, last_role, review) · `Handoff:<name>` (next_role, next_command, session_count, summary, blocked) · `Decision:<topic>` (chosen, reason) — mirror of git-tracked `openspec/changes/<name>/decisions.md` (file → Memory only; never Memory → file). Writer: `npx agent-orchestrator-kit handoff <name>` (same command appends `decisions.md`). Notify once: “Memory MCP connected.”

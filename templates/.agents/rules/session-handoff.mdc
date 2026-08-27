@@ -10,7 +10,7 @@ This rule is the single source of the Session Start / Session Exit protocol. Com
 ## Session Start (before any work)
 1. Honor pasted `/opsx:<phase> <name>` and announce the role.
 2. `npx agent-orchestrator-kit status`
-3. `npx agent-orchestrator-kit handoff --restore` (or `handoff <name> --restore`). The CLI briefing is canonical — it already reads memory.json and handoff.md; no separate Memory MCP read step.
+3. `npx agent-orchestrator-kit handoff --restore` (or `handoff <name> --restore`). The CLI briefing is canonical — it already reads memory.json and handoff.md; accumulated decisions print from git-tracked `openspec/changes/<name>/decisions.md`, not from Memory. No separate Memory MCP read step.
 4. If the restore CLI failed → read `openspec/changes/<name>/handoff.md` directly.
 5. Spawn `session-handoff` in restore mode ONLY if both the CLI and handoff.md are unavailable (Amp: isolated `subagent-session-handoff`). This is a fallback, never a routine step.
 6. Free-form continue/next/«далі» with one active change → execute `Handoff.next_command`.
@@ -18,7 +18,7 @@ This rule is the single source of the Session Start / Session Exit protocol. Com
 
 ## Session Exit (order)
 1. The parent writes `openspec/changes/<name>/handoff.md` itself: Closed role, Change, Done, Decisions, Blocked, Next command, Next role, Attach, Subagents to spawn, Constraints.
-2. `npx agent-orchestrator-kit handoff <name>` — require exit 0 (upserts absolute-path Memory JSON, prints the expanded prompt on stdout).
+2. `npx agent-orchestrator-kit handoff <name>` — require exit 0 (appends non-empty Decisions into append-only `openspec/changes/<name>/decisions.md`, upserts absolute-path Memory JSON, prints the expanded prompt on stdout). `decisions.md` is the git canon of change decisions; Memory `Decision:*` is a file→Memory mirror only.
 3. Spawn `session-handoff` in persist mode ONLY if step 2 failed (Amp: isolated `subagent-session-handoff`). Fallback, never routine.
 4. Memory MCP is an optional mirror: if tools are available, update `Change:<name>`, `Handoff:<name>`, `Decision:*` in one call; unavailability never blocks closing.
 5. Paste CLI stdout as one fenced block. First line `/opsx:…`. Body uses `project.agent_language`. Self-contained (Done/Decisions/Blocked/spawn/HARD STOP). No banner.

@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Phase 2 decisions canon** — git-tracked append-only `openspec/changes/<name>/decisions.md`; `npx agent-orchestrator-kit handoff <name>` appends dated bullets from `handoff.md ## Decisions` (no duplicates; same topic + new text keeps history); Memory `Decision:*` mirrors the file (last topic wins, file → Memory only); `handoff --restore` prints from the git file or `decisions: none`
+- **Skill inventory** — `skills.kit` / `skills.stack` / `skills.external` in `orchestrator.yaml` (template + all profiles); kit skill list for `init`/`update` is enumerated from `templates/.agents/skills/` (no hardcoded `KIT_SKILL_DIRS`); `status` prints warn-only Skill health (`ok` / `missing` / `stale`) plus Amp wrapper freshness; missing stack skills hint `npx <external> install --agent all --yes` without running an install
 - **`agentic-factory-roadmap`** — planning (docs-only) capability: sequences factory phases 1–4 and records platform-level non-goals; implementation stays in later changes
 - **Phase 1 factory gates & MCP** — opt-in pre-commit `gate-check --staged` via `hooks-setup` / `init --hooks` (husky-first, otherwise `core.hooksPath=.githooks`; never writes `.git/hooks/`)
 - **`mcp-setup`** — GitHub / GitLab / browser stdio launchers (Figma pattern); VCS host from `git remote origin` (not `--ci`); `--vcs` override; `--no-browser`

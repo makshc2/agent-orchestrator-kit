@@ -751,6 +751,41 @@ Handoff:add-bulk-export    next_role: implementer, next_command: /opsx:apply add
 
 Session boundaries are **parent-driven** (no routine subagent): every `/opsx:*` session restores via `npx agent-orchestrator-kit handoff --restore` (the CLI briefing already reads memory.json and `handoff.md`), falling back to reading `handoff.md` directly if the CLI fails. At exit the parent itself writes `handoff.md`, runs `npx agent-orchestrator-kit handoff <name>` (upserts `.cursor/memory.json` with an absolute path), and pastes the CLI stdout prompt. The `session-handoff` subagent is spawned only when the CLI path fails; Memory MCP is an optional mirror. The prompt is self-contained — Amp often skips Memory MCP, so the next thread must be able to work from the pasted text alone. Never configure Memory with a relative `MEMORY_FILE_PATH`; use `scripts/memory-mcp-launcher.cjs` (`npx agent-orchestrator-kit memory-setup`). The next phase always starts in a new chat. The canonical Session Start / Exit protocol lives in one place — `.agents/rules/session-handoff.mdc` — and the `/opsx:*` commands reference it instead of duplicating it.
 
+### Change decisions (`decisions.md`)
+
+Session decisions accumulate in git-tracked, append-only `openspec/changes/<name>/decisions.md`. That file is the canon visible in a PR/MR; Memory `Decision:*` is a **file → Memory** mirror only.
+
+```bash
+npx agent-orchestrator-kit handoff add-bulk-export
+# appends dated bullets from handoff.md ## Decisions (skips duplicates; same topic + new text → new row)
+npx agent-orchestrator-kit handoff add-bulk-export --restore
+# prints decisions from the git file (or `decisions: none` if the file does not exist)
+```
+
+`Decisions: none` does not create the file. Re-running persist with the same handoff does not duplicate rows. A later revision of the same topic is a new line; the old line stays. `update` does not migrate historical Memory entities into the file.
+
+### Skill inventory
+
+`.agents/orchestrator.yaml` carries a machine-readable `skills:` section (`kit` / `stack` / `external`) instead of hardcoded skill names in the CLI:
+
+```yaml
+skills:
+  kit:
+    - agent-orchestration
+    - openspec-howto
+    # ... remaining kit skills
+  stack: []                 # vue3: vue-core, vue-pinia, vue-axios, vue-router
+  external: ""              # vue3/node: frontend-agent-skills
+```
+
+`npx agent-orchestrator-kit status` prints **Skill health** after MCP health (`ok` / `missing` / `stale`) for kit + stack skills and Amp `subagent-*` wrappers. The section is warn-only: missing or stale skills never change the exit code. Repair with the existing commands — `sync` (stale IDE copies), `update` (missing kit files), or a manual stack install:
+
+```bash
+npx frontend-agent-skills install --agent all --yes
+```
+
+The CLI never auto-installs external skill packages. `.agents/orchestrator.yaml` is outside kit-managed paths, so `update` does **not** refresh `skills.kit` — after a kit skill is added or removed, edit that list by hand (or re-init with `--force`).
+
 ## Amp Code — Deep Integration Notes
 
 Amp is the **primary target** of this kit. It reads `.agents/skills/` and `AGENTS.md` without any sync step — your team commits `.agents/` and everyone gets the same orchestration behavior automatically.
@@ -807,7 +842,8 @@ npx agent-orchestrator-kit sync [options]
   present in .agents/ (does not touch memory.json, .mcp.json, CLAUDE.md, etc.)
 
 npx agent-orchestrator-kit status
-  Show progress, review verdict, archive-readiness, and MCP health
+  Show progress, review verdict, archive-readiness, MCP health, and Skill health
+  (warn-only; missing/stale skills do not fail the command)
 
 npx agent-orchestrator-kit gate-check [change-name] [options]
   --src-glob <glob>  Source path filter used to detect code changes (default: src/)
