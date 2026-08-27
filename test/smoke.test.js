@@ -1688,3 +1688,361 @@ test('init installs the lean archive command and apply/config defaults', () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+function mcpServersOf(dir) {
+  return JSON.parse(readFileSync(join(dir, '.mcp.json'), 'utf-8')).mcpServers;
+}
+
+function ampServersOf(dir) {
+  return JSON.parse(readFileSync(join(dir, '.amp/settings.json'), 'utf-8'))['amp.mcpServers'];
+}
+
+function setOrigin(dir, url) {
+  try {
+    execSync('git remote remove origin', { cwd: dir, stdio: 'pipe' });
+  } catch {}
+  execSync(`git remote add origin ${url}`, { cwd: dir, stdio: 'pipe' });
+}
+
+test('init without --hooks installs the gate script but does not wire hooks', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-hooks-off-'));
+  try {
+    runInit(dir, '--profile generic --name HooksOff --lang en');
+    assert.ok(existsSync(join(dir, 'scripts/pre-commit-gate-check.sh')));
+    assert.ok(!existsSync(join(dir, '.githooks')));
+    assert.ok(!existsSync(join(dir, '.husky')));
+    const script = readFileSync(join(dir, 'scripts/pre-commit-gate-check.sh'), 'utf-8');
+    assert.match(script, /gate-check --staged/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('hooks-setup with husky appends a marked line idempotently', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-hooks-husky-'));
+  try {
+    runInit(dir, '--profile generic --name HooksHusky --lang en');
+    initGit(dir);
+    mkdirSync(join(dir, '.husky'), { recursive: true });
+    writeFileSync(join(dir, '.husky/pre-commit'), '#!/usr/bin/env sh\n. "$(dirname -- "$0")/_/husky.sh"\necho existing\n');
+    const beforeHooksPath = execSync('git config --get core.hooksPath || true', { cwd: dir, encoding: 'utf-8' }).trim();
+
+    const out = runCli(dir, 'hooks-setup');
+    assert.match(out, /pre-commit/);
+    const first = readFileSync(join(dir, '.husky/pre-commit'), 'utf-8');
+    assert.match(first, /echo existing/);
+    assert.match(first, /# agent-orchestrator-kit gate/);
+    assert.match(first, /scripts\/pre-commit-gate-check\.sh/);
+    assert.equal((first.match(/pre-commit-gate-check\.sh/g) || []).length, 1);
+    assert.ok(!existsSync(join(dir, '.githooks/pre-commit')));
+
+    runCli(dir, 'hooks-setup');
+    const second = readFileSync(join(dir, '.husky/pre-commit'), 'utf-8');
+    assert.equal((second.match(/pre-commit-gate-check\.sh/g) || []).length, 1);
+    const afterHooksPath = execSync('git config --get core.hooksPath || true', { cwd: dir, encoding: 'utf-8' }).trim();
+    assert.equal(afterHooksPath, beforeHooksPath);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('hooks-setup without husky writes .githooks and sets core.hooksPath', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-hooks-git-'));
+  try {
+    runInit(dir, '--profile generic --name HooksGit --lang en');
+    initGit(dir);
+    runCli(dir, 'hooks-setup');
+    assert.ok(existsSync(join(dir, '.githooks/pre-commit')));
+    const hook = readFileSync(join(dir, '.githooks/pre-commit'), 'utf-8');
+    assert.match(hook, /pre-commit-gate-check\.sh/);
+    const mode = statSync(join(dir, '.githooks/pre-commit')).mode;
+    assert.ok(mode & 0o111, 'expected .githooks/pre-commit to be executable');
+    const hooksPath = execSync('git config --get core.hooksPath', { cwd: dir, encoding: 'utf-8' }).trim();
+    assert.equal(hooksPath, '.githooks');
+    runCli(dir, 'hooks-setup');
+    assert.equal((readFileSync(join(dir, '.githooks/pre-commit'), 'utf-8').match(/pre-commit-gate-check\.sh/g) || []).length, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('hooks-setup refuses to overwrite a foreign core.hooksPath', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-hooks-foreign-'));
+  try {
+    runInit(dir, '--profile generic --name HooksForeign --lang en');
+    initGit(dir);
+    execSync('git config core.hooksPath .lefthook', { cwd: dir, stdio: 'pipe' });
+    assert.throws(
+      () => runCli(dir, 'hooks-setup'),
+      (err) => {
+        assert.match(String(err.stdout || err.stderr || ''), /refusing to overwrite core\.hooksPath/);
+        return true;
+      },
+    );
+    assert.ok(!existsSync(join(dir, '.githooks')));
+    assert.equal(execSync('git config --get core.hooksPath', { cwd: dir, encoding: 'utf-8' }).trim(), '.lefthook');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('gate-check --staged blocks src/ without APPROVE and passes with APPROVE', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-gate-staged-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'gate-staged', scripts: {} }, null, 2));
+    runInit(dir, '--profile generic --name GateStaged --lang en');
+    initGit(dir);
+
+    mkdirSync(join(dir, 'src'), { recursive: true });
+    writeFileSync(join(dir, 'src/index.js'), 'console.log(1);\n');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'tasks.md'), '- [x] 1.1 done\n');
+    execSync('git add src/index.js openspec/changes/add-thing/tasks.md', { cwd: dir, stdio: 'pipe' });
+
+    assert.throws(() => runCli(dir, 'gate-check --staged'));
+
+    writeFileSync(join(changeDir, 'review.md'), '**Verdict:** APPROVE\n');
+    execSync('git add openspec/changes/add-thing/review.md', { cwd: dir, stdio: 'pipe' });
+    const out = runCli(dir, 'gate-check --staged');
+    assert.match(out, /review gate passed/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('gate-check --staged skips when staged files are outside src/', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-gate-staged-nosrc-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'gate-staged-nosrc', scripts: {} }, null, 2));
+    runInit(dir, '--profile generic --name GateStagedNoSrc --lang en');
+    initGit(dir);
+    writeFileSync(join(dir, 'README.md'), '# hello\n');
+    execSync('git add README.md', { cwd: dir, stdio: 'pipe' });
+    const out = runCli(dir, 'gate-check --staged');
+    assert.match(out, /nothing to gate/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('gate-check --staged is a no-op when require_spec_review is false', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-gate-staged-mvp-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'gate-staged-mvp', scripts: {} }, null, 2));
+    runInit(dir, '--profile mvp --name GateStagedMvp --lang en');
+    initGit(dir);
+    mkdirSync(join(dir, 'src'), { recursive: true });
+    writeFileSync(join(dir, 'src/index.js'), 'console.log(1);\n');
+    execSync('git add src/index.js', { cwd: dir, stdio: 'pipe' });
+    const out = runCli(dir, 'gate-check --staged');
+    assert.match(out, /review not required/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('mcp examples list five servers with matching launcher paths', () => {
+  const cursor = JSON.parse(readFileSync(join(KIT_ROOT, 'templates/.agents/mcp.json.example'), 'utf-8'));
+  const amp = JSON.parse(readFileSync(join(KIT_ROOT, 'templates/.agents/amp.settings.json.example'), 'utf-8'));
+  for (const name of ['memory', 'figma', 'github', 'gitlab', 'browser']) {
+    assert.equal(cursor.mcpServers[name].command, 'node');
+    assert.deepEqual(cursor.mcpServers[name].args, [`scripts/${name}-mcp-launcher.cjs`]);
+    assert.deepEqual(amp['amp.mcpServers'][name].args, cursor.mcpServers[name].args);
+  }
+  assert.doesNotMatch(JSON.stringify(cursor), /ghp_|glpat-|figd_/);
+  assert.doesNotMatch(JSON.stringify(amp), /ghp_|glpat-|figd_/);
+});
+
+test('init live MCP configs omit optional github/gitlab/browser until mcp-setup', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-mcp-init-live-'));
+  try {
+    runInit(dir, '--profile generic --name McpInitLive --lang en');
+    const servers = mcpServersOf(dir);
+    assert.ok(servers.memory);
+    assert.ok(servers.figma);
+    assert.equal(servers.github, undefined);
+    assert.equal(servers.gitlab, undefined);
+    assert.equal(servers.browser, undefined);
+    const lines = gitignoreLines(dir);
+    assert.ok(lines.includes('.agents/github.local.env'));
+    assert.ok(lines.includes('.agents/gitlab.local.env'));
+    const orch = readFileSync(join(dir, '.agents/orchestrator.yaml'), 'utf-8');
+    assert.match(orch, /-\s+gitlab/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('mcp-setup with GitHub origin installs github+browser and not gitlab', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-mcp-github-'));
+  try {
+    runInit(dir, '--profile generic --name McpGithub --lang en');
+    initGit(dir);
+    setOrigin(dir, 'https://github.com/acme/app.git');
+    const out = runCli(dir, 'mcp-setup');
+    assert.match(out, /VCS MCP: github/);
+    assert.doesNotMatch(out, /ghp_/);
+    const servers = mcpServersOf(dir);
+    const amp = ampServersOf(dir);
+    assert.ok(servers.github);
+    assert.ok(servers.browser);
+    assert.equal(servers.gitlab, undefined);
+    assert.ok(amp.github);
+    assert.equal(amp.gitlab, undefined);
+    assert.ok(existsSync(join(dir, '.agents/github.local.env')));
+    assert.ok(!existsSync(join(dir, '.agents/gitlab.local.env')));
+    assert.deepEqual(servers.github.args, ['scripts/github-mcp-launcher.cjs']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('mcp-setup detects ssh GitHub, GitLab.com, self-hosted GitLab, and missing origin', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-mcp-detect-'));
+  try {
+    runInit(dir, '--ci github --profile generic --name McpDetect --lang en');
+    initGit(dir);
+
+    setOrigin(dir, 'git@github.com:acme/app.git');
+    runCli(dir, 'mcp-setup');
+    assert.ok(mcpServersOf(dir).github);
+    assert.equal(mcpServersOf(dir).gitlab, undefined);
+
+    writeFileSync(join(dir, '.mcp.json'), JSON.stringify({ mcpServers: { memory: { command: 'node', args: ['scripts/memory-mcp-launcher.cjs'] } } }, null, 2));
+    writeFileSync(join(dir, '.amp/settings.json'), JSON.stringify({ 'amp.mcpServers': {} }, null, 2));
+    setOrigin(dir, 'https://gitlab.com/group/repo.git');
+    runCli(dir, 'mcp-setup');
+    assert.ok(mcpServersOf(dir).gitlab);
+    assert.equal(mcpServersOf(dir).github, undefined);
+    const gitlabComEnv = readFileSync(join(dir, '.agents/gitlab.local.env'), 'utf-8');
+    assert.match(gitlabComEnv, /GITLAB_API_URL=https:\/\/gitlab\.com\/api\/v4/);
+
+    writeFileSync(join(dir, '.mcp.json'), JSON.stringify({ mcpServers: { memory: { command: 'node', args: ['scripts/memory-mcp-launcher.cjs'] } } }, null, 2));
+    writeFileSync(join(dir, '.amp/settings.json'), JSON.stringify({ 'amp.mcpServers': {} }, null, 2));
+    setOrigin(dir, 'git@gitlab.np.work:group/repo.git');
+    const selfOut = runCli(dir, 'mcp-setup');
+    assert.match(selfOut, /VCS MCP: gitlab \(gitlab\.np\.work\)/);
+    assert.doesNotMatch(selfOut, /git@gitlab/);
+    assert.ok(mcpServersOf(dir).gitlab);
+    assert.equal(mcpServersOf(dir).github, undefined);
+    assert.match(readFileSync(join(dir, '.agents/gitlab.local.env'), 'utf-8'), /GITLAB_API_URL=https:\/\/gitlab\.np\.work\/api\/v4/);
+
+    writeFileSync(join(dir, '.mcp.json'), JSON.stringify({ mcpServers: { memory: { command: 'node', args: ['scripts/memory-mcp-launcher.cjs'] } } }, null, 2));
+    writeFileSync(join(dir, '.amp/settings.json'), JSON.stringify({ 'amp.mcpServers': {} }, null, 2));
+    execSync('git remote remove origin', { cwd: dir, stdio: 'pipe' });
+    const noneOut = runCli(dir, 'mcp-setup');
+    assert.match(noneOut, /skipped \(no origin match\)/);
+    assert.equal(mcpServersOf(dir).github, undefined);
+    assert.equal(mcpServersOf(dir).gitlab, undefined);
+    assert.ok(mcpServersOf(dir).browser);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('mcp-setup --vcs overrides origin and --ci does not', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-mcp-override-'));
+  try {
+    runInit(dir, '--ci github --profile generic --name McpOverride --lang en');
+    initGit(dir);
+    setOrigin(dir, 'git@gitlab.company.com:group/repo.git');
+    runCli(dir, 'mcp-setup');
+    assert.ok(mcpServersOf(dir).gitlab);
+    assert.equal(mcpServersOf(dir).github, undefined);
+
+    writeFileSync(join(dir, '.mcp.json'), JSON.stringify({ mcpServers: { memory: { command: 'node', args: ['scripts/memory-mcp-launcher.cjs'] } } }, null, 2));
+    runCli(dir, 'mcp-setup --vcs github --no-browser');
+    assert.ok(mcpServersOf(dir).github);
+    assert.equal(mcpServersOf(dir).gitlab, undefined);
+    assert.equal(mcpServersOf(dir).browser, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('status prints MCP health without token values', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-mcp-status-'));
+  try {
+    runInit(dir, '--profile generic --name McpStatus --lang en');
+    initGit(dir);
+    setOrigin(dir, 'https://github.com/acme/app.git');
+    writeFileSync(join(dir, '.agents/figma.local.env'), 'FIGMA_ACCESS_TOKEN=figd_secret_value\n');
+    const out = runCli(dir, 'status');
+    assert.match(out, /MCP health/);
+    assert.match(out, /memory/);
+    assert.match(out, /figma/);
+    assert.match(out, /github/);
+    assert.match(out, /gitlab\s+skipped \(no origin match\)/);
+    assert.match(out, /browser/);
+    assert.doesNotMatch(out, /figd_secret_value/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('github and gitlab launchers fail without a token and never print secrets', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-mcp-launchers-'));
+  try {
+    runInit(dir, '--profile generic --name McpLaunchers --lang en');
+    let failed = false;
+    try {
+      execSync(`node "${join(dir, 'scripts/github-mcp-launcher.cjs')}"`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' });
+    } catch (error) {
+      failed = true;
+      const out = `${error.stdout || ''}${error.stderr || ''}`;
+      assert.match(out, /github\.local\.env/);
+      assert.doesNotMatch(out, /ghp_/);
+    }
+    assert.ok(failed, 'github launcher should exit non-zero without env');
+
+    failed = false;
+    writeFileSync(join(dir, '.agents/github.local.env'), 'GITHUB_PERSONAL_ACCESS_TOKEN=\n');
+    try {
+      execSync(`node "${join(dir, 'scripts/github-mcp-launcher.cjs')}"`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' });
+    } catch (error) {
+      failed = true;
+      const out = `${error.stdout || ''}${error.stderr || ''}`;
+      assert.match(out, /empty/);
+      assert.doesNotMatch(out, /ghp_secret_value/);
+    }
+    assert.ok(failed, 'github launcher should exit non-zero with empty token');
+
+    failed = false;
+    try {
+      execSync(`node "${join(dir, 'scripts/gitlab-mcp-launcher.cjs')}"`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' });
+    } catch (error) {
+      failed = true;
+      const out = `${error.stdout || ''}${error.stderr || ''}`;
+      assert.match(out, /gitlab\.local\.env/);
+      assert.doesNotMatch(out, /glpat-/);
+    }
+    assert.ok(failed, 'gitlab launcher should exit non-zero without env');
+
+    const browser = readFileSync(join(dir, 'scripts/browser-mcp-launcher.cjs'), 'utf-8');
+    assert.match(browser, /@playwright\/mcp/);
+    assert.doesNotMatch(browser, /local\.env/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('update installs new MCP launchers, hook script, and env gitignore lines', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-mcp-update-'));
+  try {
+    runInit(dir, '--profile generic --name McpUpdate --lang en');
+    rmSync(join(dir, 'scripts/github-mcp-launcher.cjs'), { force: true });
+    rmSync(join(dir, 'scripts/pre-commit-gate-check.sh'), { force: true });
+    execSync(`node "${CLI}" update`, { cwd: dir, stdio: 'pipe' });
+    assert.ok(existsSync(join(dir, 'scripts/github-mcp-launcher.cjs')));
+    assert.ok(existsSync(join(dir, 'scripts/gitlab-mcp-launcher.cjs')));
+    assert.ok(existsSync(join(dir, 'scripts/browser-mcp-launcher.cjs')));
+    assert.ok(existsSync(join(dir, 'scripts/pre-commit-gate-check.sh')));
+    assert.ok(existsSync(join(dir, '.agents/github.local.env.example')));
+    const lines = gitignoreLines(dir);
+    assert.ok(lines.includes('.agents/github.local.env'));
+    assert.ok(lines.includes('.agents/gitlab.local.env'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

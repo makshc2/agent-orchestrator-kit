@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - **`agentic-factory-roadmap`** — planning (docs-only) capability: sequences factory phases 1–4 and records platform-level non-goals; implementation stays in later changes
+- **Phase 1 factory gates & MCP** — opt-in pre-commit `gate-check --staged` via `hooks-setup` / `init --hooks` (husky-first, otherwise `core.hooksPath=.githooks`; never writes `.git/hooks/`)
+- **`mcp-setup`** — GitHub / GitLab / browser stdio launchers (Figma pattern); VCS host from `git remote origin` (not `--ci`); `--vcs` override; `--no-browser`
+- **MCP health** in `status` (`ok` / `not configured` / `skipped`) without printing token values
+- Committed examples list `memory`, `figma`, `github`, `gitlab`, `browser`; gitignored `.agents/github.local.env` and `.agents/gitlab.local.env`
 
 ## [0.3.0] - 2026-08-18
 

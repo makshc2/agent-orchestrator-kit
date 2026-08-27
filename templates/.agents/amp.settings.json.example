@@ -7,6 +7,18 @@
     "figma": {
       "command": "node",
       "args": ["scripts/figma-mcp-launcher.cjs"]
+    },
+    "github": {
+      "command": "node",
+      "args": ["scripts/github-mcp-launcher.cjs"]
+    },
+    "gitlab": {
+      "command": "node",
+      "args": ["scripts/gitlab-mcp-launcher.cjs"]
+    },
+    "browser": {
+      "command": "node",
+      "args": ["scripts/browser-mcp-launcher.cjs"]
     }
   }
 }

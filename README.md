@@ -79,7 +79,9 @@ See [Installation](#installation) for profile/CI options.
 ```bash
 npx agent-orchestrator-kit@latest update
 npx agent-orchestrator-kit@latest sync         # or: ./scripts/sync-local-agent-skills.sh
+npx agent-orchestrator-kit@latest mcp-setup    # optional — GitHub/GitLab from origin + browser
 npx agent-orchestrator-kit@latest figma-setup  # optional — local Figma token
+npx agent-orchestrator-kit@latest hooks-setup  # optional — pre-commit review gate
 npx agent-orchestrator-kit@latest status
 ```
 
@@ -468,13 +470,13 @@ Orchestration hard rules (review approval, one active change) used to rely entir
 npx agent-orchestrator-kit status
 ```
 
-Prints every active OpenSpec change with task progress (`N/M tasks`), review verdict (`APPROVE` / `REQUEST CHANGES` / `none`), design brief (`brief: yes/no`), and a `ready to archive` flag once all tasks are `[x]` — no more running `openspec status` per change by hand.
+Prints every active OpenSpec change with task progress (`N/M tasks`), review verdict (`APPROVE` / `REQUEST CHANGES` / `none`), design brief (`brief: yes/no`), a `ready to archive` flag once all tasks are `[x]`, and an **MCP health** section (launcher / env / live config — never prints token values). VCS tools that do not match `git remote origin` show as `skipped (no origin match)`.
 
 ```bash
-npx agent-orchestrator-kit gate-check [change-name] [--src-glob src/] [--base HEAD~1]
+npx agent-orchestrator-kit gate-check [change-name] [--src-glob src/] [--base HEAD~1] [--staged]
 ```
 
-Fails (non-zero exit) when `pipeline.require_spec_review: true`, the diff against `--base` touches `--src-glob`, and the active change has no `review.md` with `Verdict: APPROVE`. When `pipeline.require_design_brief: true` and `src/` changed, it also requires `design-brief.md` (or a `Design: none` line in `proposal.md` for non-UI changes). It degrades gracefully to exit 0 (with a message, not silently) when: `.agents/orchestrator.yaml` is missing, neither review nor design brief is required, the diff can't be computed (e.g. shallow clone), or nothing under `--src-glob` changed. It also warns (never fails) when active changes exceed `pipeline.max_active_changes`. Both `agent-verify.yml` fragments (GitHub and GitLab) call `gate-check` automatically.
+Fails (non-zero exit) when `pipeline.require_spec_review: true`, the diff against `--base` (or **staged** files with `--staged`) touches `--src-glob`, and the active change has no `review.md` with `Verdict: APPROVE`. When `pipeline.require_design_brief: true` and `src/` changed, it also requires `design-brief.md` (or a `Design: none` line in `proposal.md` for non-UI changes). It degrades gracefully to exit 0 (with a message, not silently) when: `.agents/orchestrator.yaml` is missing, neither review nor design brief is required, the diff can't be computed (e.g. shallow clone), or nothing under `--src-glob` changed. It also warns (never fails) when active changes exceed `pipeline.max_active_changes`. Both `agent-verify.yml` fragments (GitHub and GitLab) call `gate-check` automatically. Pre-commit uses `--staged` so it checks the index, not `HEAD~1`.
 
 ```bash
 npx agent-orchestrator-kit gate-check --tasks <change-name>
@@ -487,6 +489,60 @@ npx agent-orchestrator-kit gate-check --review <change-name> [--json]
 ```
 
 Deterministic Tier 1 of the review phase: strict OpenSpec validation, the task-contract lint, `Non-goals` / `Acceptance criteria` sections in `proposal.md`, and non-empty ADDED/MODIFIED/REMOVED sections in delta specs. Human-readable stdout, or `--json` for a `{pass, errors[]}` report.
+
+### Pre-commit review gate (optional)
+
+`gate-check` already exists; it is **not** wired to `git commit` unless you opt in. The kit never writes `.git/hooks/` directly.
+
+```bash
+npx agent-orchestrator-kit hooks-setup
+# or: npx agent-orchestrator-kit init --hooks
+```
+
+- If `.husky/` exists, a marked line `sh scripts/pre-commit-gate-check.sh` is appended to `.husky/pre-commit` (idempotent; existing content is kept). `core.hooksPath` is not changed.
+- Otherwise the kit writes committed `.githooks/pre-commit` and runs `git config core.hooksPath .githooks`. If `core.hooksPath` is already set to something else, the command refuses and prints a manual line to add.
+- Lefthook: add `sh scripts/pre-commit-gate-check.sh` to your pre-commit job yourself (no auto-write).
+- `init` without `--hooks` still installs `scripts/pre-commit-gate-check.sh` as a managed file, unconnected.
+- Disable: remove the marked line from `.husky/pre-commit`, or `git config --unset core.hooksPath`.
+- MVP (`require_spec_review: false`): the hook is a no-op (exit 0).
+- Keep `agent-orchestrator-kit` in the project's **devDependencies** so `npx agent-orchestrator-kit` on every commit does not cold-fetch from the registry.
+
+Run `hooks-setup` on each machine (`git config` is local), same as `figma-setup`.
+
+### Optional MCP: GitHub, GitLab, browser
+
+Same pattern as Figma: stdio launcher + gitignored env + committed `.example`. Tokens never go in chat or committed MCP JSON.
+
+```bash
+npx agent-orchestrator-kit mcp-setup
+```
+
+Detection uses `git remote get-url origin` (https and ssh). `--ci` is ignored.
+
+| Origin hostname | Installed VCS MCP |
+|-----------------|-------------------|
+| `github.com` | GitHub only |
+| `gitlab.com` or hostname contains `gitlab` (self-hosted) | GitLab only; `GITLAB_API_URL=https://<hostname>/api/v4` |
+| missing / unrecognized | no VCS MCP (`status` shows skipped) |
+
+Browser MCP (`@playwright/mcp`) is always added unless you pass `--no-browser`. Override detection with `--vcs github` or `--vcs gitlab`.
+
+```bash
+npx agent-orchestrator-kit mcp-setup --vcs gitlab --no-browser
+```
+
+Then put tokens **only** in the gitignored files (never in chat):
+
+| Path | Git |
+|------|-----|
+| `.agents/github.local.env` | ignored |
+| `.agents/gitlab.local.env` | ignored |
+| `.agents/*.local.env.example` | committed |
+| `scripts/*-mcp-launcher.cjs` | committed |
+
+Cursor, Claude Code, and Amp all spawn the same launchers. Committed examples list all five servers (`memory`, `figma`, `github`, `gitlab`, `browser`); live `.mcp.json` / `.amp/settings.json` receive only the detected VCS plus browser.
+
+`npx agent-orchestrator-kit status` prints MCP health (`ok` / `not configured` / `skipped`) without token values.
 
 ---
 
@@ -739,6 +795,7 @@ npx agent-orchestrator-kit init [options]
   --name <name>      Project name (default: directory name)
   --ci <provider>    CI provider: gitlab | github | none (default: github)
   --spec-verify      Install AI Spec Verifier blocking gate (GitLab or GitHub)
+  --hooks            Opt-in: install pre-commit gate-check hook (husky-first)
   --force            Overwrite existing files
 
 npx agent-orchestrator-kit update
@@ -750,16 +807,23 @@ npx agent-orchestrator-kit sync [options]
   present in .agents/ (does not touch memory.json, .mcp.json, CLAUDE.md, etc.)
 
 npx agent-orchestrator-kit status
-  Show progress, review verdict, and archive-readiness for active changes
+  Show progress, review verdict, archive-readiness, and MCP health
 
 npx agent-orchestrator-kit gate-check [change-name] [options]
   --src-glob <glob>  Source path filter used to detect code changes (default: src/)
   --base <ref>       Git ref to diff against (default: HEAD~1)
+  --staged           Check staged files (git diff --cached) instead of --base
   --tasks <name>     Lint task contracts (Files / Do / Done-when)
   --review <name>    Deterministic Tier 1 review (optional --json)
   Exit non-zero when require_spec_review is true, src/ changed, and the
   active change has no review.md with Verdict: APPROVE. Graceful no-op
   otherwise (missing config, review not required, no relevant diff).
+
+npx agent-orchestrator-kit hooks-setup
+  Opt-in pre-commit gate (husky-first, else core.hooksPath=.githooks)
+
+npx agent-orchestrator-kit mcp-setup [--vcs github|gitlab] [--no-browser]
+  Install GitHub/GitLab (from origin) and browser MCP launchers
 
 npx agent-orchestrator-kit archive <name> [--sync | --no-sync --force]
   Gate-check a completed change, optionally merge delta specs, move to
@@ -802,7 +866,7 @@ openspec/                # Committed — spec-driven workflow
 ## Roadmap
 
 The kit moves toward an Agentic Factory in four phases. **One phase = one OpenSpec change**; the next phase does not start until the previous change is archived.
-1. `add-factory-gates-and-mcp` — local review gate on commit and Figma-style MCP launchers (GitHub / GitLab / browser).
+1. `add-factory-gates-and-mcp` — local review gate on commit and Figma-style MCP launchers (GitHub / GitLab / browser). Implemented: `hooks-setup`, `mcp-setup`, `gate-check --staged`, MCP health in `status`.
 2. `add-factory-memory-and-skills` — git-canonical decisions with Memory MCP as a mirror, plus a machine skill inventory.
 3. `add-cloud-agent-handoff` — session artifacts exist only on git-tracked paths.
 4. Phase 4 (`add-factory-control-plane`) is an opt-in platform decision, not the next sprint.

@@ -68,6 +68,9 @@ mcp:
     - memory
   optional:
     - figma
+    - github
+    - gitlab
+    - browser
 
 figma:
   env_file: .agents/figma.local.env

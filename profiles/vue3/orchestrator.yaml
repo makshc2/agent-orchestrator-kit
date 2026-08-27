@@ -66,6 +66,7 @@ mcp:
   optional:
     - figma
     - github
+    - gitlab
     - browser
 
 figma:

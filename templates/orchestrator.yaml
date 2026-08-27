@@ -64,6 +64,7 @@ mcp:
   optional:
     - figma
     - github
+    - gitlab
     - browser
 
 figma:
@@ -83,6 +84,8 @@ cli:
   handoff: npx agent-orchestrator-kit handoff <name>
   handoff_restore: npx agent-orchestrator-kit handoff --restore
   memory_setup: npx agent-orchestrator-kit memory-setup
+  mcp_setup: npx agent-orchestrator-kit mcp-setup
+  hooks_setup: npx agent-orchestrator-kit hooks-setup
   openspec_list: npx openspec list
   openspec_validate_change: npx openspec validate <name> --strict --type change
   openspec_validate_all: npx openspec validate --all --strict

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { program } from 'commander';
 import pc from 'picocolors';
-import { readFileSync, existsSync, mkdirSync, copyFileSync, readdirSync, statSync, writeFileSync, rmSync, renameSync } from 'fs';
+import { readFileSync, existsSync, mkdirSync, copyFileSync, readdirSync, statSync, writeFileSync, rmSync, renameSync, chmodSync } from 'fs';
 import { join, dirname, basename, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
@@ -66,6 +66,8 @@ const GITIGNORE_LINES = [
   '.amp/settings.json',
   '.claude',
   '.agents/figma.local.env',
+  '.agents/github.local.env',
+  '.agents/gitlab.local.env',
 ];
 
 const FIGMA_ENV_REL = join('.agents', 'figma.local.env');
@@ -73,17 +75,67 @@ const FIGMA_ENV_EXAMPLE_REL = join('.agents', 'figma.local.env.example');
 const FIGMA_LAUNCHER_REL = join('scripts', 'figma-mcp-launcher.cjs');
 const MEMORY_LAUNCHER_REL = join('scripts', 'memory-mcp-launcher.cjs');
 const MEMORY_FILE_REL = join('.cursor', 'memory.json');
+const GITHUB_ENV_REL = join('.agents', 'github.local.env');
+const GITHUB_ENV_EXAMPLE_REL = join('.agents', 'github.local.env.example');
+const GITHUB_LAUNCHER_REL = join('scripts', 'github-mcp-launcher.cjs');
+const GITLAB_ENV_REL = join('.agents', 'gitlab.local.env');
+const GITLAB_ENV_EXAMPLE_REL = join('.agents', 'gitlab.local.env.example');
+const GITLAB_LAUNCHER_REL = join('scripts', 'gitlab-mcp-launcher.cjs');
+const BROWSER_LAUNCHER_REL = join('scripts', 'browser-mcp-launcher.cjs');
+const HOOK_SCRIPT_REL = join('scripts', 'pre-commit-gate-check.sh');
+const MCP_EXAMPLE_REL = join('.agents', 'mcp.json.example');
+const AMP_EXAMPLE_REL = join('.agents', 'amp.settings.json.example');
+const OPTIONAL_MCP_SEED_STRIP = ['github', 'gitlab', 'browser'];
+const HOOK_MARKER = '# agent-orchestrator-kit gate';
+const HOOK_LINE = 'sh scripts/pre-commit-gate-check.sh';
+const DEFAULT_GITLAB_API_URL = 'https://gitlab.com/api/v4';
+const DEFAULT_MCP_INVENTORY = {
+  baseline: ['memory'],
+  optional: ['figma', 'github', 'gitlab', 'browser'],
+};
 const FIGMA_MANAGED_PATHS = [
   FIGMA_ENV_EXAMPLE_REL,
   FIGMA_LAUNCHER_REL,
-  join('.agents', 'mcp.json.example'),
-  join('.agents', 'amp.settings.json.example'),
+  MCP_EXAMPLE_REL,
+  AMP_EXAMPLE_REL,
 ];
 const MEMORY_MANAGED_PATHS = [
   MEMORY_LAUNCHER_REL,
-  join('.agents', 'mcp.json.example'),
-  join('.agents', 'amp.settings.json.example'),
+  MCP_EXAMPLE_REL,
+  AMP_EXAMPLE_REL,
 ];
+const OPTIONAL_MCP_MANAGED_PATHS = [
+  GITHUB_ENV_EXAMPLE_REL,
+  GITHUB_LAUNCHER_REL,
+  GITLAB_ENV_EXAMPLE_REL,
+  GITLAB_LAUNCHER_REL,
+  BROWSER_LAUNCHER_REL,
+  HOOK_SCRIPT_REL,
+  MCP_EXAMPLE_REL,
+  AMP_EXAMPLE_REL,
+];
+const MCP_SERVER_CONFIGS = {
+  github: { command: 'node', args: [GITHUB_LAUNCHER_REL.replace(/\\/g, '/')] },
+  gitlab: { command: 'node', args: [GITLAB_LAUNCHER_REL.replace(/\\/g, '/')] },
+  browser: { command: 'node', args: [BROWSER_LAUNCHER_REL.replace(/\\/g, '/')] },
+};
+const MCP_TOOL_META = {
+  memory: { launcher: MEMORY_LAUNCHER_REL, envRel: null, tokenKeys: [] },
+  figma: { launcher: FIGMA_LAUNCHER_REL, envRel: FIGMA_ENV_REL, tokenKeys: ['FIGMA_ACCESS_TOKEN', 'FIGMA_API_KEY'] },
+  github: {
+    launcher: GITHUB_LAUNCHER_REL,
+    envRel: GITHUB_ENV_REL,
+    tokenKeys: ['GITHUB_PERSONAL_ACCESS_TOKEN', 'GITHUB_TOKEN'],
+    vcs: 'github',
+  },
+  gitlab: {
+    launcher: GITLAB_LAUNCHER_REL,
+    envRel: GITLAB_ENV_REL,
+    tokenKeys: ['GITLAB_PERSONAL_ACCESS_TOKEN', 'GITLAB_TOKEN'],
+    vcs: 'gitlab',
+  },
+  browser: { launcher: BROWSER_LAUNCHER_REL, envRel: null, tokenKeys: [] },
+};
 const AMP_SPAWN_PREAMBLE =
   'CRITICAL (Amp / Cursor / Claude): Parent MUST spawn this skill as an isolated subagent with fresh context. Do not execute it in the main thread. If spawn is unavailable, STOP and report blocked — do not perform this specialist\'s work in the parent. Return only the structured subagent report.';
 const HANDOFF_REQUIRED_SECTIONS = ['Closed role', 'Done', 'Next command'];
@@ -281,6 +333,364 @@ function refreshMemoryManagedFiles(projectDir) {
   }
 }
 
+function chmodX(filePath) {
+  try {
+    chmodSync(filePath, 0o755);
+  } catch {}
+}
+
+function refreshManagedRelPaths(projectDir, rels) {
+  const templateDir = join(KIT_ROOT, 'templates');
+  for (const rel of rels) {
+    const src = join(templateDir, rel);
+    const dest = join(projectDir, rel);
+    if (!existsSync(src)) continue;
+    mkdirSync(dirname(dest), { recursive: true });
+    copyFileSync(src, dest);
+    if (rel.endsWith('.sh')) chmodX(dest);
+    log.ok(rel);
+  }
+}
+
+function refreshOptionalMcpManagedFiles(projectDir) {
+  refreshManagedRelPaths(projectDir, OPTIONAL_MCP_MANAGED_PATHS);
+}
+
+function parseGitRemoteHostname(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  try {
+    if (/^(https?|ssh|git):\/\//i.test(raw)) {
+      return new URL(raw).hostname.replace(/^www\./i, '').toLowerCase();
+    }
+  } catch {}
+  const scp = raw.match(/^(?:[^@\s]+@)?([^:/\s]+)[:/]/);
+  return scp ? scp[1].replace(/^www\./i, '').toLowerCase() : '';
+}
+
+function detectVcsHostFromRemoteUrl(url) {
+  const hostname = parseGitRemoteHostname(url);
+  if (!hostname) return { kind: 'none', hostname: '', apiUrl: '' };
+  if (hostname === 'github.com') return { kind: 'github', hostname, apiUrl: '' };
+  if (hostname === 'gitlab.com' || hostname.includes('gitlab')) {
+    return { kind: 'gitlab', hostname, apiUrl: `https://${hostname}/api/v4` };
+  }
+  return { kind: 'none', hostname, apiUrl: '' };
+}
+
+function readGitOriginUrl(projectDir) {
+  try {
+    return execSync('git remote get-url origin', {
+      cwd: projectDir,
+      stdio: ['ignore', 'pipe', 'ignore'],
+      encoding: 'utf-8',
+    }).trim();
+  } catch {
+    return '';
+  }
+}
+
+function detectVcsHost(projectDir) {
+  return detectVcsHostFromRemoteUrl(readGitOriginUrl(projectDir));
+}
+
+function gitConfigGet(projectDir, key) {
+  try {
+    return execSync(`git config --get ${key}`, {
+      cwd: projectDir,
+      stdio: ['ignore', 'pipe', 'ignore'],
+      encoding: 'utf-8',
+    }).trim();
+  } catch {
+    return '';
+  }
+}
+
+function isGitRepo(projectDir) {
+  try {
+    execSync('git rev-parse --is-inside-work-tree', {
+      cwd: projectDir,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isKitHooksPath(value) {
+  const v = String(value || '').trim().replace(/\\/g, '/').replace(/\/+$/, '');
+  return v === '.githooks' || v.endsWith('/.githooks');
+}
+
+function ensureHookLine(filePath, { shebang = false } = {}) {
+  mkdirSync(dirname(filePath), { recursive: true });
+  let content = existsSync(filePath) ? readFileSync(filePath, 'utf-8') : shebang ? '#!/usr/bin/env sh\n' : '';
+  if (content.includes('pre-commit-gate-check.sh')) {
+    chmodX(filePath);
+    return { added: false };
+  }
+  const prefix = content.length > 0 && !content.endsWith('\n') ? '\n' : '';
+  writeFileSync(filePath, `${content}${prefix}${HOOK_MARKER}\n${HOOK_LINE}\n`);
+  chmodX(filePath);
+  return { added: true };
+}
+
+function runHooksSetup(projectDir) {
+  refreshManagedRelPaths(projectDir, [HOOK_SCRIPT_REL]);
+  const huskyDir = join(projectDir, '.husky');
+  if (existsSync(huskyDir) && statSync(huskyDir).isDirectory()) {
+    const result = ensureHookLine(join(huskyDir, 'pre-commit'));
+    if (result.added) log.ok('.husky/pre-commit ← gate line');
+    else log.ok('.husky/pre-commit already has gate line');
+    return { ok: true, mode: 'husky' };
+  }
+
+  if (!isGitRepo(projectDir)) {
+    log.err('not a git repository — run git init, then re-run hooks-setup');
+    return { ok: false, mode: 'none' };
+  }
+
+  const current = gitConfigGet(projectDir, 'core.hooksPath');
+  if (current && !isKitHooksPath(current)) {
+    log.err(`refusing to overwrite core.hooksPath (${current})`);
+    log.info('Add this line to your existing pre-commit hook:');
+    log.info(`  ${HOOK_LINE}`);
+    log.info('Or reset: git config --unset core.hooksPath  then re-run hooks-setup');
+    return { ok: false, mode: 'foreign' };
+  }
+
+  const result = ensureHookLine(join(projectDir, '.githooks', 'pre-commit'), { shebang: true });
+  if (result.added) log.ok('.githooks/pre-commit');
+  else log.ok('.githooks/pre-commit already present');
+  if (!isKitHooksPath(current)) {
+    execSync('git config core.hooksPath .githooks', { cwd: projectDir, stdio: 'pipe' });
+    log.ok('core.hooksPath = .githooks');
+  } else {
+    log.ok('core.hooksPath already .githooks');
+  }
+  return { ok: true, mode: 'githooks' };
+}
+
+function ensureEnvFromExample(projectDir, destRel, exampleRel) {
+  const dest = join(projectDir, destRel);
+  const example = join(projectDir, exampleRel);
+  const kitExample = join(KIT_ROOT, 'templates', exampleRel);
+  if (existsSync(dest)) return { created: false, path: dest };
+  const src = existsSync(example) ? example : kitExample;
+  if (!existsSync(src)) throw new Error(`Missing template: ${exampleRel}`);
+  mkdirSync(dirname(dest), { recursive: true });
+  copyFileSync(src, dest);
+  return { created: true, path: dest };
+}
+
+function upsertEnvKey(filePath, key, value) {
+  const raw = existsSync(filePath) ? readFileSync(filePath, 'utf-8') : '';
+  const re = new RegExp(`^${key}=.*$`, 'm');
+  const line = `${key}=${value}`;
+  const next = re.test(raw)
+    ? raw.replace(re, line)
+    : `${raw}${raw && !raw.endsWith('\n') ? '\n' : ''}${line}\n`;
+  writeFileSync(filePath, next.endsWith('\n') ? next : `${next}\n`);
+}
+
+function envHasAnyKey(projectDir, envRel, keys) {
+  if (!envRel || !keys.length) return true;
+  const values = parseEnvFile(join(projectDir, envRel));
+  return keys.some((key) => Boolean(values[key]));
+}
+
+function readJsonFile(filePath) {
+  try {
+    return JSON.parse(readFileSync(filePath, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+function stripMcpServers(filePath, serversKey, names) {
+  if (!existsSync(filePath) || !names.length) return;
+  const cfg = readJsonFile(filePath);
+  if (!cfg) return;
+  const servers = cfg[serversKey] || {};
+  let changed = false;
+  for (const name of names) {
+    if (servers[name]) {
+      delete servers[name];
+      changed = true;
+    }
+  }
+  if (!changed) return;
+  cfg[serversKey] = servers;
+  writeJsonFile(filePath, cfg);
+}
+
+function seedLiveMcpFromExample(livePath, examplePath, serversKey, stripNames, label) {
+  if (existsSync(livePath) || !existsSync(examplePath)) return false;
+  copyFileSync(examplePath, livePath);
+  stripMcpServers(livePath, serversKey, stripNames);
+  log.ok(`${label} created from example`);
+  return true;
+}
+
+function upsertMcpServer(cfg, key, name, server, label) {
+  const servers = cfg[key] || {};
+  if (servers[name]) {
+    log.ok(`${label} already has ${name} server`);
+  } else {
+    servers[name] = server;
+    log.ok(`${label} ← added ${name} server`);
+  }
+  cfg[key] = servers;
+  return cfg;
+}
+
+function writeMcpServerEntry(filePath, serversKey, name, server, label) {
+  if (!existsSync(filePath)) return;
+  const cfg = readJsonFile(filePath);
+  if (!cfg) {
+    log.warn(`${label} present but invalid JSON — merge ${name} server manually from .agents/mcp.json.example`);
+    return;
+  }
+  writeJsonFile(filePath, upsertMcpServer(cfg, serversKey, name, server, label));
+}
+
+function liveMcpHasServer(projectDir, name) {
+  const cursor = readJsonFile(join(projectDir, '.mcp.json'));
+  const amp = readJsonFile(join(projectDir, '.amp', 'settings.json'));
+  return Boolean(cursor?.mcpServers?.[name] || amp?.['amp.mcpServers']?.[name]);
+}
+
+function undetectedVcsNames(kind) {
+  if (kind === 'github') return ['gitlab'];
+  if (kind === 'gitlab') return ['github'];
+  return ['github', 'gitlab'];
+}
+
+function parseMcpInventory(content) {
+  const baseline = [];
+  const optional = [];
+  let inMcp = false;
+  let section = null;
+  for (const line of String(content || '').split('\n')) {
+    if (/^mcp:\s*$/.test(line)) {
+      inMcp = true;
+      section = null;
+      continue;
+    }
+    if (inMcp && /^\S/.test(line)) break;
+    if (!inMcp) continue;
+    if (/^\s+baseline:\s*$/.test(line)) {
+      section = 'baseline';
+      continue;
+    }
+    if (/^\s+optional:\s*$/.test(line)) {
+      section = 'optional';
+      continue;
+    }
+    const item = line.match(/^\s+-\s+([A-Za-z0-9_-]+)\s*$/);
+    if (item && section === 'baseline') baseline.push(item[1]);
+    else if (item && section === 'optional') optional.push(item[1]);
+  }
+  return { baseline, optional };
+}
+
+function readMcpInventory(projectDir) {
+  const orchPath = join(projectDir, '.agents', 'orchestrator.yaml');
+  if (!existsSync(orchPath)) return { ...DEFAULT_MCP_INVENTORY };
+  const parsed = parseMcpInventory(readFileSync(orchPath, 'utf-8'));
+  if (!parsed.baseline.length && !parsed.optional.length) return { ...DEFAULT_MCP_INVENTORY };
+  return parsed;
+}
+
+function printMcpHealth(projectDir) {
+  const inventory = readMcpInventory(projectDir);
+  const tools = [...new Set([...inventory.baseline, ...inventory.optional])];
+  if (!tools.length) return;
+  const detected = detectVcsHost(projectDir);
+  console.log(pc.bold('\nMCP health'));
+  for (const name of tools) {
+    const meta = MCP_TOOL_META[name] || { launcher: join('scripts', `${name}-mcp-launcher.cjs`), envRel: null, tokenKeys: [] };
+    if (meta.vcs && detected.kind !== meta.vcs) {
+      console.log(`  ${name.padEnd(8)} skipped (no origin match)`);
+      continue;
+    }
+    const launcherOk = existsSync(join(projectDir, meta.launcher));
+    const tokenOk = envHasAnyKey(projectDir, meta.envRel, meta.tokenKeys);
+    const entryOk = liveMcpHasServer(projectDir, name);
+    const ok = launcherOk && tokenOk && entryOk;
+    console.log(`  ${name.padEnd(8)} ${ok ? 'ok' : 'not configured'}`);
+  }
+  console.log('');
+}
+
+function resolveMcpSetupVcs(projectDir, override) {
+  const detected = detectVcsHost(projectDir);
+  if (override === 'github' || override === 'gitlab') {
+    if (override === 'gitlab') {
+      const apiUrl = detected.kind === 'gitlab' && detected.apiUrl ? detected.apiUrl : DEFAULT_GITLAB_API_URL;
+      return { kind: 'gitlab', hostname: detected.kind === 'gitlab' ? detected.hostname : 'gitlab.com', apiUrl, overridden: true };
+    }
+    return { kind: 'github', hostname: detected.hostname || 'github.com', apiUrl: '', overridden: true };
+  }
+  return { ...detected, overridden: false };
+}
+
+function runMcpSetup(projectDir, { vcs = '', browser = true } = {}) {
+  refreshFigmaManagedFiles(projectDir);
+  refreshMemoryManagedFiles(projectDir);
+  refreshOptionalMcpManagedFiles(projectDir);
+  mergeGitignore(projectDir, GITIGNORE_LINES);
+
+  const selected = resolveMcpSetupVcs(projectDir, vcs);
+  if (selected.kind === 'github') log.info('VCS MCP: github');
+  else if (selected.kind === 'gitlab') log.info(`VCS MCP: gitlab (${selected.hostname})`);
+  else log.info('VCS MCP: skipped (no origin match)');
+
+  if (selected.kind === 'github') {
+    const env = ensureEnvFromExample(projectDir, GITHUB_ENV_REL, GITHUB_ENV_EXAMPLE_REL);
+    log.ok(env.created ? `Created ${GITHUB_ENV_REL}` : `${GITHUB_ENV_REL} already exists`);
+    if (!envHasAnyKey(projectDir, GITHUB_ENV_REL, ['GITHUB_PERSONAL_ACCESS_TOKEN', 'GITHUB_TOKEN'])) {
+      log.warn('GitHub token: missing — set GITHUB_PERSONAL_ACCESS_TOKEN in .agents/github.local.env (do not paste into chat)');
+    }
+  } else if (selected.kind === 'gitlab') {
+    const env = ensureEnvFromExample(projectDir, GITLAB_ENV_REL, GITLAB_ENV_EXAMPLE_REL);
+    log.ok(env.created ? `Created ${GITLAB_ENV_REL}` : `${GITLAB_ENV_REL} already exists`);
+    upsertEnvKey(env.path, 'GITLAB_API_URL', selected.apiUrl || DEFAULT_GITLAB_API_URL);
+    log.ok(`GITLAB_API_URL host: ${selected.hostname || 'gitlab.com'}`);
+    if (!envHasAnyKey(projectDir, GITLAB_ENV_REL, ['GITLAB_PERSONAL_ACCESS_TOKEN', 'GITLAB_TOKEN'])) {
+      log.warn('GitLab token: missing — set GITLAB_PERSONAL_ACCESS_TOKEN in .agents/gitlab.local.env (do not paste into chat)');
+    }
+  }
+
+  const cursorPath = join(projectDir, '.mcp.json');
+  const ampPath = join(projectDir, '.amp', 'settings.json');
+  const cursorExample = join(projectDir, MCP_EXAMPLE_REL);
+  const ampExample = join(projectDir, AMP_EXAMPLE_REL);
+  const stripOnCreate = [...undetectedVcsNames(selected.kind), ...(browser ? [] : ['browser'])];
+  seedLiveMcpFromExample(cursorPath, cursorExample, 'mcpServers', stripOnCreate, '.mcp.json');
+  mkdirSync(join(projectDir, '.amp'), { recursive: true });
+  seedLiveMcpFromExample(ampPath, ampExample, 'amp.mcpServers', stripOnCreate, '.amp/settings.json');
+
+  const namesToAdd = [];
+  if (selected.kind === 'github' || selected.kind === 'gitlab') namesToAdd.push(selected.kind);
+  if (browser) namesToAdd.push('browser');
+  for (const name of namesToAdd) {
+    const server = MCP_SERVER_CONFIGS[name];
+    writeMcpServerEntry(cursorPath, 'mcpServers', name, server, '.mcp.json');
+    writeMcpServerEntry(ampPath, 'amp.mcpServers', name, server, '.amp/settings.json');
+  }
+
+  if (!existsSync(cursorPath)) {
+    log.warn('.mcp.json missing — copy from .agents/mcp.json.example then re-run mcp-setup');
+  }
+  if (!existsSync(ampPath)) {
+    log.warn('.amp/settings.json missing — copy from .agents/amp.settings.json.example then re-run mcp-setup');
+  }
+
+  log.info('Restart Cursor / Amp after saving tokens');
+}
+
 function writeJsonFile(filePath, value) {
   mkdirSync(dirname(filePath), { recursive: true });
   writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
@@ -308,12 +718,9 @@ function ensureMemoryMcpEntry(projectDir) {
     log.ok('.cursor/memory.json created');
   }
 
-  const examplePath = join(projectDir, '.agents', 'mcp.json.example');
+  const examplePath = join(projectDir, MCP_EXAMPLE_REL);
   const cursorPath = join(projectDir, '.mcp.json');
-  if (!existsSync(cursorPath) && existsSync(examplePath)) {
-    copyFileSync(examplePath, cursorPath);
-    log.ok('.mcp.json created from example');
-  }
+  seedLiveMcpFromExample(cursorPath, examplePath, 'mcpServers', OPTIONAL_MCP_SEED_STRIP, '.mcp.json');
   if (existsSync(cursorPath)) {
     try {
       const cfg = upsertMemoryServer(JSON.parse(readFileSync(cursorPath, 'utf-8')), 'mcpServers', '.mcp.json');
@@ -324,12 +731,9 @@ function ensureMemoryMcpEntry(projectDir) {
   }
 
   mkdirSync(join(projectDir, '.amp'), { recursive: true });
-  const ampExample = join(projectDir, '.agents', 'amp.settings.json.example');
+  const ampExample = join(projectDir, AMP_EXAMPLE_REL);
   const ampPath = join(projectDir, '.amp', 'settings.json');
-  if (!existsSync(ampPath) && existsSync(ampExample)) {
-    copyFileSync(ampExample, ampPath);
-    log.ok('.amp/settings.json created from example');
-  }
+  seedLiveMcpFromExample(ampPath, ampExample, 'amp.mcpServers', OPTIONAL_MCP_SEED_STRIP, '.amp/settings.json');
   if (existsSync(ampPath)) {
     try {
       const cfg = upsertMemoryServer(JSON.parse(readFileSync(ampPath, 'utf-8')), 'amp.mcpServers', '.amp/settings.json');
@@ -1016,6 +1420,19 @@ function gitDiffTouchesGlob(projectDir, base, srcGlob) {
   }
 }
 
+function gitStagedTouchesGlob(projectDir, srcGlob) {
+  try {
+    const out = execSync(`git diff --cached --name-only -- "${srcGlob}"`, {
+      cwd: projectDir,
+      stdio: ['ignore', 'pipe', 'ignore'],
+      encoding: 'utf-8',
+    });
+    return out.trim().length > 0;
+  } catch {
+    return null;
+  }
+}
+
 function installOpenspecConfigExample(projectDir, profile, vars, force) {
   const src = resolveTemplate('openspec-config.yaml.example', profile);
   if (!existsSync(src)) return;
@@ -1197,18 +1614,21 @@ function printNextSteps(profile, projectDir, ci = 'github', specVerify = false) 
   if (profile === 'vue3') {
     lines.push(`  3. Install Vue/JS stack skills:`);
     lines.push(`     ${pc.cyan('npx frontend-agent-skills install --agent all --yes')}`);
-    lines.push(`  4. MCP: copy .mcp.json (Cursor) / .amp/settings.json (Amp) from *.example files`);
+    lines.push(`  4. MCP: ${pc.cyan('npx agent-orchestrator-kit mcp-setup')} (GitHub/GitLab from origin + browser)`);
     lines.push(`  5. Optional Figma: ${pc.cyan('npx agent-orchestrator-kit figma-setup')} then paste token into ${pc.cyan('.agents/figma.local.env')} (never in chat)`);
-    lines.push(`  6. Start your first change:`);
+    lines.push(`  6. Optional pre-commit gate: ${pc.cyan('npx agent-orchestrator-kit hooks-setup')} or ${pc.cyan('init --hooks')}`);
+    lines.push(`  7. Start your first change:`);
   } else if (profile === 'mvp') {
     lines.push(`  3. For quick demos use ${pc.cyan('/opsx:quick <name>')} (propose + apply, no review gate)`);
-    lines.push(`  4. MCP: copy .mcp.json (Cursor) / .amp/settings.json (Amp) from *.example files`);
+    lines.push(`  4. MCP: ${pc.cyan('npx agent-orchestrator-kit mcp-setup')} (GitHub/GitLab from origin + browser)`);
     lines.push(`  5. Optional Figma: ${pc.cyan('npx agent-orchestrator-kit figma-setup')} then paste token into ${pc.cyan('.agents/figma.local.env')} (never in chat)`);
-    lines.push(`  6. Start exploring:`);
+    lines.push(`  6. Optional pre-commit gate: ${pc.cyan('npx agent-orchestrator-kit hooks-setup')} or ${pc.cyan('init --hooks')}`);
+    lines.push(`  7. Start exploring:`);
   } else {
-    lines.push(`  3. MCP: copy .mcp.json (Cursor) / .amp/settings.json (Amp) from *.example files`);
+    lines.push(`  3. MCP: ${pc.cyan('npx agent-orchestrator-kit mcp-setup')} (GitHub/GitLab from origin + browser)`);
     lines.push(`  4. Optional Figma: ${pc.cyan('npx agent-orchestrator-kit figma-setup')} then paste token into ${pc.cyan('.agents/figma.local.env')} (never in chat)`);
-    lines.push(`  5. Start your first change:`);
+    lines.push(`  5. Optional pre-commit gate: ${pc.cyan('npx agent-orchestrator-kit hooks-setup')} or ${pc.cyan('init --hooks')}`);
+    lines.push(`  6. Start your first change:`);
   }
 
   const startCmd = profile === 'mvp' ? '/opsx:quick' : '/opsx:explore';
@@ -1301,11 +1721,10 @@ function generateAmpSubagentSkills(projectDir) {
 function syncAmp(projectDir) {
   log.info('Amp Code reads .agents/ natively — subagents exposed via skill wrappers');
   mkdirSync(join(projectDir, '.amp'), { recursive: true });
-  const ampExample = join(projectDir, '.agents', 'amp.settings.json.example');
+  const ampExample = join(projectDir, AMP_EXAMPLE_REL);
   const ampDest = join(projectDir, '.amp', 'settings.json');
-  if (existsSync(ampExample) && !existsSync(ampDest)) {
-    copyFileSync(ampExample, ampDest);
-    log.ok('.amp/settings.json created from example');
+  if (seedLiveMcpFromExample(ampDest, ampExample, 'amp.mcpServers', OPTIONAL_MCP_SEED_STRIP, '.amp/settings.json')) {
+    // seeded
   } else if (existsSync(ampDest)) {
     log.ok('.amp/settings.json already present');
   } else {
@@ -1327,6 +1746,7 @@ program
   .option('--force', 'Overwrite existing files', false)
   .option('--ci <provider>', 'CI provider: gitlab | github | none', 'github')
   .option('--spec-verify', 'Install AI Spec Verifier blocking gate (GitLab or GitHub)', false)
+  .option('--hooks', 'Opt-in: install pre-commit gate-check hook (husky-first)', false)
   .action((opts) => {
     const projectDir = process.cwd();
     const projectName = opts.name || basename(projectDir);
@@ -1360,6 +1780,7 @@ program
     try {
       execSync(`chmod +x ${join(projectDir, 'scripts', 'sync-local-agent-skills.sh')}`);
     } catch {}
+    chmodX(join(projectDir, HOOK_SCRIPT_REL));
 
     log.title('Installing CI workflow');
     installCi(projectDir, templateDir, ci, opts.force);
@@ -1415,6 +1836,12 @@ program
     refreshMemoryManagedFiles(projectDir);
     ensureMemoryMcpEntry(projectDir);
 
+    if (opts.hooks) {
+      log.title('Installing pre-commit gate');
+      const hookResult = runHooksSetup(projectDir);
+      if (!hookResult.ok) process.exitCode = 1;
+    }
+
     log.title('Done');
     log.ok(`agent-orchestrator-kit v${KIT_VERSION} installed`);
     printNextSteps(profile, projectDir, ci, specVerify);
@@ -1466,6 +1893,8 @@ program
 
     log.title('Refreshing Figma setup templates');
     refreshFigmaManagedFiles(projectDir);
+    log.title('Refreshing MCP launchers and hook script');
+    refreshOptionalMcpManagedFiles(projectDir);
     log.title('Configuring Memory MCP');
     refreshMemoryManagedFiles(projectDir);
     ensureMemoryMcpEntry(projectDir);
@@ -1473,7 +1902,9 @@ program
 
     log.ok(`Updated to v${KIT_VERSION}`);
     log.info('Run ./scripts/sync-local-agent-skills.sh to sync to local IDE');
+    log.info('Optional MCP: npx agent-orchestrator-kit mcp-setup');
     log.info('Optional Figma: npx agent-orchestrator-kit figma-setup');
+    log.info('Optional pre-commit gate: npx agent-orchestrator-kit hooks-setup');
   });
 
 program
@@ -1503,13 +1934,6 @@ program
       }
       copyDir(join(projectDir, '.agents', 'rules'), join(projectDir, '.cursor', 'rules'), { overwrite: true, delete: true });
       copyDir(join(projectDir, '.agents', 'subagents'), join(projectDir, '.cursor', 'agents'), { overwrite: true, delete: true });
-
-      const mcpExample = join(projectDir, '.agents', 'mcp.json.example');
-      const mcpDest = join(projectDir, '.mcp.json');
-      if (existsSync(mcpExample) && !existsSync(mcpDest)) {
-        copyFileSync(mcpExample, mcpDest);
-        log.ok('.mcp.json created from example');
-      }
     }
 
     if (syncClaude) {
@@ -1552,25 +1976,26 @@ program
     const changes = listActiveChanges(projectDir);
     if (changes.length === 0) {
       log.info('No active changes');
-      return;
+    } else {
+      for (const name of changes) {
+        const changeDir = join(projectDir, 'openspec', 'changes', name);
+        const progress = parseTasksProgress(changeDir);
+        const verdict = parseReviewVerdict(changeDir);
+        const hasBrief = parseDesignBrief(changeDir);
+        const progressStr = progress ? `${progress.done}/${progress.total} tasks` : 'no tasks.md';
+        const verdictStr = verdict || 'none';
+        const readyToArchive = Boolean(progress && progress.total > 0 && progress.done === progress.total);
+
+        console.log(`\n${pc.bold(name)}`);
+        console.log(`  tasks:  ${progressStr}`);
+        console.log(`  review: ${verdictStr}`);
+        console.log(`  brief:  ${hasBrief ? 'yes' : 'no'}`);
+        if (readyToArchive) log.ok('ready to archive');
+      }
+      console.log('');
     }
 
-    for (const name of changes) {
-      const changeDir = join(projectDir, 'openspec', 'changes', name);
-      const progress = parseTasksProgress(changeDir);
-      const verdict = parseReviewVerdict(changeDir);
-      const hasBrief = parseDesignBrief(changeDir);
-      const progressStr = progress ? `${progress.done}/${progress.total} tasks` : 'no tasks.md';
-      const verdictStr = verdict || 'none';
-      const readyToArchive = Boolean(progress && progress.total > 0 && progress.done === progress.total);
-
-      console.log(`\n${pc.bold(name)}`);
-      console.log(`  tasks:  ${progressStr}`);
-      console.log(`  review: ${verdictStr}`);
-      console.log(`  brief:  ${hasBrief ? 'yes' : 'no'}`);
-      if (readyToArchive) log.ok('ready to archive');
-    }
-    console.log('');
+    printMcpHealth(projectDir);
   });
 
 program
@@ -1578,6 +2003,7 @@ program
   .description('Deterministically check the review gate before apply/merge (exit non-zero if unmet)')
   .option('--src-glob <glob>', 'source path filter used to detect code changes', 'src/')
   .option('--base <ref>', 'git ref to diff against', 'HEAD~1')
+  .option('--staged', 'check staged files (git diff --cached) instead of --base...HEAD', false)
   .option('--tasks <name>', 'lint task contracts (Files/Do/Done-when) of a change')
   .option('--review <name>', 'run deterministic Tier 1 review checks on a change')
   .option('--json', 'with --review: print a {pass, errors[]} JSON report to stdout', false)
@@ -1631,13 +2057,15 @@ program
       return;
     }
 
-    const touchesSrc = gitDiffTouchesGlob(projectDir, opts.base, opts.srcGlob);
+    const touchesSrc = opts.staged
+      ? gitStagedTouchesGlob(projectDir, opts.srcGlob)
+      : gitDiffTouchesGlob(projectDir, opts.base, opts.srcGlob);
     if (touchesSrc === false) {
-      log.ok(`no changes under ${opts.srcGlob} — nothing to gate`);
+      log.ok(`no ${opts.staged ? 'staged ' : ''}changes under ${opts.srcGlob} — nothing to gate`);
       return;
     }
     if (touchesSrc === null) {
-      log.warn('could not compute git diff — skipping gate-check');
+      log.warn(`could not compute git ${opts.staged ? 'staged ' : ''}diff — skipping gate-check`);
       return;
     }
 
@@ -1827,6 +2255,33 @@ program
     console.log(`handoff:  ${join(targetRel, 'handoff.md')} (next_command: none)`);
     console.log(`memory:   ${memoryPath.replace(`${projectDir}/`, '')}`);
     log.ok(`archived ${name}`);
+  });
+
+program
+  .command('hooks-setup')
+  .description('Opt-in pre-commit gate: husky-first, otherwise core.hooksPath=.githooks (never writes .git/hooks)')
+  .action(() => {
+    const projectDir = process.cwd();
+    log.title('agent-orchestrator hooks-setup');
+    const result = runHooksSetup(projectDir);
+    if (!result.ok) process.exitCode = 1;
+  });
+
+program
+  .command('mcp-setup')
+  .description('Install optional GitHub/GitLab (from git origin) and browser MCP launchers (never prints tokens)')
+  .option('--vcs <provider>', 'Override VCS detection: github | gitlab')
+  .option('--no-browser', 'Skip browser MCP')
+  .action((opts) => {
+    const projectDir = process.cwd();
+    log.title('agent-orchestrator mcp-setup');
+    const vcs = opts.vcs ? String(opts.vcs).toLowerCase() : '';
+    if (vcs && vcs !== 'github' && vcs !== 'gitlab') {
+      log.err('invalid --vcs (use github or gitlab)');
+      process.exitCode = 1;
+      return;
+    }
+    runMcpSetup(projectDir, { vcs, browser: opts.browser !== false });
   });
 
 program
