@@ -74,7 +74,7 @@ npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-veri
 
 See [Installation](#installation) for profile/CI options.
 
-**🔄 Already have the kit installed? Upgrade to latest (lean pipeline v2 / archive CLI in v0.3.0+, handoff CLI in v0.1.14+, Figma PAT in v0.1.11+):**
+**🔄 Already have the kit installed? Upgrade to latest (factory phases 1–3 in v0.4.0+, lean pipeline / archive CLI in v0.3.0+, handoff CLI in v0.1.14+, Figma PAT in v0.1.11+):**
 
 ```bash
 npx agent-orchestrator-kit@latest update
@@ -949,6 +949,11 @@ The kit moves toward an Agentic Factory in four phases. **One phase = one OpenSp
 Phase bounds and non-goals: [`openspec/specs/agentic-factory-roadmap/spec.md`](openspec/specs/agentic-factory-roadmap/spec.md).
 
 ## Changelog
+
+### 0.4.0
+- Factory phases 1–3: `hooks-setup` / `gate-check --staged`, `mcp-setup` (GitHub / GitLab / browser), MCP and Skill health in `status`
+- Git-canonical append-only `decisions.md`; Memory `Decision:*` is a file→Memory mirror
+- Cloud agent handoff: `## Runtime` in `handoff.md`, `--runtime` / `--agent-id` / `--cloud-check`
 
 ### 0.3.0
 - **`archive` CLI** — deterministic archive with gates, `--sync` delta merge, and rollback on validate failure

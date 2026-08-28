@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-28
+
 ### Added
 - **Phase 3 cloud agent handoff** — persist writes `## Runtime` (`runtime: local|cloud`, `agent_id`) via `--runtime` → `AOK_RUNTIME` → `CLOUD_ENV_MARKERS` → existing section → `local`; `handoff <name> --cloud-check` blocks on uncommitted/unpushed artifacts for cloud (local: warning, exit 0); persist never commits/pushes — cloud sessions print persist → commit → push → cloud-check on stderr
 - **Phase 2 decisions canon** — git-tracked append-only `openspec/changes/<name>/decisions.md`; `npx agent-orchestrator-kit handoff <name>` appends dated bullets from `handoff.md ## Decisions` (no duplicates; same topic + new text keeps history); Memory `Decision:*` mirrors the file (last topic wins, file → Memory only); `handoff --restore` prints from the git file or `decisions: none`
@@ -191,6 +193,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Initial release: 5-role orchestration pipeline, `/opsx:*` commands, IDE sync
 
+[0.4.0]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.1.14...v0.2.0
 [0.1.14]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.1.13...v0.1.14
