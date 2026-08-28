@@ -764,6 +764,39 @@ npx agent-orchestrator-kit handoff add-bulk-export --restore
 
 `Decisions: none` does not create the file. Re-running persist with the same handoff does not duplicate rows. A later revision of the same topic is a new line; the old line stays. `update` does not migrate historical Memory entities into the file.
 
+### Cloud agent handoff (Phase 3)
+
+Every persist writes a `## Runtime` section to `openspec/changes/<name>/handoff.md`:
+
+```
+## Runtime
+- runtime: local|cloud
+- agent_id: <id|none>
+```
+
+Detection is a fixed chain (no TTY / `CURSOR_AGENT` magic): `--runtime` → env `AOK_RUNTIME` → `CLOUD_ENV_MARKERS` (starts with `CURSOR_BACKGROUND_AGENT`) → existing `## Runtime` in the file → `local`. `agent_id` uses `--agent-id` → `AOK_AGENT_ID` → existing value → `none`. Invalid `--runtime` (not `local` or `cloud`) exits non-zero. Legacy files without Runtime stay valid; the next persist appends the section.
+
+Configure a cloud agent once:
+
+```
+AOK_RUNTIME=cloud
+AOK_AGENT_ID=<vm-or-run-id>
+```
+
+`--cloud-check` is a **separate** branch of `handoff`, never part of persist (persist has just rewritten `handoff.md`, so the tree is always dirty at that point). It verifies (1) `git status --porcelain -- openspec/changes/<name>/` is empty and (2) the current branch has an upstream with no unpushed commits. Verdict: `cloud` + any failure = non-zero; `local` + the same failure = warning + exit 0; clean = exit 0. The CLI never runs `git commit` or `git push`.
+
+Cloud Session Exit order:
+
+```bash
+npx agent-orchestrator-kit handoff <name> --runtime cloud
+git add openspec/changes/<name>/
+git commit
+git push
+npx agent-orchestrator-kit handoff <name> --cloud-check   # require exit 0
+```
+
+Persist with `runtime: cloud` prints those four steps on stderr; stdout stays the pure `/opsx:` next-thread prompt. Local persist is unchanged.
+
 ### Skill inventory
 
 `.agents/orchestrator.yaml` carries a machine-readable `skills:` section (`kit` / `stack` / `external`) instead of hardcoded skill names in the CLI:
@@ -864,6 +897,13 @@ npx agent-orchestrator-kit mcp-setup [--vcs github|gitlab] [--no-browser]
 npx agent-orchestrator-kit archive <name> [--sync | --no-sync --force]
   Gate-check a completed change, optionally merge delta specs, move to
   openspec/changes/archive/YYYY-MM-DD-<name>, validate, write final handoff
+
+npx agent-orchestrator-kit handoff [change-name] [options]
+  --restore          Print the restore briefing instead of persisting
+  --runtime <value>  local | cloud (invalid values exit non-zero)
+  --agent-id <id>    Cloud agent identifier (default: none)
+  --cloud-check      Verify change artifacts are committed and pushed
+                     (cloud: non-zero on failure; local: warning, exit 0)
 ```
 
 ## Directory Reference
@@ -903,8 +943,8 @@ openspec/                # Committed — spec-driven workflow
 
 The kit moves toward an Agentic Factory in four phases. **One phase = one OpenSpec change**; the next phase does not start until the previous change is archived.
 1. `add-factory-gates-and-mcp` — local review gate on commit and Figma-style MCP launchers (GitHub / GitLab / browser). Implemented: `hooks-setup`, `mcp-setup`, `gate-check --staged`, MCP health in `status`.
-2. `add-factory-memory-and-skills` — git-canonical decisions with Memory MCP as a mirror, plus a machine skill inventory.
-3. `add-cloud-agent-handoff` — session artifacts exist only on git-tracked paths.
+2. `add-factory-memory-and-skills` — git-canonical decisions with Memory MCP as a mirror, plus a machine skill inventory. Implemented: append-only `decisions.md`, Skill health in `status`.
+3. `add-cloud-agent-handoff` — session artifacts exist only on git-tracked paths. Implemented: `## Runtime` in `handoff.md`, `--runtime` / `--agent-id` / `--cloud-check`, cloud Session Exit.
 4. Phase 4 (`add-factory-control-plane`) is an opt-in platform decision, not the next sprint.
 Phase bounds and non-goals: [`openspec/specs/agentic-factory-roadmap/spec.md`](openspec/specs/agentic-factory-roadmap/spec.md).
 

@@ -7,6 +7,8 @@ alwaysApply: true
 
 This rule is the single source of the Session Start / Session Exit protocol. Commands reference it; they do not duplicate it. A `/opsx:*` session is incomplete without persist + the fenced next-thread prompt. FORBIDDEN until persist succeeds: done/готово, next phase, or omitting the prompt.
 
+Agents (local or cloud) write session artifacts only to git-tracked paths — never `/tmp`, never gitignored caches.
+
 ## Session Start (before any work)
 1. Honor pasted `/opsx:<phase> <name>` and announce the role.
 2. `npx agent-orchestrator-kit status`
@@ -17,12 +19,13 @@ This rule is the single source of the Session Start / Session Exit protocol. Com
 7. Only then start phase work (spawn a specialist when the phase routing requires one).
 
 ## Session Exit (order)
-1. The parent writes `openspec/changes/<name>/handoff.md` itself: Closed role, Change, Done, Decisions, Blocked, Next command, Next role, Attach, Subagents to spawn, Constraints.
-2. `npx agent-orchestrator-kit handoff <name>` — require exit 0 (appends non-empty Decisions into append-only `openspec/changes/<name>/decisions.md`, upserts absolute-path Memory JSON, prints the expanded prompt on stdout). `decisions.md` is the git canon of change decisions; Memory `Decision:*` is a file→Memory mirror only.
+1. The parent writes `openspec/changes/<name>/handoff.md` itself: Closed role, Change, Done, Decisions, Blocked, Next command, Next role, Attach, Subagents to spawn, Constraints, Runtime.
+2. `npx agent-orchestrator-kit handoff <name>` — require exit 0 (appends non-empty Decisions into append-only `openspec/changes/<name>/decisions.md`, upserts absolute-path Memory JSON, prints the expanded prompt on stdout). `decisions.md` is the git canon of change decisions; Memory `Decision:*` is a file→Memory mirror only. Cloud sessions pass `--runtime cloud` (or set `AOK_RUNTIME=cloud` / `AOK_AGENT_ID` in the cloud-agent environment).
 3. Spawn `session-handoff` in persist mode ONLY if step 2 failed (Amp: isolated `subagent-session-handoff`). Fallback, never routine.
 4. Memory MCP is an optional mirror: if tools are available, update `Change:<name>`, `Handoff:<name>`, `Decision:*` in one call; unavailability never blocks closing.
 5. Paste CLI stdout as one fenced block. First line `/opsx:…`. Body uses `project.agent_language`. Self-contained (Done/Decisions/Blocked/spawn/HARD STOP). No banner.
-6. Stop. Next role = new chat.
+6. If runtime is cloud: after persist, `git add openspec/changes/<name>/` → `git commit` → `git push` → `npx agent-orchestrator-kit handoff <name> --cloud-check` (exit 0 required). Closing without this is an incomplete handoff. Persist prints these steps on stderr; the CLI never runs `git commit` / `git push`.
+7. Stop. Next role = new chat.
 
 ## Archive exception
 `npx agent-orchestrator-kit archive <name>` writes the final `handoff.md` (`next_command: none`) in the archive folder and upserts memory itself. After a successful archive no fenced next-prompt is required — the pipeline is complete.

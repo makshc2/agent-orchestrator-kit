@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, statSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1187,6 +1187,17 @@ test('init installs memory launcher and session-handoff assets', () => {
     const rule = readFileSync(join(dir, '.agents/rules/session-handoff.mdc'), 'utf-8');
     assert.match(rule, /HARD STOP/);
     assert.match(rule, /[Ss]elf-contained/);
+    assert.match(rule, /git-tracked/);
+    assert.match(rule, /Runtime/);
+    assert.match(rule, /cloud-check/);
+    const skill = readFileSync(join(dir, '.agents/skills/agent-orchestration/SKILL.md'), 'utf-8');
+    assert.match(skill, /git-tracked/);
+    assert.match(skill, /## Runtime/);
+    assert.match(skill, /cloud-check/);
+    const sub = readFileSync(join(dir, '.agents/subagents/session-handoff.md'), 'utf-8');
+    assert.match(sub, /git-tracked/);
+    assert.match(sub, /Runtime/);
+    assert.match(sub, /cloud-check/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -2362,6 +2373,181 @@ test('init and update still ship the eight kit skills', () => {
     rmSync(join(dir, '.agents/skills/openspec-sync-specs'), { recursive: true, force: true });
     execSync(`node "${CLI}" update`, { cwd: dir, stdio: 'pipe' });
     assert.ok(existsSync(join(dir, '.agents/skills/openspec-sync-specs/SKILL.md')));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function cliEnv(extra = {}) {
+  const env = { ...process.env };
+  delete env.AOK_RUNTIME;
+  delete env.AOK_AGENT_ID;
+  delete env.CURSOR_BACKGROUND_AGENT;
+  return { ...env, ...extra };
+}
+
+function runSpawn(dir, args, extraEnv = {}) {
+  return spawnSync(process.execPath, [CLI, ...args], {
+    cwd: dir,
+    encoding: 'utf-8',
+    env: cliEnv(extraEnv),
+  });
+}
+
+function prepareHandoffChange(dir, name = 'add-thing') {
+  runInit(dir, '--profile generic --name Phase3 --lang en');
+  const changeDir = join(dir, 'openspec/changes', name);
+  mkdirSync(changeDir, { recursive: true });
+  writeHandoffFixture(changeDir, name, 'none');
+  return changeDir;
+}
+
+function addBareUpstream(dir) {
+  const remoteDir = mkdtempSync(join(tmpdir(), 'aok-bare-'));
+  execSync('git init --bare -q', { cwd: remoteDir });
+  execSync(`git remote add origin "${remoteDir}"`, { cwd: dir });
+  execSync('git push -q -u origin HEAD', { cwd: dir });
+  return remoteDir;
+}
+
+test('handoff persist writes Runtime local/none by default and repairs legacy files', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-runtime-default-'));
+  try {
+    const changeDir = prepareHandoffChange(dir);
+    const before = readFileSync(join(changeDir, 'handoff.md'), 'utf-8');
+    assert.doesNotMatch(before, /## Runtime/);
+
+    const result = runSpawn(dir, ['handoff', 'add-thing']);
+    assert.equal(result.status, 0, result.stderr);
+    const after = readFileSync(join(changeDir, 'handoff.md'), 'utf-8');
+    assert.match(after, /## Runtime/);
+    assert.match(after, /runtime: local/);
+    assert.match(after, /agent_id: none/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('handoff persist honors --runtime, AOK_RUNTIME, and rejects invalid runtime', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-runtime-flag-'));
+  try {
+    const changeDir = prepareHandoffChange(dir, 'add-thing');
+    let result = runSpawn(dir, ['handoff', 'add-thing', '--runtime', 'cloud']);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(readFileSync(join(changeDir, 'handoff.md'), 'utf-8'), /runtime: cloud/);
+
+    writeHandoffFixture(changeDir, 'add-thing', 'none');
+    result = runSpawn(dir, ['handoff', 'add-thing'], { AOK_RUNTIME: 'cloud' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(readFileSync(join(changeDir, 'handoff.md'), 'utf-8'), /runtime: cloud/);
+
+    result = runSpawn(dir, ['handoff', 'add-thing', '--runtime', 'foo']);
+    assert.notEqual(result.status, 0);
+    assert.match(`${result.stdout}\n${result.stderr}`, /invalid --runtime/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('handoff persist with --runtime cloud prints next steps on stderr and keeps stdout as the prompt', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-runtime-stderr-'));
+  try {
+    prepareHandoffChange(dir);
+    const result = runSpawn(dir, ['handoff', 'add-thing', '--runtime', 'cloud']);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /^\/opsx:review add-thing/m);
+    assert.match(result.stderr, /git add openspec\/changes\/add-thing\//);
+    assert.match(result.stderr, /git commit/);
+    assert.match(result.stderr, /git push/);
+    assert.match(result.stderr, /handoff add-thing --cloud-check/);
+    assert.doesNotMatch(result.stdout, /git add openspec\/changes\/add-thing\//);
+
+    const local = runSpawn(dir, ['handoff', 'add-thing', '--runtime', 'local']);
+    assert.equal(local.status, 0, local.stderr);
+    assert.doesNotMatch(local.stderr, /--cloud-check/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('handoff --cloud-check fails on dirty change artifacts when runtime is cloud', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-cloud-dirty-'));
+  try {
+    const changeDir = prepareHandoffChange(dir);
+    initGit(dir);
+    writeFileSync(join(changeDir, 'extra.md'), 'untracked\n');
+    const result = runSpawn(dir, ['handoff', 'add-thing', '--runtime', 'cloud', '--cloud-check']);
+    assert.notEqual(result.status, 0);
+    assert.match(`${result.stdout}\n${result.stderr}`, /extra\.md/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('handoff --cloud-check fails without upstream when runtime is cloud', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-cloud-unpushed-'));
+  try {
+    prepareHandoffChange(dir);
+    initGit(dir);
+    const result = runSpawn(dir, ['handoff', 'add-thing', '--runtime', 'cloud', '--cloud-check']);
+    assert.notEqual(result.status, 0);
+    assert.match(`${result.stdout}\n${result.stderr}`, /git push -u origin HEAD/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('handoff --cloud-check passes when cloud artifacts are committed and pushed', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-cloud-clean-'));
+  let remoteDir;
+  try {
+    prepareHandoffChange(dir);
+    initGit(dir);
+    remoteDir = addBareUpstream(dir);
+    const result = runSpawn(dir, ['handoff', 'add-thing', '--runtime', 'cloud', '--cloud-check']);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.stdout, /cloud-check passed/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    if (remoteDir) rmSync(remoteDir, { recursive: true, force: true });
+  }
+});
+
+test('handoff --cloud-check warns and exits 0 on dirty local runtime', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-local-dirty-'));
+  try {
+    const changeDir = prepareHandoffChange(dir);
+    initGit(dir);
+    writeFileSync(join(changeDir, 'extra.md'), 'untracked\n');
+    const result = runSpawn(dir, ['handoff', 'add-thing', '--runtime', 'local', '--cloud-check']);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /extra\.md/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('archive writes Runtime into the final handoff', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-archive-runtime-'));
+  try {
+    runInit(dir, '--profile generic --name ArchiveRuntime --lang en');
+    const changeDir = makeArchiveFixture(dir, 'add-auth');
+    writeHandoffFixture(changeDir, 'add-auth', 'none');
+    const handoffPath = join(changeDir, 'handoff.md');
+    writeFileSync(
+      handoffPath,
+      `${readFileSync(handoffPath, 'utf-8').trimEnd()}\n\n## Runtime\n- runtime: cloud\n- agent_id: archive-agent\n`,
+    );
+    installOpenspecStub(dir);
+    const result = runSpawn(dir, ['archive', 'add-auth', '--sync']);
+    assert.equal(result.status, 0, result.stderr);
+    const archiveRoot = join(dir, 'openspec/changes/archive');
+    const entry = readdirSync(archiveRoot).find((d) => d.endsWith('-add-auth'));
+    assert.ok(entry, 'dated archive folder exists');
+    const finalHandoff = readFileSync(join(archiveRoot, entry, 'handoff.md'), 'utf-8');
+    assert.match(finalHandoff, /## Runtime/);
+    assert.match(finalHandoff, /runtime: cloud/);
+    assert.match(finalHandoff, /agent_id: archive-agent/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

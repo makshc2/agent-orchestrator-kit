@@ -151,8 +151,12 @@ const HANDOFF_SECTIONS = [
   'Attach',
   'Subagents to spawn',
   'Constraints',
+  'Runtime',
   'Prompt',
 ];
+const CLOUD_ENV_MARKERS = ['CURSOR_BACKGROUND_AGENT'];
+const VALID_RUNTIMES = new Set(['local', 'cloud']);
+const CLOUD_PUSH_HINT = 'git push -u origin HEAD';
 
 const log = {
   info: (msg) => console.log(pc.cyan('  →'), msg),
@@ -836,8 +840,126 @@ function sectionOr(sections, title, fallback = '') {
   return value && value.trim() ? value.trim() : fallback;
 }
 
+function parseRuntimeBulletFields(body) {
+  const text = String(body || '');
+  const runtimeMatch = text.match(/(?:^|\n)\s*[-*]?\s*runtime:\s*(\S+)/i);
+  const agentMatch = text.match(/(?:^|\n)\s*[-*]?\s*agent_id:\s*(\S+)/i);
+  return {
+    runtime: runtimeMatch ? runtimeMatch[1].trim() : '',
+    agentId: agentMatch ? agentMatch[1].trim() : '',
+  };
+}
+
+function normalizeRuntimeToken(value) {
+  const v = String(value || '').trim().toLowerCase();
+  return VALID_RUNTIMES.has(v) ? v : '';
+}
+
+function resolveRuntime(opts, env, existingFields) {
+  const flag = opts && opts.runtime != null ? String(opts.runtime).trim() : '';
+  if (flag) {
+    const normalized = normalizeRuntimeToken(flag);
+    if (!normalized) return { error: 'invalid --runtime (use local or cloud)' };
+    return { value: normalized };
+  }
+  const fromEnv = normalizeRuntimeToken(env && env.AOK_RUNTIME);
+  if (fromEnv) return { value: fromEnv };
+  for (const key of CLOUD_ENV_MARKERS) {
+    const raw = env && env[key];
+    if (raw != null && String(raw).trim() !== '') return { value: 'cloud' };
+  }
+  const existing = normalizeRuntimeToken(existingFields && existingFields.runtime);
+  if (existing) return { value: existing };
+  return { value: 'local' };
+}
+
+function resolveAgentId(opts, env, existingFields) {
+  const flag = opts && opts.agentId != null ? String(opts.agentId).trim() : '';
+  if (flag) return flag;
+  const fromEnv = env && env.AOK_AGENT_ID != null ? String(env.AOK_AGENT_ID).trim() : '';
+  if (fromEnv) return fromEnv;
+  const existing = existingFields && existingFields.agentId != null ? String(existingFields.agentId).trim() : '';
+  if (existing) return existing;
+  return 'none';
+}
+
+function applyRuntimeToFields(fields, opts, env) {
+  const resolved = resolveRuntime(opts, env, fields);
+  if (resolved.error) {
+    log.err(resolved.error);
+    return false;
+  }
+  fields.runtime = resolved.value;
+  fields.agentId = resolveAgentId(opts, env, fields);
+  return true;
+}
+
+function gitTry(projectDir, command) {
+  try {
+    const stdout = execSync(command, {
+      cwd: projectDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      encoding: 'utf-8',
+    });
+    return { ok: true, stdout: String(stdout || '') };
+  } catch (e) {
+    return {
+      ok: false,
+      stdout: String((e && e.stdout) || ''),
+      stderr: String((e && e.stderr) || (e && e.message) || ''),
+    };
+  }
+}
+
+function porcelainChangePaths(stdout) {
+  return String(stdout || '')
+    .split('\n')
+    .map((line) => line.replace(/\r$/, ''))
+    .filter((line) => line.trim())
+    .map((line) => line.slice(3).trim());
+}
+
+function collectCloudCheckFindings(projectDir, name) {
+  const findings = [];
+  const rel = `openspec/changes/${name}/`;
+  const status = gitTry(projectDir, `git status --porcelain -- ${rel}`);
+  if (!status.ok) {
+    const detail = status.stderr.trim().split('\n')[0];
+    findings.push(detail ? `git status failed for ${rel}: ${detail}` : `git status failed for ${rel}`);
+    findings.push(CLOUD_PUSH_HINT);
+  } else {
+    findings.push(...porcelainChangePaths(status.stdout));
+  }
+
+  const upstream = gitTry(projectDir, "git rev-parse --abbrev-ref '@{upstream}'");
+  if (!upstream.ok) {
+    findings.push(CLOUD_PUSH_HINT);
+  } else {
+    const count = gitTry(projectDir, "git rev-list --count '@{upstream}..HEAD'");
+    if (!count.ok) {
+      findings.push(CLOUD_PUSH_HINT);
+    } else {
+      const n = Number.parseInt(String(count.stdout).trim(), 10);
+      if (!Number.isFinite(n) || n > 0) findings.push(CLOUD_PUSH_HINT);
+    }
+  }
+
+  return [...new Set(findings)];
+}
+
+function printCloudPersistNextSteps(name) {
+  console.error('Cloud session exit is incomplete until artifacts are on the remote:');
+  console.error(`  git add openspec/changes/${name}/`);
+  console.error('  git commit');
+  console.error('  git push');
+  console.error(`  npx agent-orchestrator-kit handoff ${name} --cloud-check`);
+  console.error('Require --cloud-check exit 0 before closing.');
+}
+
 function buildHandoffMarkdown(fields) {
   const prompt = fields.prompt ? `\n\n## Prompt\n\n\`\`\`text\n${fields.prompt}\n\`\`\`` : '';
+  const runtime = fields.runtime || 'local';
+  const agentId = fields.agentId || 'none';
   return `# Session Handoff
 
 ## Closed role
@@ -868,12 +990,17 @@ ${fields.attach}
 ${fields.spawn}
 
 ## Constraints
-${fields.constraints}${prompt}
+${fields.constraints}
+
+## Runtime
+- runtime: ${runtime}
+- agent_id: ${agentId}${prompt}
 `;
 }
 
 function fieldsFromSections(changeName, sections, extra = {}) {
   const nextCommand = extra.nextCommand || firstLineCommand(sectionOr(sections, 'Next command'));
+  const runtimeParsed = parseRuntimeBulletFields(sectionOr(sections, 'Runtime', ''));
   return {
     changeName,
     closedRole: extra.closedRole || sectionOr(sections, 'Closed role', extra.closedRole || ''),
@@ -886,6 +1013,8 @@ function fieldsFromSections(changeName, sections, extra = {}) {
     attach: extra.attach || sectionOr(sections, 'Attach', `- \`openspec/changes/${changeName}/\``),
     spawn: extra.spawn || sectionOr(sections, 'Subagents to spawn', ''),
     constraints: extra.constraints || sectionOr(sections, 'Constraints', ''),
+    runtime: extra.runtime || runtimeParsed.runtime,
+    agentId: extra.agentId || runtimeParsed.agentId,
     status: extra.status || '',
     tasks: extra.tasks || '',
     review: extra.review || '',
@@ -2405,7 +2534,14 @@ program
       return fail('openspec validate --all --strict failed — rolled back: change restored, main specs reverted to pre-sync state');
     }
 
-    // Final handoff: pipeline is complete, no next-session prompt
+    // Final handoff: pipeline is complete, no next-session prompt.
+    // Change dir has already been moved — read prior Runtime from the archive target.
+    const archivedHandoffPath = join(targetDir, 'handoff.md');
+    let priorFields = {};
+    if (existsSync(archivedHandoffPath)) {
+      priorFields = fieldsFromSections(name, parseHandoffMarkdown(readFileSync(archivedHandoffPath, 'utf-8')));
+    }
+    const runtimeResult = resolveRuntime({}, process.env, priorFields);
     const progress = parseTasksProgress(targetDir);
     const fields = {
       changeName: name,
@@ -2419,6 +2555,8 @@ program
       attach: `- \`${targetRel}/\``,
       spawn: 'none',
       constraints: 'Pipeline complete — no next session.',
+      runtime: runtimeResult.value || 'local',
+      agentId: resolveAgentId({}, process.env, priorFields),
       status: 'archived',
       tasks: progress ? `${progress.done}/${progress.total}` : '',
       review: parseReviewVerdict(targetDir) || '',
@@ -2629,6 +2767,9 @@ program
   .option('--tasks <progress>', 'Task progress n/m')
   .option('--review <verdict>', 'Review verdict')
   .option('--session-count <n>', 'Handoff session_count')
+  .option('--runtime <runtime>', 'Session runtime: local | cloud')
+  .option('--agent-id <id>', 'Cloud agent identifier')
+  .option('--cloud-check', 'Verify change artifacts are committed and pushed', false)
   .action((changeName, opts) => {
     const projectDir = process.cwd();
     const resolved = resolveHandoffChange(projectDir, changeName);
@@ -2688,6 +2829,24 @@ program
       return;
     }
 
+    if (opts.cloudCheck) {
+      const existingCheck = readHandoffFields(projectDir, name);
+      const checkFields = existingCheck.fields || { changeName: name };
+      if (!applyRuntimeToFields(checkFields, opts, process.env)) {
+        process.exitCode = 1;
+        return;
+      }
+      const findings = collectCloudCheckFindings(projectDir, name);
+      if (!findings.length) {
+        log.ok('cloud-check passed');
+        return;
+      }
+      const emit = checkFields.runtime === 'cloud' ? log.err : log.warn;
+      for (const finding of findings) emit(finding);
+      if (checkFields.runtime === 'cloud') process.exitCode = 1;
+      return;
+    }
+
     console.error(pc.bold(pc.white(`\nhandoff persist  ${name}`)));
     if (!existsSync(changeDir)) {
       log.err(`change not found: ${name}`);
@@ -2729,6 +2888,11 @@ program
       fields.status = fields.review && /^APPROVE/i.test(fields.review) ? 'spec-approved' : 'in-progress';
     }
 
+    if (!applyRuntimeToFields(fields, opts, process.env)) {
+      process.exitCode = 1;
+      return;
+    }
+
     const prompt = buildNextSessionPrompt(fields, agentLanguage).replace(/^\n+|\n+$/g, '');
     fields.prompt = prompt;
     writeFileSync(existing.filePath, `${buildHandoffMarkdown(fields).trim()}\n`);
@@ -2737,6 +2901,8 @@ program
     appendDecisionsFromHandoff(projectDir, name, fields.decisions);
     const memoryPath = persistMemoryFromHandoff(projectDir, fields);
     console.error(pc.green('  ✓'), `Memory JSON upserted: ${memoryPath}`);
+
+    if (fields.runtime === 'cloud') printCloudPersistNextSteps(name);
 
     console.error(pc.dim('Copy the prompt below into the next chat as one fenced block. Do not include this line.'));
     process.stdout.write(`${prompt}\n`);
