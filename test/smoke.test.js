@@ -1293,6 +1293,118 @@ test('handoff persist fails without required sections', () => {
   }
 });
 
+const METRICS_HANDOFF = `# Session Handoff
+
+## Closed role
+Architect
+
+## Done
+specs ready
+
+## Next command
+\`/opsx:review add-thing\`
+
+## Next role
+spec-reviewer
+`;
+
+test('handoff restore + persist records a session in metrics.json', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-metrics-'));
+  try {
+    runInit(dir, '--profile generic --name Metrics --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'tasks.md'), '- [x] 1.1 done\n- [ ] 1.2 todo\n');
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+
+    execSync(`node "${CLI}" handoff add-thing --restore`, { cwd: dir, stdio: 'pipe' });
+    const pendingState = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
+    assert.ok(pendingState.pending, 'restore writes a pending session marker');
+    assert.equal(pendingState.pending.role, 'spec-reviewer');
+    assert.equal(pendingState.sessions.length, 0);
+
+    execSync(
+      `node "${CLI}" handoff add-thing --input-tokens 12000 --output-tokens 3000 --cost-usd 0.42 --model claude-sonnet`,
+      { cwd: dir, stdio: 'pipe' },
+    );
+    const metrics = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
+    assert.equal(metrics.pending, null, 'persist closes the pending session');
+    assert.equal(metrics.sessions.length, 1);
+    const session = metrics.sessions[0];
+    assert.equal(session.role, 'Architect');
+    assert.equal(session.phase, 'spec');
+    assert.equal(session.tasks, '1/2');
+    assert.ok(Number.isFinite(session.durationMs) && session.durationMs >= 0, 'duration computed from pending marker');
+    assert.equal(session.totalTokens, 15000, 'total defaults to input + output');
+    assert.equal(metrics.spend.totalTokens, 15000);
+    assert.equal(metrics.spend.costUsd, 0.42);
+    assert.equal(metrics.phases.spec.sessions, 1);
+    assert.deepEqual(metrics.phases.spec.agents, ['Architect']);
+    assert.deepEqual(metrics.phases.spec.models, ['claude-sonnet']);
+    assert.equal(metrics.totals.sessions, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('handoff persist without spend keeps metrics null-honest and --no-metrics skips recording', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-metrics-null-'));
+  try {
+    runInit(dir, '--profile generic --name MetricsNull --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+
+    execSync(`node "${CLI}" handoff add-thing --no-metrics`, { cwd: dir, stdio: 'pipe' });
+    assert.ok(!existsSync(join(changeDir, 'metrics.json')), '--no-metrics must not create metrics.json');
+
+    execSync(`node "${CLI}" handoff add-thing`, { cwd: dir, stdio: 'pipe' });
+    const metrics = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
+    assert.equal(metrics.sessions.length, 1);
+    assert.equal(metrics.sessions[0].durationMs, null, 'no restore marker → duration stays null');
+    assert.equal(metrics.sessions[0].totalTokens, null);
+    assert.equal(metrics.spend.totalTokens, null, 'unreported spend stays null, never 0');
+    assert.equal(metrics.spend.costUsd, null);
+    assert.equal(metrics.phases.spec.durationMs, null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('metrics command prints a summary and raw --json', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-metrics-cmd-'));
+  try {
+    runInit(dir, '--profile generic --name MetricsCmd --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+    execSync(
+      `node "${CLI}" handoff add-thing --started-at 2026-08-29T06:00:00Z --input-tokens 1000 --cost-usd 0.1`,
+      { cwd: dir, stdio: 'pipe' },
+    );
+
+    const out = execSync(`node "${CLI}" metrics add-thing`, { cwd: dir, encoding: 'utf-8' });
+    assert.match(out, /sessions: {2}1/);
+    assert.match(out, /spec/);
+    assert.match(out, /\$0\.10/);
+
+    const raw = JSON.parse(execSync(`node "${CLI}" metrics add-thing --json`, { cwd: dir, encoding: 'utf-8' }));
+    assert.equal(raw.sessions[0].startedAt, '2026-08-29T06:00:00.000Z', '--started-at overrides the marker');
+    assert.ok(raw.sessions[0].durationMs > 0);
+
+    assert.throws(
+      () => execSync(`node "${CLI}" metrics missing-change`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' }),
+      (err) => {
+        assert.notEqual(err.status, 0);
+        assert.match(`${err.stdout || ''}${err.stderr || ''}`, /No metrics\.json/);
+        return true;
+      },
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('memory-setup rewrites relative MEMORY_FILE_PATH to launcher', () => {
   const dir = mkdtempSync(join(tmpdir(), 'aok-memory-setup-'));
   try {
@@ -1553,7 +1665,16 @@ test('archive --sync merges ADDED/MODIFIED/REMOVED and moves the change', () => 
   const dir = mkdtempSync(join(tmpdir(), 'aok-archive-sync-'));
   try {
     runInit(dir, '--profile generic --name ArchiveSync --lang en');
-    makeArchiveFixture(dir, 'add-auth');
+    const changeDir = makeArchiveFixture(dir, 'add-auth');
+    writeFileSync(
+      join(changeDir, 'metrics.json'),
+      JSON.stringify({
+        version: 1,
+        change: 'add-auth',
+        sessions: [{ startedAt: '2026-08-29T06:00:00.000Z', endedAt: '2026-08-29T07:00:00.000Z', durationMs: 3600000, role: 'Implementer', phase: 'apply', runtime: 'local' }],
+        pending: { startedAt: '2026-08-29T08:00:00.000Z', role: 'Archiver' },
+      }),
+    );
     installOpenspecStub(dir);
     const out = runCliStub(dir, 'archive add-auth --sync');
     assert.match(out, /archived add-auth/);
@@ -1565,6 +1686,12 @@ test('archive --sync merges ADDED/MODIFIED/REMOVED and moves the change', () => 
     assert.match(entry, /^\d{4}-\d{2}-\d{2}-add-auth$/);
     assert.ok(existsSync(join(archiveRoot, entry, 'handoff.md')), 'final handoff.md written');
     assert.match(readFileSync(join(archiveRoot, entry, 'handoff.md'), 'utf-8'), /## Next command\s*\n+`?none`?/i);
+
+    const archivedMetrics = JSON.parse(readFileSync(join(archiveRoot, entry, 'metrics.json'), 'utf-8'));
+    assert.ok(archivedMetrics.archivedAt, 'archive sets archivedAt in metrics.json');
+    assert.equal(archivedMetrics.pending, null, 'archive clears the pending marker');
+    assert.equal(archivedMetrics.totals.durationMs, 3600000, 'aggregates recomputed from sessions');
+    assert.deepEqual(archivedMetrics.phases.apply.agents, ['Implementer']);
 
     const mainSpec = readFileSync(join(dir, 'openspec/specs/auth/spec.md'), 'utf-8');
     assert.match(mainSpec, /New Req/, 'ADDED requirement appended');

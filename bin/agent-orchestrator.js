@@ -1290,6 +1290,215 @@ function readHandoffFields(projectDir, changeName) {
   return { filePath, fields: fieldsFromSections(changeName, sections) };
 }
 
+const METRICS_VERSION = 1;
+const METRICS_SPEND_KEYS = ['inputTokens', 'outputTokens', 'totalTokens', 'costUsd'];
+
+function metricsFilePath(projectDir, changeName) {
+  return join(projectDir, 'openspec', 'changes', changeName, 'metrics.json');
+}
+
+function emptySpendTotals() {
+  return { inputTokens: null, outputTokens: null, totalTokens: null, costUsd: null };
+}
+
+function defaultMetrics(changeName, nowIso) {
+  return {
+    version: METRICS_VERSION,
+    change: changeName,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    archivedAt: null,
+    spend: emptySpendTotals(),
+    totals: { sessions: 0, durationMs: null, leadTimeMs: null, cloudSessions: 0 },
+    phases: {},
+    sessions: [],
+    pending: null,
+  };
+}
+
+function loadMetricsFile(filePath, changeName, nowIso) {
+  if (!existsSync(filePath)) return defaultMetrics(changeName, nowIso);
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(filePath, 'utf-8'));
+  } catch {
+    return defaultMetrics(changeName, nowIso);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return defaultMetrics(changeName, nowIso);
+  }
+  const base = defaultMetrics(changeName, parsed.createdAt || nowIso);
+  return {
+    ...base,
+    ...parsed,
+    version: METRICS_VERSION,
+    change: changeName,
+    spend: { ...base.spend, ...(parsed.spend && typeof parsed.spend === 'object' ? parsed.spend : {}) },
+    totals: { ...base.totals, ...(parsed.totals && typeof parsed.totals === 'object' ? parsed.totals : {}) },
+    phases: parsed.phases && typeof parsed.phases === 'object' && !Array.isArray(parsed.phases) ? parsed.phases : {},
+    sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
+  };
+}
+
+function saveMetricsFile(filePath, metrics) {
+  mkdirSync(dirname(filePath), { recursive: true });
+  writeFileSync(filePath, `${JSON.stringify(metrics, null, 2)}\n`);
+}
+
+function numOrNull(value) {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function addNullable(a, b) {
+  if (a == null && b == null) return null;
+  return (a ?? 0) + (b ?? 0);
+}
+
+function phaseForRole(role) {
+  const value = String(role || '').toLowerCase();
+  if (/explor/.test(value)) return 'explore';
+  if (/review/.test(value)) return 'review';
+  if (/implement|apply|code-writer|test-writer/.test(value)) return 'apply';
+  if (/architect|propose/.test(value)) return 'spec';
+  if (/design/.test(value)) return 'design';
+  if (/archiv/.test(value)) return 'archive';
+  return 'other';
+}
+
+function isoOrNull(value) {
+  if (!value) return null;
+  const ms = Date.parse(String(value));
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+}
+
+function recomputeMetricsAggregates(metrics) {
+  const phases = {};
+  const totals = { sessions: 0, durationMs: null, leadTimeMs: null, cloudSessions: 0 };
+  const spend = emptySpendTotals();
+  let firstStart = null;
+  let lastEnd = null;
+  for (const session of metrics.sessions) {
+    totals.sessions += 1;
+    if (session.runtime === 'cloud') totals.cloudSessions += 1;
+    totals.durationMs = addNullable(totals.durationMs, numOrNull(session.durationMs));
+    if (session.startedAt && (firstStart == null || session.startedAt < firstStart)) firstStart = session.startedAt;
+    if (session.endedAt && (lastEnd == null || session.endedAt > lastEnd)) lastEnd = session.endedAt;
+    const key = session.phase || 'other';
+    const phase = phases[key] || { sessions: 0, durationMs: null, ...emptySpendTotals(), agents: [], models: [] };
+    phase.sessions += 1;
+    phase.durationMs = addNullable(phase.durationMs, numOrNull(session.durationMs));
+    for (const spendKey of METRICS_SPEND_KEYS) {
+      const value = numOrNull(session[spendKey]);
+      phase[spendKey] = addNullable(phase[spendKey], value);
+      spend[spendKey] = addNullable(spend[spendKey], value);
+    }
+    if (session.role && !phase.agents.includes(session.role)) phase.agents.push(session.role);
+    if (session.model && !phase.models.includes(session.model)) phase.models.push(session.model);
+    phases[key] = phase;
+  }
+  if (firstStart && lastEnd) {
+    totals.leadTimeMs = Math.max(0, Date.parse(lastEnd) - Date.parse(firstStart));
+  }
+  metrics.phases = phases;
+  metrics.totals = totals;
+  metrics.spend = spend;
+}
+
+function metricsRecordSessionStart(projectDir, changeName, role) {
+  const filePath = metricsFilePath(projectDir, changeName);
+  const nowIso = new Date().toISOString();
+  const metrics = loadMetricsFile(filePath, changeName, nowIso);
+  metrics.pending = { startedAt: nowIso, role: role || '' };
+  metrics.updatedAt = nowIso;
+  saveMetricsFile(filePath, metrics);
+  return filePath;
+}
+
+function metricsRecordSessionEnd(projectDir, fields, opts = {}) {
+  const filePath = metricsFilePath(projectDir, fields.changeName);
+  const nowIso = new Date().toISOString();
+  const metrics = loadMetricsFile(filePath, fields.changeName, nowIso);
+  const startedAt = isoOrNull(opts.startedAt) || (metrics.pending && metrics.pending.startedAt) || null;
+  const durationMs = startedAt ? Math.max(0, Date.parse(nowIso) - Date.parse(startedAt)) : null;
+  const inputTokens = numOrNull(opts.inputTokens);
+  const outputTokens = numOrNull(opts.outputTokens);
+  let totalTokens = numOrNull(opts.totalTokens);
+  if (totalTokens == null && (inputTokens != null || outputTokens != null)) {
+    totalTokens = (inputTokens ?? 0) + (outputTokens ?? 0);
+  }
+  metrics.sessions.push({
+    startedAt,
+    endedAt: nowIso,
+    durationMs,
+    role: fields.closedRole || '',
+    phase: phaseForRole(fields.closedRole),
+    runtime: fields.runtime || 'local',
+    agentId: fields.agentId || 'none',
+    model: opts.model || null,
+    tasks: fields.tasks || null,
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    costUsd: numOrNull(opts.costUsd),
+  });
+  metrics.pending = null;
+  metrics.updatedAt = nowIso;
+  recomputeMetricsAggregates(metrics);
+  saveMetricsFile(filePath, metrics);
+  return filePath;
+}
+
+function metricsFinalizeArchive(targetDir, changeName) {
+  const filePath = join(targetDir, 'metrics.json');
+  if (!existsSync(filePath)) return null;
+  const nowIso = new Date().toISOString();
+  const metrics = loadMetricsFile(filePath, changeName, nowIso);
+  metrics.archivedAt = nowIso;
+  metrics.pending = null;
+  metrics.updatedAt = nowIso;
+  recomputeMetricsAggregates(metrics);
+  saveMetricsFile(filePath, metrics);
+  return filePath;
+}
+
+function formatMetricsDuration(durationMs) {
+  if (durationMs == null || !Number.isFinite(durationMs)) return '—';
+  const totalSeconds = Math.max(0, Math.round(durationMs / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+  if (minutes > 0) return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  return `${seconds}s`;
+}
+
+function formatMetricsNumber(value) {
+  return value == null ? '—' : String(value);
+}
+
+function formatMetricsCost(value) {
+  return value == null ? '—' : `$${Number(value).toFixed(2)}`;
+}
+
+function resolveMetricsFile(projectDir, changeName) {
+  const activePath = metricsFilePath(projectDir, changeName);
+  if (existsSync(activePath)) return { filePath: activePath, archived: false };
+  const archiveDir = join(projectDir, 'openspec', 'changes', 'archive');
+  if (existsSync(archiveDir)) {
+    const folders = readdirSync(archiveDir)
+      .filter((name) => name === changeName || name.endsWith(`-${changeName}`))
+      .sort()
+      .reverse();
+    for (const folder of folders) {
+      const archivedPath = join(archiveDir, folder, 'metrics.json');
+      if (existsSync(archivedPath)) return { filePath: archivedPath, archived: true };
+    }
+  }
+  return { filePath: activePath, archived: false, missing: true };
+}
+
 function parseFigmaUrl(url) {
   try {
     const parsed = new URL(url);
@@ -2564,6 +2773,7 @@ program
     };
     writeFileSync(join(targetDir, 'handoff.md'), `${buildHandoffMarkdown(fields).trim()}\n`);
     const memoryPath = persistMemoryFromHandoff(projectDir, fields);
+    const metricsPath = metricsFinalizeArchive(targetDir, name);
 
     console.log(`change:   ${name}`);
     console.log(`schema:   ${status.schemaName || 'unknown'}`);
@@ -2571,6 +2781,7 @@ program
     console.log(`sync:     ${syncStatus}`);
     console.log(`handoff:  ${join(targetRel, 'handoff.md')} (next_command: none)`);
     console.log(`memory:   ${memoryPath.replace(`${projectDir}/`, '')}`);
+    if (metricsPath) console.log(`metrics:  ${metricsPath.replace(`${projectDir}/`, '')} (archived_at set)`);
     log.ok(`archived ${name}`);
   });
 
@@ -2770,6 +2981,13 @@ program
   .option('--runtime <runtime>', 'Session runtime: local | cloud')
   .option('--agent-id <id>', 'Cloud agent identifier')
   .option('--cloud-check', 'Verify change artifacts are committed and pushed', false)
+  .option('--started-at <iso>', 'Session start timestamp (overrides the pending marker from --restore)')
+  .option('--model <name>', 'Model used in this session (recorded in metrics.json)')
+  .option('--input-tokens <n>', 'Input tokens spent in this session')
+  .option('--output-tokens <n>', 'Output tokens spent in this session')
+  .option('--total-tokens <n>', 'Total tokens spent in this session (default: input + output)')
+  .option('--cost-usd <usd>', 'Cost of this session in USD')
+  .option('--no-metrics', 'Skip recording this session into metrics.json')
   .action((changeName, opts) => {
     const projectDir = process.cwd();
     const resolved = resolveHandoffChange(projectDir, changeName);
@@ -2825,6 +3043,10 @@ program
         log.ok(`Memory entities: ${memoryItems.length} (${memoryPath})`);
       } else {
         log.warn(`Memory JSON empty or missing at ${memoryPath}`);
+      }
+      if (opts.metrics !== false && existsSync(changeDir)) {
+        const metricsPath = metricsRecordSessionStart(projectDir, name, fields ? fields.nextRole : '');
+        log.ok(`metrics: session start recorded (${metricsPath.replace(`${projectDir}/`, '')})`);
       }
       return;
     }
@@ -2902,10 +3124,100 @@ program
     const memoryPath = persistMemoryFromHandoff(projectDir, fields);
     console.error(pc.green('  ✓'), `Memory JSON upserted: ${memoryPath}`);
 
+    if (opts.metrics !== false) {
+      const metricsPath = metricsRecordSessionEnd(projectDir, fields, {
+        startedAt: opts.startedAt,
+        model: opts.model,
+        inputTokens: opts.inputTokens,
+        outputTokens: opts.outputTokens,
+        totalTokens: opts.totalTokens,
+        costUsd: opts.costUsd,
+      });
+      console.error(pc.green('  ✓'), `metrics.json updated: ${metricsPath.replace(`${projectDir}/`, '')}`);
+    }
+
     if (fields.runtime === 'cloud') printCloudPersistNextSteps(name);
 
     console.error(pc.dim('Copy the prompt below into the next chat as one fenced block. Do not include this line.'));
     process.stdout.write(`${prompt}\n`);
+  });
+
+program
+  .command('metrics [change-name]')
+  .description('Show recorded session metrics for a change: time per phase, tokens, cost, agents, models')
+  .option('--json', 'Print raw metrics.json', false)
+  .action((changeName, opts) => {
+    const projectDir = process.cwd();
+    let name = changeName;
+    if (!name) {
+      const resolved = resolveHandoffChange(projectDir, changeName);
+      if (!resolved) {
+        log.err('No active change found. Pass a name: npx agent-orchestrator-kit metrics <name>');
+        process.exitCode = 1;
+        return;
+      }
+      if (resolved.ambiguous) {
+        log.err(`Multiple active changes: ${resolved.ambiguous.join(', ')}. Pass the change name argument.`);
+        process.exitCode = 1;
+        return;
+      }
+      name = resolved;
+    }
+
+    const { filePath, archived, missing } = resolveMetricsFile(projectDir, name);
+    if (missing) {
+      log.err(`No metrics.json for ${name}`);
+      log.info(`Expected: ${filePath.replace(`${projectDir}/`, '')}`);
+      log.info('Metrics are recorded by: handoff --restore (session start) and handoff <name> (session end)');
+      process.exitCode = 1;
+      return;
+    }
+
+    const metrics = loadMetricsFile(filePath, name, new Date().toISOString());
+    if (opts.json) {
+      process.stdout.write(`${JSON.stringify(metrics, null, 2)}\n`);
+      return;
+    }
+
+    log.title(`metrics  ${name}${archived ? '  (archived)' : ''}`);
+    console.log(`file:      ${filePath.replace(`${projectDir}/`, '')}`);
+    console.log(`sessions:  ${metrics.totals.sessions}${metrics.totals.cloudSessions ? ` (cloud: ${metrics.totals.cloudSessions})` : ''}`);
+    console.log(`work time: ${formatMetricsDuration(metrics.totals.durationMs)}`);
+    console.log(`lead time: ${formatMetricsDuration(metrics.totals.leadTimeMs)}`);
+    console.log(`tokens:    ${formatMetricsNumber(metrics.spend.totalTokens)} (in: ${formatMetricsNumber(metrics.spend.inputTokens)}, out: ${formatMetricsNumber(metrics.spend.outputTokens)})`);
+    console.log(`cost:      ${formatMetricsCost(metrics.spend.costUsd)}`);
+    if (metrics.archivedAt) console.log(`archived:  ${metrics.archivedAt}`);
+    if (metrics.pending) log.warn(`open session since ${metrics.pending.startedAt} (${metrics.pending.role || 'unknown role'})`);
+
+    const phaseOrder = ['explore', 'design', 'spec', 'review', 'apply', 'archive', 'other'];
+    const phaseKeys = phaseOrder.filter((key) => metrics.phases[key]);
+    if (phaseKeys.length) {
+      console.log('');
+      console.log('phase      sessions  time      tokens    cost      agents');
+      for (const key of phaseKeys) {
+        const phase = metrics.phases[key];
+        const cols = [
+          key.padEnd(10),
+          String(phase.sessions).padEnd(9),
+          formatMetricsDuration(phase.durationMs).padEnd(9),
+          formatMetricsNumber(phase.totalTokens).padEnd(9),
+          formatMetricsCost(phase.costUsd).padEnd(9),
+          phase.agents.join(', ') || '—',
+        ];
+        console.log(cols.join(' '));
+      }
+    }
+
+    if (metrics.sessions.length) {
+      console.log('');
+      console.log('recent sessions:');
+      for (const session of metrics.sessions.slice(-5)) {
+        const spendLabel = session.totalTokens != null || session.costUsd != null
+          ? ` — ${formatMetricsNumber(session.totalTokens)} tok, ${formatMetricsCost(session.costUsd)}`
+          : '';
+        console.log(`- ${session.endedAt}  ${session.phase.padEnd(7)} ${formatMetricsDuration(session.durationMs).padEnd(9)} ${session.role || '(no role)'}${session.model ? ` [${session.model}]` : ''}${spendLabel}`);
+      }
+    }
   });
 
 program.parse();

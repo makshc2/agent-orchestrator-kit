@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-29
+
+### Added
+- **Change metrics** — git-tracked `openspec/changes/<name>/metrics.json`: `handoff --restore` records the session start (`pending` marker), `handoff <name>` closes the session (duration, closed role → phase `explore|design|spec|review|apply|archive`, runtime, tasks snapshot, optional `--model` / `--input-tokens` / `--output-tokens` / `--total-tokens` / `--cost-usd`, `--started-at` when restore was skipped, `--no-metrics` to opt out), `archive <name>` sets `archivedAt`; per-phase and total aggregates (durations, tokens, cost, agents, models, `leadTimeMs`) are recomputed on every write and unreported values stay null-honest
+- **`npx agent-orchestrator-kit metrics [change-name] [--json]`** — human summary (phases table, spend, recent sessions) or raw JSON; resolves archived changes under `openspec/changes/archive/*-<name>` too
+
 ## [0.4.0] - 2026-08-28
 
 ### Added
@@ -193,6 +199,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Initial release: 5-role orchestration pipeline, `/opsx:*` commands, IDE sync
 
+[0.5.0]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.1.14...v0.2.0

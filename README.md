@@ -74,7 +74,7 @@ npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-veri
 
 See [Installation](#installation) for profile/CI options.
 
-**🔄 Already have the kit installed? Upgrade to latest (factory phases 1–3 in v0.4.0+, lean pipeline / archive CLI in v0.3.0+, handoff CLI in v0.1.14+, Figma PAT in v0.1.11+):**
+**🔄 Already have the kit installed? Upgrade to latest (change metrics in v0.5.0+, factory phases 1–3 in v0.4.0+, lean pipeline / archive CLI in v0.3.0+, handoff CLI in v0.1.14+, Figma PAT in v0.1.11+):**
 
 ```bash
 npx agent-orchestrator-kit@latest update
@@ -191,7 +191,7 @@ your-project/
 | OpenSpec skills | All 7 skills for `/opsx:*` workflow |
 | IDE sync | Cursor + Claude Code sync script (`--delete` semantics — removes stale skills/subagents) |
 | Subagents | 12 exclusive routes: guide/setup/session-handoff, explore/design/propose/review/archive stage agents, and apply implementation/test/code-review agents — native in Cursor + Claude Code, isolated Amp `subagent-*` wrappers |
-| CLI gates | `npx agent-orchestrator-kit status` / `gate-check` / `archive` / `handoff` / `memory-setup` — deterministic review-gate, archive, and session-handoff (always via `npx`; see `cli-via-npm.mdc`) |
+| CLI gates | `npx agent-orchestrator-kit status` / `gate-check` / `archive` / `handoff` / `metrics` / `memory-setup` — deterministic review-gate, archive, session-handoff, and change metrics (always via `npx`; see `cli-via-npm.mdc`) |
 | CI | `agent-verify.yml` — GitHub (default) or GitLab fragment + `prebuild` hook, both run `gate-check` |
 | AI Spec Verifier | `spec-verify.yml` + verifier scripts — GitLab or GitHub, opt-in (`--spec-verify`) |
 | MCP templates | Memory MCP for Cursor and Amp |
@@ -797,6 +797,24 @@ npx agent-orchestrator-kit handoff <name> --cloud-check   # require exit 0
 
 Persist with `runtime: cloud` prints those four steps on stderr; stdout stays the pure `/opsx:` next-thread prompt. Local persist is unchanged.
 
+### Change metrics
+
+Every change accumulates git-tracked `openspec/changes/<name>/metrics.json` — the data source for planning the next feature: how long each phase took, how many sessions it needed, what it cost.
+
+- **Session start** — `handoff --restore` writes a `pending` marker (`startedAt`, expected role).
+- **Session end** — `handoff <name>` closes the pending session: duration, closed role, mapped phase (`explore` / `design` / `spec` / `review` / `apply` / `archive`), runtime (local/cloud), tasks snapshot (`n/m`), and — when the agent passes them — `--model`, `--input-tokens`, `--output-tokens`, `--total-tokens`, `--cost-usd`. No restore marker? Pass `--started-at <iso>` or the duration stays honestly `null`.
+- **Archive** — `archive <name>` sets `archivedAt` and clears any pending marker; the file moves to the archive folder with the change.
+
+Aggregates are recomputed on every write: per-phase totals (`durationMs`, tokens, `costUsd`, `sessions`, agents, models) plus overall `totals` (`sessions`, `cloudSessions`, `durationMs` = sum of session work time, `leadTimeMs` = wall clock from first session start to last session end) and `spend` (token/cost sums). Numbers are null-honest: a metric nobody reported stays `null`, never a fake `0`.
+
+```bash
+npx agent-orchestrator-kit handoff add-thing --input-tokens 12000 --output-tokens 3000 --cost-usd 0.42 --model claude-sonnet
+npx agent-orchestrator-kit metrics add-thing          # human summary: phases, tokens, cost, agents
+npx agent-orchestrator-kit metrics add-thing --json   # raw metrics.json (works for archived changes too)
+```
+
+Recording is on by default and never blocks persist; opt out per session with `--no-metrics`.
+
 ### Skill inventory
 
 `.agents/orchestrator.yaml` carries a machine-readable `skills:` section (`kit` / `stack` / `external`) instead of hardcoded skill names in the CLI:
@@ -900,10 +918,21 @@ npx agent-orchestrator-kit archive <name> [--sync | --no-sync --force]
 
 npx agent-orchestrator-kit handoff [change-name] [options]
   --restore          Print the restore briefing instead of persisting
+                     (also records the session start into metrics.json)
   --runtime <value>  local | cloud (invalid values exit non-zero)
   --agent-id <id>    Cloud agent identifier (default: none)
   --cloud-check      Verify change artifacts are committed and pushed
                      (cloud: non-zero on failure; local: warning, exit 0)
+  --started-at <iso> Session start override when --restore was not run
+  --model <name>     Model used in this session (metrics.json)
+  --input-tokens <n> / --output-tokens <n> / --total-tokens <n>
+                     Token spend for this session (total defaults to in+out)
+  --cost-usd <usd>   Session cost in USD
+  --no-metrics       Skip recording this session into metrics.json
+
+npx agent-orchestrator-kit metrics [change-name] [--json]
+  Show recorded session metrics for a change (active or archived):
+  time per phase, sessions, tokens, cost, agents, models, lead time
 ```
 
 ## Directory Reference
@@ -936,7 +965,7 @@ CLAUDE.md                # Committed — synced to .claude/CLAUDE.md
 openspec/                # Committed — spec-driven workflow
   config.yaml            # Project context for AI
   specs/                 # Source of truth after archive
-  changes/               # Active work; <name>/handoff.md indexes session state
+  changes/               # Active work; <name>/handoff.md + metrics.json index session state
 ```
 
 ## Roadmap
@@ -949,6 +978,11 @@ The kit moves toward an Agentic Factory in four phases. **One phase = one OpenSp
 Phase bounds and non-goals: [`openspec/specs/agentic-factory-roadmap/spec.md`](openspec/specs/agentic-factory-roadmap/spec.md).
 
 ## Changelog
+
+### 0.5.0
+- **Change metrics** — git-tracked `openspec/changes/<name>/metrics.json` (session start on `handoff --restore`, close on persist)
+- **`metrics` CLI** — human summary or `--json`; phases, tokens, cost, agents, models, lead time
+- Optional persist spend flags: `--model`, `--input-tokens`, `--output-tokens`, `--total-tokens`, `--cost-usd`, `--started-at`, `--no-metrics`
 
 ### 0.4.0
 - Factory phases 1–3: `hooks-setup` / `gate-check --staged`, `mcp-setup` (GitHub / GitLab / browser), MCP and Skill health in `status`
