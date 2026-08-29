@@ -1,7 +1,6 @@
-import { existsSync, readdirSync, readFileSync, copyFileSync, mkdirSync, rmSync } from 'fs';
-import { join } from 'path';
-import { tmpdir, homedir as osHomedir } from 'os';
-import { execFileSync } from 'child_process';
+import { existsSync, readdirSync, readFileSync } from 'fs';
+import { join, basename } from 'path';
+import { homedir as osHomedir } from 'os';
 
 const PLATFORMS = ['cursor', 'claude', 'amp'];
 
@@ -262,12 +261,16 @@ function collectAmp({ cwd, windowStart, windowEnd, existing, env, homedir, notes
     }
     if (!thread || typeof thread !== 'object') continue;
     if (!ampTreesMatch(thread, cwd)) continue;
+    // messageId values are thread-local counters (1, 3, 5, ...), so a bare id
+    // collides across threads; namespace with the thread id for global dedup.
+    const threadKey = thread.id ? String(thread.id) : basename(file, '.json');
     for (const message of ampMessages(thread)) {
       const usage = ampUsage(message);
       if (!usage) continue;
-      const id = ampId(message);
-      if (id == null || id === '') continue;
-      if (existing.has(String(id))) continue;
+      const rawId = ampId(message);
+      if (rawId == null || rawId === '') continue;
+      const id = `${threadKey}:${rawId}`;
+      if (existing.has(id)) continue;
       if (!inWindow(usage.timestamp, windowStart, windowEnd)) continue;
       sources.push(sourceRecord({
         id,
@@ -284,102 +287,56 @@ function collectAmp({ cwd, windowStart, windowEnd, existing, env, homedir, notes
   return sources;
 }
 
-function cursorDbPath(env, homedir) {
-  const home = homedir || env.HOME || osHomedir();
-  if (env.XDG_CONFIG_HOME && String(env.XDG_CONFIG_HOME).trim()) {
-    return join(String(env.XDG_CONFIG_HOME).trim(), 'Cursor', 'User', 'globalStorage', 'state.vscdb');
-  }
-  if (process.platform === 'darwin') {
-    return join(home, 'Library', 'Application Support', 'Cursor', 'User', 'globalStorage', 'state.vscdb');
-  }
-  if (process.platform === 'win32') {
-    const appdata = env.APPDATA && String(env.APPDATA).trim()
-      ? String(env.APPDATA).trim()
-      : join(home, 'AppData', 'Roaming');
-    return join(appdata, 'Cursor', 'User', 'globalStorage', 'state.vscdb');
-  }
-  return join(home, '.config', 'Cursor', 'User', 'globalStorage', 'state.vscdb');
-}
+export const CURSOR_USAGE_FILE_REL = join('.agents', 'spend', 'cursor-usage.jsonl');
 
-function sqlite3Ok() {
+function collectCursor({ cwd, windowStart, windowEnd, existing, notes }) {
+  const filePath = join(cwd, CURSOR_USAGE_FILE_REL);
+  if (!existsSync(filePath)) {
+    notes.push('cursor: usage file missing (spend hook not installed or no turns recorded yet)');
+    return [];
+  }
+  let text;
   try {
-    execFileSync('sqlite3', ['-version'], {
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    return true;
+    text = readFileSync(filePath, 'utf-8');
   } catch {
-    return false;
-  }
-}
-
-function isTokenColumn(name) {
-  return /token|usage|costusd|cost_usd|input_tokens|output_tokens|inputtokens|outputtokens/i.test(String(name || ''));
-}
-
-function collectCursor({ env, homedir, notes }) {
-  const dbPath = cursorDbPath(env, homedir);
-  if (!existsSync(dbPath)) {
-    notes.push('cursor: state.vscdb missing');
+    notes.push('cursor: cannot read usage file');
     return [];
   }
-  if (!sqlite3Ok()) {
-    notes.push('cursor: sqlite3 not available');
-    return [];
-  }
-  const snapRoot = join(tmpdir(), `aok-vscdb-${process.pid}-${Date.now()}`);
-  try {
-    mkdirSync(snapRoot, { recursive: true });
-    const snapDb = join(snapRoot, 'state.vscdb');
-    copyFileSync(dbPath, snapDb);
-    for (const suffix of ['-wal', '-shm']) {
-      const extra = `${dbPath}${suffix}`;
-      if (existsSync(extra)) copyFileSync(extra, `${snapDb}${suffix}`);
-    }
-    let tables;
+  // stop / afterAgentResponse / loop follow-ups may write the same generation_id
+  // several times with cumulative turn totals; keep the largest record per id.
+  const bestById = new Map();
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    let row;
     try {
-      tables = execFileSync('sqlite3', [snapDb, "SELECT name FROM sqlite_master WHERE type='table'"], {
-        encoding: 'utf-8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-      })
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean);
+      row = JSON.parse(line);
     } catch {
-      notes.push('cursor: sqlite3 cannot read snapshot');
-      return [];
+      continue;
     }
-    let hasTokenCols = false;
-    for (const table of tables) {
-      let info;
-      try {
-        info = execFileSync('sqlite3', [snapDb, `PRAGMA table_info(${JSON.stringify(table).slice(1, -1)})`], {
-          encoding: 'utf-8',
-          stdio: ['ignore', 'pipe', 'pipe'],
-        });
-      } catch {
-        continue;
-      }
-      if (String(info).split('\n').some((line) => {
-        const cols = line.split('|');
-        return cols[1] && isTokenColumn(cols[1]);
-      })) {
-        hasTokenCols = true;
-        break;
-      }
+    if (!row || typeof row !== 'object') continue;
+    const id = row.id == null || row.id === '' ? null : String(row.id);
+    if (!id) continue;
+    if (existing.has(id)) continue;
+    if (!inWindow(row.at, windowStart, windowEnd)) continue;
+    const inputTokens = numOrNull(row.inputTokens);
+    const outputTokens = numOrNull(row.outputTokens);
+    if (inputTokens == null && outputTokens == null) continue;
+    const record = sourceRecord({
+      id,
+      platform: 'cursor',
+      model: row.model || row.modelId,
+      inputTokens,
+      outputTokens,
+      costUsd: null,
+      ampCredits: null,
+      at: row.at,
+    });
+    const previous = bestById.get(id);
+    if (!previous || (record.totalTokens ?? 0) >= (previous.totalTokens ?? 0)) {
+      bestById.set(id, record);
     }
-    if (!hasTokenCols) {
-      notes.push('cursor: schema has no token columns');
-      return [];
-    }
-    notes.push('cursor: token columns present but no project workspace mapping');
-    return [];
-  } catch {
-    notes.push('cursor: snapshot failed');
-    return [];
-  } finally {
-    rmSync(snapRoot, { recursive: true, force: true });
   }
+  return [...bestById.values()];
 }
 
 function aggregate(sources) {
@@ -396,7 +353,7 @@ function aggregate(sources) {
       bucket.ampCredits = addNullable(bucket.ampCredits, src.ampCredits);
       if (platform === 'claude') bucket.source = 'claude-jsonl';
       else if (platform === 'amp') bucket.source = 'amp-thread';
-      else bucket.source = 'cursor-vscdb';
+      else bucket.source = 'cursor-hook';
     }
     const model = src.model;
     if (model) {

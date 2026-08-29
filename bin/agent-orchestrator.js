@@ -70,6 +70,7 @@ const GITIGNORE_LINES = [
   '.agents/figma.local.env',
   '.agents/github.local.env',
   '.agents/gitlab.local.env',
+  '.agents/spend/',
 ];
 
 const FIGMA_ENV_REL = join('.agents', 'figma.local.env');
@@ -85,6 +86,11 @@ const GITLAB_ENV_EXAMPLE_REL = join('.agents', 'gitlab.local.env.example');
 const GITLAB_LAUNCHER_REL = join('scripts', 'gitlab-mcp-launcher.cjs');
 const BROWSER_LAUNCHER_REL = join('scripts', 'browser-mcp-launcher.cjs');
 const HOOK_SCRIPT_REL = join('scripts', 'pre-commit-gate-check.sh');
+const CURSOR_SPEND_HOOK_REL = join('scripts', 'cursor-spend-hook.cjs');
+const CURSOR_HOOKS_JSON_REL = join('.cursor', 'hooks.json');
+const CURSOR_SPEND_HOOK_COMMAND = 'node scripts/cursor-spend-hook.cjs';
+const CURSOR_SPEND_HOOK_EVENTS = ['stop', 'subagentStop'];
+const CURSOR_USAGE_FILE_REL = join('.agents', 'spend', 'cursor-usage.jsonl');
 const MCP_EXAMPLE_REL = join('.agents', 'mcp.json.example');
 const AMP_EXAMPLE_REL = join('.agents', 'amp.settings.json.example');
 const OPTIONAL_MCP_SEED_STRIP = ['github', 'gitlab', 'browser'];
@@ -360,6 +366,108 @@ function refreshManagedRelPaths(projectDir, rels) {
 
 function refreshOptionalMcpManagedFiles(projectDir) {
   refreshManagedRelPaths(projectDir, OPTIONAL_MCP_MANAGED_PATHS);
+}
+
+function cursorSpendHookEntryOk(projectDir) {
+  const hooksPath = join(projectDir, CURSOR_HOOKS_JSON_REL);
+  if (!existsSync(hooksPath)) return false;
+  let config;
+  try {
+    config = JSON.parse(readFileSync(hooksPath, 'utf-8'));
+  } catch {
+    return false;
+  }
+  const hooks = config && typeof config === 'object' ? config.hooks : null;
+  if (!hooks || typeof hooks !== 'object') return false;
+  return CURSOR_SPEND_HOOK_EVENTS.every((event) => {
+    const entries = hooks[event];
+    return Array.isArray(entries)
+      && entries.some((entry) => entry && String(entry.command || '').includes('cursor-spend-hook.cjs'));
+  });
+}
+
+// Mandatory spend capture: every kit project must record Cursor token usage
+// locally so handoff/archive can collect real spend without manual flags.
+function ensureCursorSpendHook(projectDir) {
+  const result = { script: false, hooksJson: false, error: null };
+  const src = join(KIT_ROOT, 'templates', CURSOR_SPEND_HOOK_REL);
+  const dest = join(projectDir, CURSOR_SPEND_HOOK_REL);
+  if (existsSync(src)) {
+    mkdirSync(dirname(dest), { recursive: true });
+    copyFileSync(src, dest);
+    result.script = true;
+  }
+
+  const hooksPath = join(projectDir, CURSOR_HOOKS_JSON_REL);
+  let config = { version: 1, hooks: {} };
+  if (existsSync(hooksPath)) {
+    try {
+      config = JSON.parse(readFileSync(hooksPath, 'utf-8'));
+    } catch {
+      result.error = `${CURSOR_HOOKS_JSON_REL} is not valid JSON — fix it, then re-run any kit command`;
+      return result;
+    }
+  }
+  if (!config || typeof config !== 'object') config = { version: 1, hooks: {} };
+  if (config.version == null) config.version = 1;
+  if (!config.hooks || typeof config.hooks !== 'object') config.hooks = {};
+  let changed = !existsSync(hooksPath);
+  for (const event of CURSOR_SPEND_HOOK_EVENTS) {
+    const entries = Array.isArray(config.hooks[event]) ? config.hooks[event] : [];
+    const present = entries.some((entry) => entry && String(entry.command || '').includes('cursor-spend-hook.cjs'));
+    if (!present) {
+      entries.push({ command: CURSOR_SPEND_HOOK_COMMAND });
+      config.hooks[event] = entries;
+      changed = true;
+    }
+  }
+  if (changed) {
+    mkdirSync(dirname(hooksPath), { recursive: true });
+    writeFileSync(hooksPath, `${JSON.stringify(config, null, 2)}\n`);
+    result.hooksJson = true;
+  }
+  return result;
+}
+
+function reportCursorSpendHook(projectDir, emit) {
+  const result = ensureCursorSpendHook(projectDir);
+  if (result.error) {
+    emit.warn(`Cursor spend hook: ${result.error}`);
+    return result;
+  }
+  if (result.script) emit.ok(CURSOR_SPEND_HOOK_REL);
+  if (result.hooksJson) emit.ok(`${CURSOR_HOOKS_JSON_REL} (stop + subagentStop spend hook)`);
+  return result;
+}
+
+function countCursorUsageRecords(projectDir) {
+  const filePath = join(projectDir, CURSOR_USAGE_FILE_REL);
+  if (!existsSync(filePath)) return null;
+  try {
+    return readFileSync(filePath, 'utf-8').split('\n').filter((line) => line.trim()).length;
+  } catch {
+    return null;
+  }
+}
+
+function printSpendHealth(projectDir) {
+  console.log(pc.bold('\nSpend capture'));
+  const scriptOk = existsSync(join(projectDir, CURSOR_SPEND_HOOK_REL));
+  const entryOk = cursorSpendHookEntryOk(projectDir);
+  const records = countCursorUsageRecords(projectDir);
+  const cursorState = scriptOk && entryOk
+    ? `ok${records != null ? ` (${records} records)` : ' (no turns recorded yet)'}`
+    : 'not configured — run npx agent-orchestrator-kit update';
+  console.log(`  cursor   ${cursorState}`);
+  const home = process.env.HOME || '';
+  const claudeOk = home && existsSync(join(home, '.claude', 'projects'));
+  console.log(`  claude   ${claudeOk ? 'ok (~/.claude/projects)' : 'no local Claude data'}`);
+  const ampDir = process.env.AMP_DATA_DIR && String(process.env.AMP_DATA_DIR).trim()
+    ? String(process.env.AMP_DATA_DIR).trim()
+    : join(home, '.local', 'share', 'amp');
+  const ampOk = existsSync(join(ampDir, 'threads'));
+  console.log(`  amp      ${ampOk ? 'ok (threads found)' : 'no local Amp data'}`);
+  console.log('');
 }
 
 function parseGitRemoteHostname(url) {
@@ -699,6 +807,7 @@ function runMcpSetup(projectDir, { vcs = '', browser = true } = {}) {
   refreshFigmaManagedFiles(projectDir);
   refreshMemoryManagedFiles(projectDir);
   refreshOptionalMcpManagedFiles(projectDir);
+  reportCursorSpendHook(projectDir, log);
   mergeGitignore(projectDir, GITIGNORE_LINES);
 
   const selected = resolveMcpSetupVcs(projectDir, vcs);
@@ -1567,7 +1676,7 @@ function recomputeSpendMaps(metrics) {
         bucket.ampCredits = addNullable(bucket.ampCredits, numOrNull(src.ampCredits));
         if (platform === 'claude') bucket.source = 'claude-jsonl';
         else if (platform === 'amp') bucket.source = 'amp-thread';
-        else if (platform === 'cursor') bucket.source = 'cursor-vscdb';
+        else if (platform === 'cursor') bucket.source = 'cursor-hook';
       }
       if (src.model) {
         const key = `${src.model}::${src.platform || ''}`;
@@ -2607,6 +2716,9 @@ program
     refreshMemoryManagedFiles(projectDir);
     ensureMemoryMcpEntry(projectDir);
 
+    log.title('Configuring Cursor spend hook');
+    reportCursorSpendHook(projectDir, log);
+
     if (opts.hooks) {
       log.title('Installing pre-commit gate');
       const hookResult = runHooksSetup(projectDir);
@@ -2669,6 +2781,8 @@ program
     log.title('Configuring Memory MCP');
     refreshMemoryManagedFiles(projectDir);
     ensureMemoryMcpEntry(projectDir);
+    log.title('Configuring Cursor spend hook');
+    reportCursorSpendHook(projectDir, log);
     mergeGitignore(projectDir, GITIGNORE_LINES);
 
     log.ok(`Updated to v${KIT_VERSION}`);
@@ -2731,6 +2845,9 @@ program
     log.title('Configuring Memory MCP');
     ensureMemoryMcpEntry(projectDir);
 
+    log.title('Configuring Cursor spend hook');
+    reportCursorSpendHook(projectDir, log);
+
     mergeGitignore(projectDir, GITIGNORE_LINES);
 
     log.ok('Sync complete');
@@ -2767,6 +2884,7 @@ program
     }
 
     printMcpHealth(projectDir);
+    printSpendHealth(projectDir);
     printSkillHealth(projectDir);
   });
 
@@ -3324,6 +3442,9 @@ program
         const metricsPath = metricsRecordSessionStart(projectDir, name, fields ? fields.nextRole : '');
         log.ok(`metrics: session start recorded (${metricsPath.replace(`${projectDir}/`, '')})`);
       }
+      const spendHook = ensureCursorSpendHook(projectDir);
+      if (spendHook.error) log.warn(`Cursor spend hook: ${spendHook.error}`);
+      else if (spendHook.hooksJson) log.ok('Cursor spend hook installed — restart Cursor once to activate it');
       return;
     }
 
@@ -3408,6 +3529,10 @@ program
     appendDecisionsFromHandoff(projectDir, name, fields.decisions);
     const memoryPath = persistMemoryFromHandoff(projectDir, fields);
     console.error(pc.green('  ✓'), `Memory JSON upserted: ${memoryPath}`);
+
+    const spendHook = ensureCursorSpendHook(projectDir);
+    if (spendHook.error) console.error(pc.yellow('  !'), `Cursor spend hook: ${spendHook.error}`);
+    else if (spendHook.hooksJson) console.error(pc.green('  ✓'), 'Cursor spend hook installed — restart Cursor once to activate it');
 
     if (opts.metrics !== false) {
       const metricsPath = metricsRecordSessionEnd(projectDir, fields, {

@@ -1414,6 +1414,56 @@ test('handoff persist without spend keeps metrics null-honest and --no-metrics s
   }
 });
 
+test('handoff persist self-heals the Cursor spend hook and collects hook usage', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-spend-hook-'));
+  try {
+    runInit(dir, '--profile generic --name SpendHook --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+
+    // init already installed the hook — remove it to prove persist self-heals
+    rmSync(join(dir, 'scripts/cursor-spend-hook.cjs'), { force: true });
+    rmSync(join(dir, '.cursor/hooks.json'), { force: true });
+
+    // restore opens the collect window; the usage record must land inside it
+    cliExec(dir, 'handoff add-thing --restore');
+    const spendDir = join(dir, '.agents/spend');
+    mkdirSync(spendDir, { recursive: true });
+    const at = new Date().toISOString();
+    writeFileSync(
+      join(spendDir, 'cursor-usage.jsonl'),
+      `${JSON.stringify({ id: 'g-smoke', event: 'stop', model: 'cursor-grok-4.6', inputTokens: 500, outputTokens: 25, at })}\n`,
+    );
+
+    const stdout = cliExec(dir, 'handoff add-thing');
+    assert.match(stdout, /^\/opsx:/m, 'stdout stays a clean next-thread prompt');
+    assert.doesNotMatch(stdout, /spend hook/i, 'hook status goes to stderr, not stdout');
+
+    assert.ok(existsSync(join(dir, 'scripts/cursor-spend-hook.cjs')), 'persist restores the hook script');
+    const hooksConfig = JSON.parse(readFileSync(join(dir, '.cursor/hooks.json'), 'utf-8'));
+    for (const event of ['stop', 'subagentStop']) {
+      assert.ok(
+        (hooksConfig.hooks[event] || []).some((entry) => String(entry.command || '').includes('cursor-spend-hook.cjs')),
+        `hooks.json registers ${event}`,
+      );
+    }
+
+    const metrics = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
+    const session = metrics.sessions[0];
+    assert.ok(session.sources.some((src) => src.id === 'g-smoke' && src.platform === 'cursor'));
+    assert.equal(session.inputTokens, 500);
+    assert.equal(session.outputTokens, 25);
+    assert.equal(metrics.spendByPlatform.cursor.source, 'cursor-hook');
+    assert.equal(metrics.spendByPlatform.cursor.totalTokens, 525);
+
+    const gitignore = readFileSync(join(dir, '.gitignore'), 'utf-8');
+    assert.ok(gitignore.split('\n').includes('.agents/spend/'), '.agents/spend/ is gitignored');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('metrics command prints a summary and raw --json', () => {
   const dir = mkdtempSync(join(tmpdir(), 'aok-metrics-cmd-'));
   try {

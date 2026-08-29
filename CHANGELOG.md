@@ -4,8 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Mandatory Cursor spend hook** — `scripts/cursor-spend-hook.cjs` (fail-open, silent) appends per-turn token usage from Cursor `stop` / `subagentStop` hook payloads to gitignored `.agents/spend/cursor-usage.jsonl`; `ensureCursorSpendHook` installs the script and merges `.cursor/hooks.json` in `init`, `update`, `sync`, `mcp-setup`, and self-heals on every `handoff` restore/persist (persist reports to stderr only) so every kit project records Cursor spend without manual flags; `status` prints a `Spend capture` section (cursor hook state + record count, local Claude/Amp data presence)
+
 ### Changed
-- **Change metrics** — `session.model` resolves `--model` → `AOK_MODEL` → `null` (stderr warning); persist/archive auto-collect local usage from Claude JSONL, Amp threads, and Cursor vscdb into separate `spendByPlatform` / `spendByModel` figures (flags override session totals only; never merge Amp credits into USD); human `metrics` table prints `roles` and `models` plus platform/model tables; `archive` always creates or finalizes `metrics.json` with an Archiver session; Session Exit protocol requires `--model <llm-product-id>`
+- **Change metrics** — `session.model` resolves `--model` → `AOK_MODEL` → `null` (stderr warning); persist/archive auto-collect local usage from Claude JSONL, Amp threads, and the Cursor spend hook file (.agents/spend/cursor-usage.jsonl) into separate `spendByPlatform` / `spendByModel` figures (flags override session totals only; never merge Amp credits into USD); human `metrics` table prints `roles` and `models` plus platform/model tables; `archive` always creates or finalizes `metrics.json` with an Archiver session; Session Exit protocol requires `--model <llm-product-id>`
+- **Cursor spend adapter** — replaced the dead `state.vscdb` probe (Cursor never writes token usage to its local DB) with reading the hook-generated `.agents/spend/cursor-usage.jsonl` (window by `at`, dedup by `generation_id`, cumulative loop repeats keep the largest record, `source: "cursor-hook"`)
+
+### Fixed
+- **Amp source ids** — `messageId` is a thread-local counter (1, 3, 5…), so dedup ids are now namespaced as `<threadId>:<messageId>` to prevent collisions across threads
 
 ## [0.5.0] - 2026-08-29
 
