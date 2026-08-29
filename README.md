@@ -74,7 +74,7 @@ npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-veri
 
 See [Installation](#installation) for profile/CI options.
 
-**🔄 Already have the kit installed? Upgrade to latest (change metrics in v0.5.0+, factory phases 1–3 in v0.4.0+, lean pipeline / archive CLI in v0.3.0+, handoff CLI in v0.1.14+, Figma PAT in v0.1.11+):**
+**🔄 Already have the kit installed? Upgrade to latest (auto-collect spend + Cursor hook in v0.6.0+, change metrics in v0.5.0+, factory phases 1–3 in v0.4.0+, lean pipeline / archive CLI in v0.3.0+, handoff CLI in v0.1.14+, Figma PAT in v0.1.11+):**
 
 ```bash
 npx agent-orchestrator-kit@latest update
@@ -981,6 +981,12 @@ The kit moves toward an Agentic Factory in four phases. **One phase = one OpenSp
 Phase bounds and non-goals: [`openspec/specs/agentic-factory-roadmap/spec.md`](openspec/specs/agentic-factory-roadmap/spec.md).
 
 ## Changelog
+
+### 0.6.0
+- **Mandatory Cursor spend hook** — `scripts/cursor-spend-hook.cjs` + `.cursor/hooks.json` (`stop` / `subagentStop`) write `.agents/spend/cursor-usage.jsonl`; installed by `init` / `update` / `sync` / `mcp-setup` and self-healed on `handoff`
+- Persist/archive auto-collect local usage from Claude JSONL, Amp threads, and the Cursor hook file into `spendByPlatform` / `spendByModel`
+- Amp source ids namespaced as `<threadId>:<messageId>` so thread-local counters do not collide
+- `status` prints a `Spend capture` section
 
 ### 0.5.0
 - **Change metrics** — git-tracked `openspec/changes/<name>/metrics.json` (session start on `handoff --restore`, close on persist)
