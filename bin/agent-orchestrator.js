@@ -87,9 +87,12 @@ const GITLAB_LAUNCHER_REL = join('scripts', 'gitlab-mcp-launcher.cjs');
 const BROWSER_LAUNCHER_REL = join('scripts', 'browser-mcp-launcher.cjs');
 const HOOK_SCRIPT_REL = join('scripts', 'pre-commit-gate-check.sh');
 const CURSOR_SPEND_HOOK_REL = join('scripts', 'cursor-spend-hook.cjs');
+const CURSOR_SPEND_COLLECT_REL = join('scripts', 'cursor-spend-collect.cjs');
 const CURSOR_HOOKS_JSON_REL = join('.cursor', 'hooks.json');
 const CURSOR_SPEND_HOOK_COMMAND = 'node scripts/cursor-spend-hook.cjs';
-const CURSOR_SPEND_HOOK_EVENTS = ['stop', 'subagentStop'];
+const CURSOR_SPEND_COLLECT_COMMAND = 'node scripts/cursor-spend-collect.cjs';
+const CURSOR_SPEND_HOOK_EVENTS = ['stop', 'subagentStop', 'afterAgentResponse'];
+const CURSOR_SPEND_COLLECT_EVENTS = ['sessionEnd'];
 const CURSOR_USAGE_FILE_REL = join('.agents', 'spend', 'cursor-usage.jsonl');
 const MCP_EXAMPLE_REL = join('.agents', 'mcp.json.example');
 const AMP_EXAMPLE_REL = join('.agents', 'amp.settings.json.example');
@@ -368,6 +371,12 @@ function refreshOptionalMcpManagedFiles(projectDir) {
   refreshManagedRelPaths(projectDir, OPTIONAL_MCP_MANAGED_PATHS);
 }
 
+function hookEventHasCommand(hooks, event, needle) {
+  const entries = hooks[event];
+  return Array.isArray(entries)
+    && entries.some((entry) => entry && String(entry.command || '').includes(needle));
+}
+
 function cursorSpendHookEntryOk(projectDir) {
   const hooksPath = join(projectDir, CURSOR_HOOKS_JSON_REL);
   if (!existsSync(hooksPath)) return false;
@@ -379,24 +388,39 @@ function cursorSpendHookEntryOk(projectDir) {
   }
   const hooks = config && typeof config === 'object' ? config.hooks : null;
   if (!hooks || typeof hooks !== 'object') return false;
-  return CURSOR_SPEND_HOOK_EVENTS.every((event) => {
-    const entries = hooks[event];
-    return Array.isArray(entries)
-      && entries.some((entry) => entry && String(entry.command || '').includes('cursor-spend-hook.cjs'));
-  });
+  const writesOk = CURSOR_SPEND_HOOK_EVENTS.every((event) => hookEventHasCommand(hooks, event, 'cursor-spend-hook.cjs'));
+  const collectOk = CURSOR_SPEND_COLLECT_EVENTS.every((event) => hookEventHasCommand(hooks, event, 'cursor-spend-collect.cjs'));
+  return writesOk && collectOk;
 }
 
 // Mandatory spend capture: every kit project must record Cursor token usage
 // locally so handoff/archive can collect real spend without manual flags.
+function ensureManagedScript(projectDir, rel) {
+  const src = join(KIT_ROOT, 'templates', rel);
+  const dest = join(projectDir, rel);
+  if (!existsSync(src)) return false;
+  mkdirSync(dirname(dest), { recursive: true });
+  copyFileSync(src, dest);
+  return true;
+}
+
+function mergeHookCommands(config, events, command, needle) {
+  let changed = false;
+  for (const event of events) {
+    const entries = Array.isArray(config.hooks[event]) ? config.hooks[event] : [];
+    if (!entries.some((entry) => entry && String(entry.command || '').includes(needle))) {
+      entries.push({ command });
+      config.hooks[event] = entries;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 function ensureCursorSpendHook(projectDir) {
   const result = { script: false, hooksJson: false, error: null };
-  const src = join(KIT_ROOT, 'templates', CURSOR_SPEND_HOOK_REL);
-  const dest = join(projectDir, CURSOR_SPEND_HOOK_REL);
-  if (existsSync(src)) {
-    mkdirSync(dirname(dest), { recursive: true });
-    copyFileSync(src, dest);
-    result.script = true;
-  }
+  if (ensureManagedScript(projectDir, CURSOR_SPEND_HOOK_REL)) result.script = true;
+  ensureManagedScript(projectDir, CURSOR_SPEND_COLLECT_REL);
 
   const hooksPath = join(projectDir, CURSOR_HOOKS_JSON_REL);
   let config = { version: 1, hooks: {} };
@@ -412,15 +436,8 @@ function ensureCursorSpendHook(projectDir) {
   if (config.version == null) config.version = 1;
   if (!config.hooks || typeof config.hooks !== 'object') config.hooks = {};
   let changed = !existsSync(hooksPath);
-  for (const event of CURSOR_SPEND_HOOK_EVENTS) {
-    const entries = Array.isArray(config.hooks[event]) ? config.hooks[event] : [];
-    const present = entries.some((entry) => entry && String(entry.command || '').includes('cursor-spend-hook.cjs'));
-    if (!present) {
-      entries.push({ command: CURSOR_SPEND_HOOK_COMMAND });
-      config.hooks[event] = entries;
-      changed = true;
-    }
-  }
+  changed = mergeHookCommands(config, CURSOR_SPEND_HOOK_EVENTS, CURSOR_SPEND_HOOK_COMMAND, 'cursor-spend-hook.cjs') || changed;
+  changed = mergeHookCommands(config, CURSOR_SPEND_COLLECT_EVENTS, CURSOR_SPEND_COLLECT_COMMAND, 'cursor-spend-collect.cjs') || changed;
   if (changed) {
     mkdirSync(dirname(hooksPath), { recursive: true });
     writeFileSync(hooksPath, `${JSON.stringify(config, null, 2)}\n`);
@@ -436,7 +453,7 @@ function reportCursorSpendHook(projectDir, emit) {
     return result;
   }
   if (result.script) emit.ok(CURSOR_SPEND_HOOK_REL);
-  if (result.hooksJson) emit.ok(`${CURSOR_HOOKS_JSON_REL} (stop + subagentStop spend hook)`);
+  if (result.hooksJson) emit.ok(`${CURSOR_HOOKS_JSON_REL} (stop / subagentStop / afterAgentResponse + sessionEnd collect)`);
   return result;
 }
 
@@ -1569,6 +1586,10 @@ function lastSessionEndedAt(metrics) {
   return last;
 }
 
+function collectWindowStart(metrics) {
+  return lastSessionEndedAt(metrics) || metrics.createdAt;
+}
+
 function existingSourceIdSet(metrics) {
   const ids = new Set();
   for (const session of metrics.sessions || []) {
@@ -1659,6 +1680,48 @@ function applyCollectedSessionFields(session, sources, resolvedModel, opts) {
   session.outputTokens = totals.outputTokens;
   session.totalTokens = totals.totalTokens;
   session.costUsd = totals.costUsd;
+}
+
+function sessionTotalsLookOverridden(session) {
+  const fromSources = sessionTotalsFromSources(session.sources || []);
+  return ['inputTokens', 'outputTokens', 'totalTokens', 'costUsd'].some((key) => {
+    const sessionVal = numOrNull(session[key]);
+    const sourceVal = numOrNull(fromSources[key]);
+    if (sessionVal == null) return false;
+    if (sourceVal == null) return true;
+    return sessionVal !== sourceVal;
+  });
+}
+
+function metricsBackfillLastSession(projectDir, changeName) {
+  const resolved = resolveMetricsFile(projectDir, changeName);
+  if (resolved.missing) return { filePath: resolved.filePath, added: 0, missing: true };
+  return metricsBackfillFile(resolved.filePath, changeName);
+}
+
+function metricsBackfillFile(filePath, changeName) {
+  const nowIso = new Date().toISOString();
+  const metrics = loadMetricsFile(filePath, changeName, nowIso);
+  const sessions = metrics.sessions || [];
+  if (!sessions.length) return { filePath, added: 0, empty: true };
+  const last = sessions[sessions.length - 1];
+  const windowStart = last.startedAt || collectWindowStart(metrics);
+  const collected = runCollectSpend(metrics, windowStart, nowIso);
+  const incoming = collected.sources || [];
+  if (!incoming.length) return { filePath, added: 0 };
+  const overridden = sessionTotalsLookOverridden(last);
+  const merged = [...(last.sources || []), ...incoming];
+  if (overridden) {
+    last.sources = merged;
+    const uniqueModels = uniqueSourceModels(merged);
+    if (uniqueModels.length > 1) last.models = uniqueModels;
+  } else {
+    applyCollectedSessionFields(last, merged, last.model, {});
+  }
+  metrics.updatedAt = nowIso;
+  recomputeMetricsAggregates(metrics);
+  saveMetricsFile(filePath, metrics);
+  return { filePath, added: incoming.length };
 }
 
 function recomputeSpendMaps(metrics) {
@@ -1758,7 +1821,7 @@ function metricsRecordSessionEnd(projectDir, fields, opts = {}) {
   const startedAt = isoOrNull(opts.startedAt) || (metrics.pending && metrics.pending.startedAt) || null;
   const durationMs = startedAt ? Math.max(0, Date.parse(nowIso) - Date.parse(startedAt)) : null;
   const resolvedModel = opts.model === undefined ? resolveModel(opts, process.env) : opts.model;
-  const windowStart = (metrics.pending && metrics.pending.startedAt) || lastSessionEndedAt(metrics) || metrics.createdAt;
+  const windowStart = collectWindowStart(metrics);
   const collected = opts.collect === false
     ? { sources: [] }
     : runCollectSpend(metrics, windowStart, nowIso);
@@ -3558,9 +3621,12 @@ program
   .command('metrics [change-name]')
   .description('Show recorded session metrics for a change: time per phase, tokens, cost, roles, and models')
   .option('--json', 'Print raw metrics.json', false)
+  .option('--collect', 'Backfill the last session from local spend adapters without adding a new session', false)
   .action((changeName, opts) => {
     const projectDir = process.cwd();
+    ensureCursorSpendHook(projectDir);
     let name = changeName;
+    let collectedAlready = false;
     if (!name) {
       const resolved = resolveHandoffChange(projectDir, changeName);
       if (!resolved) {
@@ -3569,11 +3635,37 @@ program
         return;
       }
       if (resolved.ambiguous) {
-        log.err(`Multiple active changes: ${resolved.ambiguous.join(', ')}. Pass the change name argument.`);
+        if (opts.collect) {
+          let added = 0;
+          for (const change of resolved.ambiguous) {
+            const result = metricsBackfillLastSession(projectDir, change);
+            added += result.added || 0;
+          }
+          collectedAlready = true;
+          if (!opts.json) log.ok(`collect: ${added} new source(s) across ${resolved.ambiguous.length} changes`);
+          if (opts.json) {
+            process.stdout.write(`${JSON.stringify({ collected: added, changes: resolved.ambiguous }, null, 2)}\n`);
+            return;
+          }
+          name = resolved.ambiguous[0];
+        } else {
+          log.err(`Multiple active changes: ${resolved.ambiguous.join(', ')}. Pass the change name argument.`);
+          process.exitCode = 1;
+          return;
+        }
+      } else {
+        name = resolved;
+      }
+    }
+
+    if (opts.collect && name && !collectedAlready) {
+      const result = metricsBackfillLastSession(projectDir, name);
+      if (result.missing) {
+        log.err(`No metrics.json for ${name}`);
         process.exitCode = 1;
         return;
       }
-      name = resolved;
+      if (!opts.json) log.ok(`collect: ${result.added} new source(s) on last session`);
     }
 
     const { filePath, archived, missing } = resolveMetricsFile(projectDir, name);

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Cursor hook (stop / subagentStop): appends per-turn token usage from the hook
+// Cursor hook (stop / subagentStop / afterAgentResponse): appends per-turn token usage from the hook
 // payload to .agents/spend/cursor-usage.jsonl so `agent-orchestrator-kit handoff`
 // can collect real Cursor spend offline. Silent and fail-open by design: a hook
 // must never block the agent loop, so every failure path exits 0 with no output.

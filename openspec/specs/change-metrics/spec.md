@@ -123,7 +123,7 @@ Collect MUST викликати всі три адаптери в одному �
 
 Адаптер **amp** SHALL читати `~/.local/share/amp/threads/*.json` з override `AMP_DATA_DIR` або `$XDG_DATA_HOME/amp`. Проєктний match: порівняти `collectSpend` `cwd` (або `process.cwd()`, якщо аргумент опущено) з кожним `env.initial.trees[].uri` після зняття префікса `file://` (`file:///home/...` → `/home/...`); якщо хоча б одне дерево збігається — включити thread; якщо `env.initial.trees` відсутній або порожній — пропустити thread. MUST NOT читати і MUST NOT вигадувати `cwd` / `meta.cwd`. `inputTokens` SHALL бути `usage.totalInputTokens`, якщо поле є, інакше `usage.inputTokens` плюс `cacheCreationInputTokens` і `cacheReadInputTokens`, якщо вони є. Також брати `usage.model` / `usage.outputTokens` / `usage.timestamp`. Оскільки `messageId` є thread-локальним лічильником, `source.id` MUST бути `<thread.id || basename файла>:<messageId|toMessageId>` — голий `messageId` колізує між threads. `ledger.jsonl` MAY бути відсутнім; без іменованої форми запису адаптер MUST NOT вимагати реальних `ampCredits` (відсутній ledger → `ampCredits: null`). Зберігати токени і `ampCredits` окремо, ставити `source: "amp-thread"` і MUST NOT конвертувати credits у USD.
 
-Адаптер **cursor** SHALL НЕ брати usage з `agent-transcripts/*.jsonl` і MUST NOT читати `state.vscdb`, cookies чи server CSV (локальні бази Cursor не містять token usage). Він SHALL читати `<cwd>/.agents/spend/cursor-usage.jsonl` — файл, який пише hook `scripts/cursor-spend-hook.cjs` з payload подій `stop` / `subagentStop` (див. Requirement про обов'язковий spend hook). Кожен рядок: `{ id, event, conversationId, model, modelId, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, at }`, де `inputTokens` уже включає cache-токени за семантикою Cursor. Фільтр вікна — за полем `at`; dedup — за `id` (`generation_id`); якщо той самий `id` зустрічається кілька разів (loop follow-ups пишуть кумулятивні числа turn), адаптер SHALL взяти запис з найбільшим `totalTokens`. Рядки без жодного token-поля MUST пропускатись. Якщо файла немає — порожньо + note. `source: "cursor-hook"`. MUST NOT оцінювати з `text.length`.
+Адаптер **cursor** SHALL НЕ брати usage з `agent-transcripts/*.jsonl` і MUST NOT читати `state.vscdb`, cookies чи server CSV (локальні бази Cursor не містять token usage). Він SHALL читати `<cwd>/.agents/spend/cursor-usage.jsonl` — файл, який пише hook `scripts/cursor-spend-hook.cjs` з payload подій `stop` / `subagentStop` / `afterAgentResponse` (див. Requirement про обов'язковий spend hook). Кожен рядок: `{ id, event, conversationId, model, modelId, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, at }`, де `inputTokens` уже включає cache-токени за семантикою Cursor. Фільтр вікна — за полем `at`; dedup — за `id` (`generation_id`); якщо той самий `id` зустрічається кілька разів (loop follow-ups пишуть кумулятивні числа turn), адаптер SHALL взяти запис з найбільшим `totalTokens`. Рядки без жодного token-поля MUST пропускатись. Якщо файла немає — порожньо + note. `source: "cursor-hook"`. MUST NOT оцінювати з `text.length`.
 
 #### Scenario: Claude jsonl фікстура заповнює platform claude
 
@@ -167,13 +167,20 @@ Collect MUST викликати всі три адаптери в одному �
 
 ### Requirement: Вікно collect, cwd-match і dedup
 
-Вікно SHALL бути `[pending.startedAt || last session.endedAt || metrics.createdAt, endedAt]`. Подія MUST входити лише якщо її timestamp у вікні: Claude — поле рядка `timestamp`; Amp — `usage.timestamp`; Cursor — поле `at` hook-запису. Проєктний match порівнює з аргументом `collectSpend({ cwd })` (якщо опущено — `process.cwd()`). Claude: поле рядка `cwd` === цей шлях; без поля `cwd` подію MUST NOT включати. Amp: thread входить, якщо хоча б один `env.initial.trees[].uri` після strip `file://` дорівнює цьому шляху; немає trees — пропустити thread; MUST NOT вигадувати `meta.cwd`. Cursor: файл `<cwd>/.agents/spend/cursor-usage.jsonl` уже проєктно-локальний — додатковий match не потрібен. Dedup: пропустити `source.id`, яке вже є в будь-якому `session.sources` поточного `metrics.json` (claude `message.id`, amp `<threadKey>:<messageId|toMessageId>`, cursor `generation_id`).
+Вікно persist SHALL бути `[last session.endedAt || metrics.createdAt, endedAt]`. CLI MUST NOT ставити нижню межу на `pending.startedAt`: hook `stop` пише рядок після persist, і наступний restore зсуває `pending.startedAt` пізніше за цей рядок. Подія MUST входити лише якщо її timestamp у вікні: Claude — поле рядка `timestamp`; Amp — `usage.timestamp`; Cursor — поле `at` hook-запису. Проєктний match порівнює з аргументом `collectSpend({ cwd })` (якщо опущено — `process.cwd()`). Claude: поле рядка `cwd` === цей шлях; без поля `cwd` подію MUST NOT включати. Amp: thread входить, якщо хоча б один `env.initial.trees[].uri` після strip `file://` дорівнює цьому шляху; немає trees — пропустити thread; MUST NOT вигадувати `meta.cwd`. Cursor: файл `<cwd>/.agents/spend/cursor-usage.jsonl` уже проєктно-локальний — додатковий match не потрібен. Dedup: пропустити `source.id`, яке вже є в будь-якому `session.sources` поточного `metrics.json` (claude `message.id`, amp `<threadKey>:<messageId|toMessageId>`, cursor `generation_id`).
 
-#### Scenario: Подія поза вікном не потрапляє в сесію
+#### Scenario: Подія до last session.endedAt не потрапляє в сесію
 
-- **GIVEN** `pending.startedAt` пізніший за timestamp usage-події в фікстурі
-- **WHEN** виконується persist без `--no-collect`
-- **THEN** ця подія відсутня в `sessions[0].sources`
+- **GIVEN** уже є сесія з `endedAt` пізнішим за timestamp usage-події в фікстурі
+- **WHEN** виконується наступний persist без `--no-collect`
+- **THEN** ця подія відсутня в новій сесії `sources`
+
+#### Scenario: Пізній hook після попереднього persist потрапляє в наступну сесію
+
+- **GIVEN** попередня сесія вже закрита
+- **AND** usage-подія має timestamp після `last session.endedAt` і раніше за новий `pending.startedAt`
+- **WHEN** виконується наступний persist без `--no-collect`
+- **THEN** ця подія є в `sources` нової сесії
 
 #### Scenario: Повторний persist не дублює source.id
 
@@ -189,16 +196,28 @@ Collect MUST викликати всі три адаптери в одному �
 
 ### Requirement: Обов'язковий Cursor spend hook у кожному kit-проєкті
 
-Кожен проєкт з кітом MUST мати робочий Cursor spend capture без ручних дій користувача. Kit SHALL постачати `templates/scripts/cursor-spend-hook.cjs`: hook читає stdin payload подій `stop` / `subagentStop`, і якщо payload містить хоча б одне з `input_tokens` / `output_tokens` — дописує запис у `<project>/.agents/spend/cursor-usage.jsonl`; без token-полів запис MUST NOT створюватись (ніяких нулів). Hook MUST бути fail-open: будь-яка помилка (битий JSON, відсутній каталог) завершується exit 0 без stdout, щоб ніколи не блокувати agent loop.
+Кожен проєкт з кітом MUST мати робочий Cursor spend capture без ручних дій користувача. Kit SHALL постачати `templates/scripts/cursor-spend-hook.cjs`: hook читає stdin payload подій `stop` / `subagentStop` / `afterAgentResponse`, і якщо payload містить хоча б одне з `input_tokens` / `output_tokens` — дописує запис у `<project>/.agents/spend/cursor-usage.jsonl`; без token-полів запис MUST NOT створюватись (ніяких нулів). Hook MUST бути fail-open: будь-яка помилка (битий JSON, відсутній каталог) завершується exit 0 без stdout, щоб ніколи не блокувати agent loop.
 
-CLI SHALL мати `ensureCursorSpendHook(projectDir)`: копіює скрипт у `scripts/cursor-spend-hook.cjs` і merge-ить `.cursor/hooks.json` (events `stop` і `subagentStop`, command `node scripts/cursor-spend-hook.cjs`), не видаляючи чужі hooks; битий `hooks.json` MUST NOT перезаписуватись — лише warning. Ensure MUST викликатись у `init`, `update`, `sync`, `mcp-setup` і self-heal у `handoff --restore` та `handoff <name>` persist (persist друкує статус лише в stderr, щоб не зіпсувати prompt у stdout). `.agents/spend/` MUST бути в GITIGNORE_LINES. `status` SHALL друкувати секцію `Spend capture` зі станом cursor hook (скрипт + entry + кількість записів), наявністю локальних даних Claude і Amp.
+Kit SHALL також постачати `templates/scripts/cursor-spend-collect.cjs` на подію `sessionEnd`: скрипт fail-open мержить нові рядки jsonl у **останню** сесію кожного активного `metrics.json` без додавання нової сесії. CLI SHALL мати `npx agent-orchestrator-kit metrics [name] --collect` з тією ж семантикою (повний collectSpend, dedup за `source.id`).
+
+CLI SHALL мати `ensureCursorSpendHook(projectDir)`: копіює обидва скрипти і merge-ить `.cursor/hooks.json` (events `stop`, `subagentStop`, `afterAgentResponse` → spend hook; `sessionEnd` → collect script), не видаляючи чужі hooks; битий `hooks.json` MUST NOT перезаписуватись — лише warning. Ensure MUST викликатись у `init`, `update`, `sync`, `mcp-setup` і self-heal у `handoff --restore` та `handoff <name>` persist (persist друкує статус лише в stderr, щоб не зіпсувати prompt у stdout). `.agents/spend/` MUST бути в GITIGNORE_LINES. `status` SHALL друкувати секцію `Spend capture` зі станом cursor hook (скрипт + entry + кількість записів), наявністю локальних даних Claude і Amp.
 
 #### Scenario: Persist self-heal ставить hook
 
 - **GIVEN** проєкт з кітом без `scripts/cursor-spend-hook.cjs` і без entry у `.cursor/hooks.json`
 - **WHEN** виконується `handoff <name>` persist
-- **THEN** скрипт скопійовано, `.cursor/hooks.json` містить entries для `stop` і `subagentStop`
+- **THEN** скрипт скопійовано, `.cursor/hooks.json` містить entries для `stop`, `subagentStop` і `afterAgentResponse`
+- **AND** `.cursor/hooks.json` містить `sessionEnd` → `cursor-spend-collect.cjs`
 - **AND** stdout містить лише next-thread prompt (статус hook — у stderr)
+
+#### Scenario: metrics --collect дописує last session без нової сесії
+
+- **GIVEN** `metrics.json` з однією сесією і порожніми `sources`
+- **AND** `cursor-usage.jsonl` має запис після `sessions[0].startedAt`
+- **WHEN** виконується `metrics <name> --collect`
+- **THEN** `sessions.length` лишається `1`
+- **AND** `sessions[0].sources` містить цей запис
+- **AND** `spendByPlatform.cursor.source` дорівнює `cursor-hook`
 
 #### Scenario: Hook не пише запис без token-полів
 

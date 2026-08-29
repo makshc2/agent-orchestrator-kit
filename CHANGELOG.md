@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Spend collect window** — persist no longer starts the collect window at `pending.startedAt`. Cursor `stop` writes `.agents/spend/cursor-usage.jsonl` after persist, and the next restore moved `pending.startedAt` past that row, so tokens never reached `metrics.json`. Window is now `[last session.endedAt || createdAt, endedAt]`
+
+### Added
+- **`metrics --collect`** — backfill the last session from local adapters without adding a new session
+- **`sessionEnd` spend collect hook** — `scripts/cursor-spend-collect.cjs` merges leftover hook rows into the last session after `stop` has flushed jsonl
+- **`afterAgentResponse`** is now a Cursor spend-hook event alongside `stop` / `subagentStop`
+
 ## [0.6.0] - 2026-08-29
 
 ### Added
