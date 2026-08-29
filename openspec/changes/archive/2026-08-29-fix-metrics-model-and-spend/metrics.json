@@ -2,8 +2,8 @@
   "version": 1,
   "change": "fix-metrics-model-and-spend",
   "createdAt": "2026-08-29T08:29:57.506Z",
-  "updatedAt": "2026-08-29T09:31:03.040Z",
-  "archivedAt": null,
+  "updatedAt": "2026-08-29T09:39:22.213Z",
+  "archivedAt": "2026-08-29T09:39:22.213Z",
   "spend": {
     "inputTokens": null,
     "outputTokens": null,
@@ -38,9 +38,9 @@
   },
   "spendByModel": [],
   "totals": {
-    "sessions": 6,
+    "sessions": 7,
     "durationMs": 2449985,
-    "leadTimeMs": 2652355,
+    "leadTimeMs": 3151528,
     "cloudSessions": 0
   },
   "phases": {
@@ -82,6 +82,20 @@
       "costUsd": null,
       "agents": [
         "Implementer"
+      ],
+      "models": [
+        "cursor-grok-4.6"
+      ]
+    },
+    "archive": {
+      "sessions": 1,
+      "durationMs": null,
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "agents": [
+        "Archiver"
       ],
       "models": [
         "cursor-grok-4.6"
@@ -170,6 +184,23 @@
       "durationMs": 1219181,
       "role": "Implementer",
       "phase": "apply",
+      "runtime": "local",
+      "agentId": "none",
+      "model": "cursor-grok-4.6",
+      "platform": "cursor",
+      "tasks": "14/14",
+      "sources": [],
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null
+    },
+    {
+      "startedAt": "2026-08-29T09:39:22.213Z",
+      "endedAt": "2026-08-29T09:39:22.213Z",
+      "durationMs": null,
+      "role": "Archiver",
+      "phase": "archive",
       "runtime": "local",
       "agentId": "none",
       "model": "cursor-grok-4.6",
