@@ -5,6 +5,7 @@ import { readFileSync, existsSync, mkdirSync, copyFileSync, readdirSync, statSyn
 import { join, dirname, basename, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
+import { collectSpend } from './spend-collect.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const KIT_ROOT = join(__dirname, '..');
@@ -894,6 +895,42 @@ function applyRuntimeToFields(fields, opts, env) {
   return true;
 }
 
+const VALID_PLATFORMS = new Set(['cursor', 'claude', 'amp']);
+
+function resolveModel(opts, env) {
+  const flag = opts && opts.model != null ? String(opts.model).trim() : '';
+  if (flag) return flag;
+  const fromEnv = env && env.AOK_MODEL != null ? String(env.AOK_MODEL).trim() : '';
+  if (fromEnv) return fromEnv;
+  return null;
+}
+
+function resolvePlatform(opts, env) {
+  const flag = opts && opts.platform != null ? String(opts.platform).trim() : '';
+  if (flag) {
+    const lower = flag.toLowerCase();
+    if (!VALID_PLATFORMS.has(lower)) {
+      return { error: 'invalid --platform (use cursor, claude, or amp)' };
+    }
+    return { value: lower };
+  }
+  const fromEnv = env && env.AOK_PLATFORM != null ? String(env.AOK_PLATFORM).trim() : '';
+  if (fromEnv) {
+    const lower = fromEnv.toLowerCase();
+    if (VALID_PLATFORMS.has(lower)) return { value: lower };
+    return { value: null, warn: 'invalid AOK_PLATFORM (use cursor, claude, or amp)' };
+  }
+  return { value: null };
+}
+
+function warnMissingModel() {
+  console.error('metrics: session.model is null — pass --model <llm-product-id> or set AOK_MODEL');
+}
+
+function warnMissingUsd() {
+  console.error('metrics: spend.costUsd is null — USD spend was not collected');
+}
+
 function gitTry(projectDir, command) {
   try {
     const stdout = execSync(command, {
@@ -1301,6 +1338,35 @@ function emptySpendTotals() {
   return { inputTokens: null, outputTokens: null, totalTokens: null, costUsd: null };
 }
 
+function emptyPlatformSpend(source = 'none') {
+  return {
+    inputTokens: null,
+    outputTokens: null,
+    totalTokens: null,
+    costUsd: null,
+    ampCredits: null,
+    source,
+  };
+}
+
+function defaultSpendByPlatform() {
+  return {
+    cursor: emptyPlatformSpend(),
+    claude: emptyPlatformSpend(),
+    amp: emptyPlatformSpend(),
+  };
+}
+
+function mergeSpendByPlatform(raw) {
+  const base = defaultSpendByPlatform();
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return base;
+  for (const key of ['cursor', 'claude', 'amp']) {
+    const row = raw[key] && typeof raw[key] === 'object' && !Array.isArray(raw[key]) ? raw[key] : {};
+    base[key] = { ...base[key], ...row };
+  }
+  return base;
+}
+
 function defaultMetrics(changeName, nowIso) {
   return {
     version: METRICS_VERSION,
@@ -1309,6 +1375,8 @@ function defaultMetrics(changeName, nowIso) {
     updatedAt: nowIso,
     archivedAt: null,
     spend: emptySpendTotals(),
+    spendByPlatform: defaultSpendByPlatform(),
+    spendByModel: [],
     totals: { sessions: 0, durationMs: null, leadTimeMs: null, cloudSessions: 0 },
     phases: {},
     sessions: [],
@@ -1334,6 +1402,8 @@ function loadMetricsFile(filePath, changeName, nowIso) {
     version: METRICS_VERSION,
     change: changeName,
     spend: { ...base.spend, ...(parsed.spend && typeof parsed.spend === 'object' ? parsed.spend : {}) },
+    spendByPlatform: mergeSpendByPlatform(parsed.spendByPlatform),
+    spendByModel: Array.isArray(parsed.spendByModel) ? parsed.spendByModel : [],
     totals: { ...base.totals, ...(parsed.totals && typeof parsed.totals === 'object' ? parsed.totals : {}) },
     phases: parsed.phases && typeof parsed.phases === 'object' && !Array.isArray(parsed.phases) ? parsed.phases : {},
     sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
@@ -1373,6 +1443,156 @@ function isoOrNull(value) {
   return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
 }
 
+function sessionFieldOrSources(session, key) {
+  if (session[key] != null && session[key] !== '') return numOrNull(session[key]);
+  let sum = null;
+  for (const src of session.sources || []) {
+    sum = addNullable(sum, numOrNull(src[key]));
+  }
+  return sum;
+}
+
+function lastSessionEndedAt(metrics) {
+  let last = null;
+  for (const session of metrics.sessions || []) {
+    if (session.endedAt && (last == null || session.endedAt > last)) last = session.endedAt;
+  }
+  return last;
+}
+
+function existingSourceIdSet(metrics) {
+  const ids = new Set();
+  for (const session of metrics.sessions || []) {
+    for (const src of session.sources || []) {
+      if (src && src.id != null && src.id !== '') ids.add(String(src.id));
+    }
+  }
+  return ids;
+}
+
+function uniqueSourceModels(sources) {
+  const seen = [];
+  for (const src of sources || []) {
+    if (src.model && !seen.includes(src.model)) seen.push(src.model);
+  }
+  return seen;
+}
+
+function primaryModelFromSources(sources) {
+  if (!sources || !sources.length) return null;
+  const ranked = [...sources].sort((a, b) => {
+    const ta = a.totalTokens ?? 0;
+    const tb = b.totalTokens ?? 0;
+    if (tb !== ta) return tb - ta;
+    const platformCmp = String(a.platform || '').localeCompare(String(b.platform || ''));
+    if (platformCmp !== 0) return platformCmp;
+    return String(a.id || '').localeCompare(String(b.id || ''));
+  });
+  const model = ranked[0] && ranked[0].model;
+  return model == null || model === '' ? null : String(model);
+}
+
+function hasSpendOverride(opts) {
+  return opts.inputTokens != null || opts.outputTokens != null || opts.totalTokens != null || opts.costUsd != null;
+}
+
+function sessionTotalsFromFlags(opts) {
+  const inputTokens = numOrNull(opts.inputTokens);
+  const outputTokens = numOrNull(opts.outputTokens);
+  let totalTokens = numOrNull(opts.totalTokens);
+  if (totalTokens == null && (inputTokens != null || outputTokens != null)) {
+    totalTokens = (inputTokens ?? 0) + (outputTokens ?? 0);
+  }
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    costUsd: numOrNull(opts.costUsd),
+  };
+}
+
+function sessionTotalsFromSources(sources) {
+  let inputTokens = null;
+  let outputTokens = null;
+  let totalTokens = null;
+  let costUsd = null;
+  for (const src of sources || []) {
+    inputTokens = addNullable(inputTokens, numOrNull(src.inputTokens));
+    outputTokens = addNullable(outputTokens, numOrNull(src.outputTokens));
+    totalTokens = addNullable(totalTokens, numOrNull(src.totalTokens));
+    if (src.costUsd != null) costUsd = addNullable(costUsd, numOrNull(src.costUsd));
+  }
+  return { inputTokens, outputTokens, totalTokens, costUsd };
+}
+
+function runCollectSpend(metrics, windowStart, windowEnd) {
+  try {
+    return collectSpend({
+      cwd: process.cwd(),
+      windowStart,
+      windowEnd,
+      existingSourceIds: existingSourceIdSet(metrics),
+      env: process.env,
+      homedir: process.env.HOME,
+    });
+  } catch {
+    return { sources: [], byPlatform: defaultSpendByPlatform(), byModel: [], notes: [] };
+  }
+}
+
+function applyCollectedSessionFields(session, sources, resolvedModel, opts) {
+  session.sources = sources;
+  const uniqueModels = uniqueSourceModels(sources);
+  session.model = primaryModelFromSources(sources) || resolvedModel || null;
+  if (uniqueModels.length > 1) session.models = uniqueModels;
+  const totals = hasSpendOverride(opts) ? sessionTotalsFromFlags(opts) : sessionTotalsFromSources(sources);
+  session.inputTokens = totals.inputTokens;
+  session.outputTokens = totals.outputTokens;
+  session.totalTokens = totals.totalTokens;
+  session.costUsd = totals.costUsd;
+}
+
+function recomputeSpendMaps(metrics) {
+  const byPlatform = defaultSpendByPlatform();
+  const byModel = new Map();
+  for (const session of metrics.sessions || []) {
+    for (const src of session.sources || []) {
+      const platform = src.platform;
+      if (platform && byPlatform[platform]) {
+        const bucket = byPlatform[platform];
+        bucket.inputTokens = addNullable(bucket.inputTokens, numOrNull(src.inputTokens));
+        bucket.outputTokens = addNullable(bucket.outputTokens, numOrNull(src.outputTokens));
+        bucket.totalTokens = addNullable(bucket.totalTokens, numOrNull(src.totalTokens));
+        bucket.costUsd = addNullable(bucket.costUsd, numOrNull(src.costUsd));
+        bucket.ampCredits = addNullable(bucket.ampCredits, numOrNull(src.ampCredits));
+        if (platform === 'claude') bucket.source = 'claude-jsonl';
+        else if (platform === 'amp') bucket.source = 'amp-thread';
+        else if (platform === 'cursor') bucket.source = 'cursor-vscdb';
+      }
+      if (src.model) {
+        const key = `${src.model}::${src.platform || ''}`;
+        const row = byModel.get(key) || {
+          model: src.model,
+          platform: src.platform || null,
+          inputTokens: null,
+          outputTokens: null,
+          totalTokens: null,
+          costUsd: null,
+          ampCredits: null,
+        };
+        row.inputTokens = addNullable(row.inputTokens, numOrNull(src.inputTokens));
+        row.outputTokens = addNullable(row.outputTokens, numOrNull(src.outputTokens));
+        row.totalTokens = addNullable(row.totalTokens, numOrNull(src.totalTokens));
+        row.costUsd = addNullable(row.costUsd, numOrNull(src.costUsd));
+        row.ampCredits = addNullable(row.ampCredits, numOrNull(src.ampCredits));
+        byModel.set(key, row);
+      }
+    }
+  }
+  metrics.spendByPlatform = byPlatform;
+  metrics.spendByModel = [...byModel.values()];
+}
+
 function recomputeMetricsAggregates(metrics) {
   const phases = {};
   const totals = { sessions: 0, durationMs: null, leadTimeMs: null, cloudSessions: 0 };
@@ -1390,12 +1610,17 @@ function recomputeMetricsAggregates(metrics) {
     phase.sessions += 1;
     phase.durationMs = addNullable(phase.durationMs, numOrNull(session.durationMs));
     for (const spendKey of METRICS_SPEND_KEYS) {
-      const value = numOrNull(session[spendKey]);
+      const value = sessionFieldOrSources(session, spendKey);
       phase[spendKey] = addNullable(phase[spendKey], value);
       spend[spendKey] = addNullable(spend[spendKey], value);
     }
     if (session.role && !phase.agents.includes(session.role)) phase.agents.push(session.role);
     if (session.model && !phase.models.includes(session.model)) phase.models.push(session.model);
+    if (Array.isArray(session.models)) {
+      for (const model of session.models) {
+        if (model && !phase.models.includes(model)) phase.models.push(model);
+      }
+    }
     phases[key] = phase;
   }
   if (firstStart && lastEnd) {
@@ -1404,6 +1629,7 @@ function recomputeMetricsAggregates(metrics) {
   metrics.phases = phases;
   metrics.totals = totals;
   metrics.spend = spend;
+  recomputeSpendMaps(metrics);
 }
 
 function metricsRecordSessionStart(projectDir, changeName, role) {
@@ -1422,13 +1648,12 @@ function metricsRecordSessionEnd(projectDir, fields, opts = {}) {
   const metrics = loadMetricsFile(filePath, fields.changeName, nowIso);
   const startedAt = isoOrNull(opts.startedAt) || (metrics.pending && metrics.pending.startedAt) || null;
   const durationMs = startedAt ? Math.max(0, Date.parse(nowIso) - Date.parse(startedAt)) : null;
-  const inputTokens = numOrNull(opts.inputTokens);
-  const outputTokens = numOrNull(opts.outputTokens);
-  let totalTokens = numOrNull(opts.totalTokens);
-  if (totalTokens == null && (inputTokens != null || outputTokens != null)) {
-    totalTokens = (inputTokens ?? 0) + (outputTokens ?? 0);
-  }
-  metrics.sessions.push({
+  const resolvedModel = opts.model === undefined ? resolveModel(opts, process.env) : opts.model;
+  const windowStart = (metrics.pending && metrics.pending.startedAt) || lastSessionEndedAt(metrics) || metrics.createdAt;
+  const collected = opts.collect === false
+    ? { sources: [] }
+    : runCollectSpend(metrics, windowStart, nowIso);
+  const session = {
     startedAt,
     endedAt: nowIso,
     durationMs,
@@ -1436,29 +1661,59 @@ function metricsRecordSessionEnd(projectDir, fields, opts = {}) {
     phase: phaseForRole(fields.closedRole),
     runtime: fields.runtime || 'local',
     agentId: fields.agentId || 'none',
-    model: opts.model || null,
+    model: resolvedModel || null,
+    platform: opts.platform || null,
     tasks: fields.tasks || null,
-    inputTokens,
-    outputTokens,
-    totalTokens,
-    costUsd: numOrNull(opts.costUsd),
-  });
+    sources: [],
+    inputTokens: null,
+    outputTokens: null,
+    totalTokens: null,
+    costUsd: null,
+  };
+  applyCollectedSessionFields(session, collected.sources || [], resolvedModel, opts);
+  metrics.sessions.push(session);
   metrics.pending = null;
   metrics.updatedAt = nowIso;
   recomputeMetricsAggregates(metrics);
+  if (session.model == null) warnMissingModel();
   saveMetricsFile(filePath, metrics);
   return filePath;
 }
 
-function metricsFinalizeArchive(targetDir, changeName) {
+function metricsFinalizeArchive(targetDir, changeName, opts = {}) {
   const filePath = join(targetDir, 'metrics.json');
-  if (!existsSync(filePath)) return null;
   const nowIso = new Date().toISOString();
   const metrics = loadMetricsFile(filePath, changeName, nowIso);
+  const windowStart = lastSessionEndedAt(metrics) || metrics.createdAt;
+  const collected = opts.collect === false
+    ? { sources: [] }
+    : runCollectSpend(metrics, windowStart, nowIso);
+  const resolvedModel = opts.model === undefined ? resolveModel(opts, process.env) : opts.model;
+  const session = {
+    startedAt: nowIso,
+    endedAt: nowIso,
+    durationMs: null,
+    role: 'Archiver',
+    phase: phaseForRole('Archiver'),
+    runtime: opts.runtime || 'local',
+    agentId: opts.agentId || 'none',
+    model: resolvedModel || null,
+    platform: opts.platform || null,
+    tasks: opts.tasks || null,
+    sources: [],
+    inputTokens: null,
+    outputTokens: null,
+    totalTokens: null,
+    costUsd: null,
+  };
+  applyCollectedSessionFields(session, collected.sources || [], resolvedModel, {});
+  metrics.sessions.push(session);
   metrics.archivedAt = nowIso;
   metrics.pending = null;
   metrics.updatedAt = nowIso;
   recomputeMetricsAggregates(metrics);
+  if (session.model == null) warnMissingModel();
+  if (metrics.spend.costUsd === null) warnMissingUsd();
   saveMetricsFile(filePath, metrics);
   return filePath;
 }
@@ -2640,6 +2895,9 @@ program
   .option('--sync', 'merge delta specs into openspec/specs/ before archiving')
   .option('--no-sync', 'skip delta-spec merge (requires --force when delta specs exist)')
   .option('--force', 'confirm archiving without merge when delta specs exist', false)
+  .option('--model <name>', 'LLM product id recorded on the Archiver session')
+  .option('--platform <platform>', 'Session platform: cursor | claude | amp')
+  .option('--no-collect', 'Skip local spend adapters when finalizing metrics')
   .action((name, opts) => {
     const projectDir = process.cwd();
     const fail = (msg) => {
@@ -2649,6 +2907,15 @@ program
     log.title(`agent-orchestrator archive  ${name}`);
 
     if (!isSafeChangeName(name)) return fail(`invalid change name: ${name}`);
+
+    const platformResult = resolvePlatform(opts, process.env);
+    if (platformResult.error) {
+      log.err(platformResult.error);
+      process.exitCode = 1;
+      return;
+    }
+    if (platformResult.warn) console.error(platformResult.warn);
+    const resolvedModel = resolveModel(opts, process.env);
 
     let status;
     try {
@@ -2773,7 +3040,14 @@ program
     };
     writeFileSync(join(targetDir, 'handoff.md'), `${buildHandoffMarkdown(fields).trim()}\n`);
     const memoryPath = persistMemoryFromHandoff(projectDir, fields);
-    const metricsPath = metricsFinalizeArchive(targetDir, name);
+    const metricsPath = metricsFinalizeArchive(targetDir, name, {
+      model: resolvedModel,
+      platform: platformResult.value || null,
+      runtime: fields.runtime,
+      agentId: fields.agentId,
+      tasks: fields.tasks,
+      collect: opts.collect !== false,
+    });
 
     console.log(`change:   ${name}`);
     console.log(`schema:   ${status.schemaName || 'unknown'}`);
@@ -2781,7 +3055,7 @@ program
     console.log(`sync:     ${syncStatus}`);
     console.log(`handoff:  ${join(targetRel, 'handoff.md')} (next_command: none)`);
     console.log(`memory:   ${memoryPath.replace(`${projectDir}/`, '')}`);
-    if (metricsPath) console.log(`metrics:  ${metricsPath.replace(`${projectDir}/`, '')} (archived_at set)`);
+    console.log(`metrics:  ${metricsPath.replace(`${projectDir}/`, '')} (archived_at set)`);
     log.ok(`archived ${name}`);
   });
 
@@ -2982,12 +3256,14 @@ program
   .option('--agent-id <id>', 'Cloud agent identifier')
   .option('--cloud-check', 'Verify change artifacts are committed and pushed', false)
   .option('--started-at <iso>', 'Session start timestamp (overrides the pending marker from --restore)')
-  .option('--model <name>', 'Model used in this session (recorded in metrics.json)')
+  .option('--model <name>', 'LLM product id recorded in metrics.json')
+  .option('--platform <platform>', 'Session platform: cursor | claude | amp')
   .option('--input-tokens <n>', 'Input tokens spent in this session')
   .option('--output-tokens <n>', 'Output tokens spent in this session')
   .option('--total-tokens <n>', 'Total tokens spent in this session (default: input + output)')
   .option('--cost-usd <usd>', 'Cost of this session in USD')
   .option('--no-metrics', 'Skip recording this session into metrics.json')
+  .option('--no-collect', 'Skip local spend adapters for this persist')
   .action((changeName, opts) => {
     const projectDir = process.cwd();
     const resolved = resolveHandoffChange(projectDir, changeName);
@@ -3115,6 +3391,15 @@ program
       return;
     }
 
+    const platformResult = resolvePlatform(opts, process.env);
+    if (platformResult.error) {
+      log.err(platformResult.error);
+      process.exitCode = 1;
+      return;
+    }
+    if (platformResult.warn) console.error(platformResult.warn);
+    const resolvedModel = resolveModel(opts, process.env);
+
     const prompt = buildNextSessionPrompt(fields, agentLanguage).replace(/^\n+|\n+$/g, '');
     fields.prompt = prompt;
     writeFileSync(existing.filePath, `${buildHandoffMarkdown(fields).trim()}\n`);
@@ -3127,11 +3412,13 @@ program
     if (opts.metrics !== false) {
       const metricsPath = metricsRecordSessionEnd(projectDir, fields, {
         startedAt: opts.startedAt,
-        model: opts.model,
+        model: resolvedModel,
+        platform: platformResult.value || null,
         inputTokens: opts.inputTokens,
         outputTokens: opts.outputTokens,
         totalTokens: opts.totalTokens,
         costUsd: opts.costUsd,
+        collect: opts.collect !== false,
       });
       console.error(pc.green('  ✓'), `metrics.json updated: ${metricsPath.replace(`${projectDir}/`, '')}`);
     }
@@ -3144,7 +3431,7 @@ program
 
 program
   .command('metrics [change-name]')
-  .description('Show recorded session metrics for a change: time per phase, tokens, cost, agents, models')
+  .description('Show recorded session metrics for a change: time per phase, tokens, cost, roles, and models')
   .option('--json', 'Print raw metrics.json', false)
   .action((changeName, opts) => {
     const projectDir = process.cwd();
@@ -3193,7 +3480,7 @@ program
     const phaseKeys = phaseOrder.filter((key) => metrics.phases[key]);
     if (phaseKeys.length) {
       console.log('');
-      console.log('phase      sessions  time      tokens    cost      agents');
+      console.log('phase      sessions  time      tokens    cost      roles                models');
       for (const key of phaseKeys) {
         const phase = metrics.phases[key];
         const cols = [
@@ -3202,9 +3489,43 @@ program
           formatMetricsDuration(phase.durationMs).padEnd(9),
           formatMetricsNumber(phase.totalTokens).padEnd(9),
           formatMetricsCost(phase.costUsd).padEnd(9),
-          phase.agents.join(', ') || '—',
+          (phase.agents.join(', ') || '—').padEnd(20),
+          phase.models.join(', ') || '—',
         ];
         console.log(cols.join(' '));
+      }
+    }
+
+    const byPlatform = metrics.spendByPlatform || defaultSpendByPlatform();
+    console.log('');
+    console.log('by platform:');
+    console.log('platform   tokens    cost      credits   source');
+    for (const key of ['cursor', 'claude', 'amp']) {
+      const row = byPlatform[key] || emptyPlatformSpend();
+      console.log([
+        key.padEnd(10),
+        formatMetricsNumber(row.totalTokens).padEnd(9),
+        formatMetricsCost(row.costUsd).padEnd(9),
+        formatMetricsNumber(row.ampCredits).padEnd(9),
+        row.source || 'none',
+      ].join(' '));
+    }
+
+    console.log('');
+    console.log('by model:');
+    console.log('model                platform   tokens    cost      credits');
+    const byModel = Array.isArray(metrics.spendByModel) ? metrics.spendByModel : [];
+    if (!byModel.length) {
+      console.log('—                     —          —         —         —');
+    } else {
+      for (const row of byModel) {
+        console.log([
+          String(row.model || '—').padEnd(20),
+          String(row.platform || '—').padEnd(10),
+          formatMetricsNumber(row.totalTokens).padEnd(9),
+          formatMetricsCost(row.costUsd).padEnd(9),
+          formatMetricsNumber(row.ampCredits),
+        ].join(' '));
       }
     }
 

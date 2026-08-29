@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **Change metrics** — `session.model` resolves `--model` → `AOK_MODEL` → `null` (stderr warning); persist/archive auto-collect local usage from Claude JSONL, Amp threads, and Cursor vscdb into separate `spendByPlatform` / `spendByModel` figures (flags override session totals only; never merge Amp credits into USD); human `metrics` table prints `roles` and `models` plus platform/model tables; `archive` always creates or finalizes `metrics.json` with an Archiver session; Session Exit protocol requires `--model <llm-product-id>`
+
 ## [0.5.0] - 2026-08-29
 
 ### Added

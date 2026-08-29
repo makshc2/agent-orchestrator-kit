@@ -1,0 +1,186 @@
+{
+  "version": 1,
+  "change": "fix-metrics-model-and-spend",
+  "createdAt": "2026-08-29T08:29:57.506Z",
+  "updatedAt": "2026-08-29T09:31:03.040Z",
+  "archivedAt": null,
+  "spend": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "totalTokens": null,
+    "costUsd": null
+  },
+  "spendByPlatform": {
+    "cursor": {
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "source": "none"
+    },
+    "claude": {
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "source": "none"
+    },
+    "amp": {
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "source": "none"
+    }
+  },
+  "spendByModel": [],
+  "totals": {
+    "sessions": 6,
+    "durationMs": 2449985,
+    "leadTimeMs": 2652355,
+    "cloudSessions": 0
+  },
+  "phases": {
+    "spec": {
+      "sessions": 3,
+      "durationMs": 467553,
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "agents": [
+        "Architect",
+        "Spec Architect"
+      ],
+      "models": [
+        "cursor-grok-4.6"
+      ]
+    },
+    "review": {
+      "sessions": 2,
+      "durationMs": 763251,
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "agents": [
+        "Spec Reviewer"
+      ],
+      "models": [
+        "cursor-grok-4.6"
+      ]
+    },
+    "apply": {
+      "sessions": 1,
+      "durationMs": 1219181,
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "agents": [
+        "Implementer"
+      ],
+      "models": [
+        "cursor-grok-4.6"
+      ]
+    }
+  },
+  "sessions": [
+    {
+      "startedAt": null,
+      "endedAt": "2026-08-29T08:29:57.506Z",
+      "durationMs": null,
+      "role": "Architect",
+      "phase": "spec",
+      "runtime": "local",
+      "agentId": "none",
+      "model": "cursor-grok-4.6",
+      "tasks": "0/8",
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null
+    },
+    {
+      "startedAt": null,
+      "endedAt": "2026-08-29T08:42:14.294Z",
+      "durationMs": null,
+      "role": "Architect",
+      "phase": "spec",
+      "runtime": "local",
+      "agentId": "none",
+      "model": "cursor-grok-4.6",
+      "tasks": "0/14",
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null
+    },
+    {
+      "startedAt": "2026-08-29T08:46:50.685Z",
+      "endedAt": "2026-08-29T08:53:17.009Z",
+      "durationMs": 386324,
+      "role": "Spec Reviewer",
+      "phase": "review",
+      "runtime": "local",
+      "agentId": "none",
+      "model": "cursor-grok-4.6",
+      "tasks": "0/14",
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null
+    },
+    {
+      "startedAt": "2026-08-29T08:53:59.249Z",
+      "endedAt": "2026-08-29T09:01:46.802Z",
+      "durationMs": 467553,
+      "role": "Spec Architect",
+      "phase": "spec",
+      "runtime": "local",
+      "agentId": "none",
+      "model": null,
+      "tasks": "0/14",
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null
+    },
+    {
+      "startedAt": "2026-08-29T09:03:23.434Z",
+      "endedAt": "2026-08-29T09:09:40.361Z",
+      "durationMs": 376927,
+      "role": "Spec Reviewer",
+      "phase": "review",
+      "runtime": "local",
+      "agentId": "none",
+      "model": "cursor-grok-4.6",
+      "tasks": "0/14",
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null
+    },
+    {
+      "startedAt": "2026-08-29T09:10:43.859Z",
+      "endedAt": "2026-08-29T09:31:03.040Z",
+      "durationMs": 1219181,
+      "role": "Implementer",
+      "phase": "apply",
+      "runtime": "local",
+      "agentId": "none",
+      "model": "cursor-grok-4.6",
+      "platform": "cursor",
+      "tasks": "14/14",
+      "sources": [],
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null
+    }
+  ],
+  "pending": null
+}

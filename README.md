@@ -801,19 +801,21 @@ Persist with `runtime: cloud` prints those four steps on stderr; stdout stays th
 
 Every change accumulates git-tracked `openspec/changes/<name>/metrics.json` — the data source for planning the next feature: how long each phase took, how many sessions it needed, what it cost.
 
+- **`session.model`** — LLM product id. Primary from collected sources, otherwise `--model` → `AOK_MODEL` → `null` (stderr warning). Never a Closed role.
 - **Session start** — `handoff --restore` writes a `pending` marker (`startedAt`, expected role).
-- **Session end** — `handoff <name>` closes the pending session: duration, closed role, mapped phase (`explore` / `design` / `spec` / `review` / `apply` / `archive`), runtime (local/cloud), tasks snapshot (`n/m`), and — when the agent passes them — `--model`, `--input-tokens`, `--output-tokens`, `--total-tokens`, `--cost-usd`. No restore marker? Pass `--started-at <iso>` or the duration stays honestly `null`.
-- **Archive** — `archive <name>` sets `archivedAt` and clears any pending marker; the file moves to the archive folder with the change.
+- **Session end** — `handoff <name>` closes the pending session: duration, closed role, mapped phase (`explore` / `design` / `spec` / `review` / `apply` / `archive`), runtime (local/cloud), tasks snapshot (`n/m`), and persist/archive auto-collect local usage from Claude JSONL, Amp threads, and Cursor vscdb. `--input-tokens` / `--output-tokens` / `--total-tokens` / `--cost-usd` override session totals only and do not wipe `spendByPlatform` / `spendByModel`. Never guess. Never invent USD from Amp credits. Never Cursor SDK / npm sqlite / a pricing table. No restore marker? Pass `--started-at <iso>` or the duration stays honestly `null`.
+- **Archive** — successful `archive <name>` always creates or finalizes `metrics.json`, sets `archivedAt`, appends an Archiver session, and runs collect unless `--no-collect`.
+- **Platform** — optional `--platform` / `AOK_PLATFORM` (`cursor|claude|amp` only). Invalid `--platform` fails before persist/move.
 
-Aggregates are recomputed on every write: per-phase totals (`durationMs`, tokens, `costUsd`, `sessions`, agents, models) plus overall `totals` (`sessions`, `cloudSessions`, `durationMs` = sum of session work time, `leadTimeMs` = wall clock from first session start to last session end) and `spend` (token/cost sums). Numbers are null-honest: a metric nobody reported stays `null`, never a fake `0`.
+Aggregates are recomputed on every write: per-phase totals (`durationMs`, tokens, `costUsd`, `sessions`, `roles`, `models`) plus overall `totals` (`sessions`, `cloudSessions`, `durationMs` = sum of session work time, `leadTimeMs` = wall clock from first session start to last session end), `spend` (USD only), and separate **by platform** / **by model** tables. Numbers are null-honest: a metric nobody reported stays `null`, never a fake `0`. No single total that adds Amp credits to USD.
 
 ```bash
 npx agent-orchestrator-kit handoff add-thing --input-tokens 12000 --output-tokens 3000 --cost-usd 0.42 --model claude-sonnet
-npx agent-orchestrator-kit metrics add-thing          # human summary: phases, tokens, cost, agents
+npx agent-orchestrator-kit metrics add-thing          # human summary: phases, tokens, cost, roles / models
 npx agent-orchestrator-kit metrics add-thing --json   # raw metrics.json (works for archived changes too)
 ```
 
-Recording is on by default and never blocks persist; opt out per session with `--no-metrics`.
+Recording is on by default and never a persist/archive/`gate-check` gate; opt out per persist with `--no-metrics`. `--no-collect` skips adapters only.
 
 ### Skill inventory
 
@@ -932,7 +934,7 @@ npx agent-orchestrator-kit handoff [change-name] [options]
 
 npx agent-orchestrator-kit metrics [change-name] [--json]
   Show recorded session metrics for a change (active or archived):
-  time per phase, sessions, tokens, cost, agents, models, lead time
+  time per phase, sessions, tokens, cost, roles, models, lead time
 ```
 
 ## Directory Reference

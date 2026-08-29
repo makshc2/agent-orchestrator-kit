@@ -9,6 +9,55 @@ import { tmpdir } from 'node:os';
 const KIT_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CLI = join(KIT_ROOT, 'bin', 'agent-orchestrator.js');
 
+function isolatedEnv(dir, extra = {}) {
+  const home = join(dir, '.aok-home');
+  const xdgConfig = join(dir, '.aok-xdg-config');
+  const xdgData = join(dir, '.aok-xdg-data');
+  const amp = join(dir, '.aok-amp');
+  mkdirSync(home, { recursive: true });
+  mkdirSync(xdgConfig, { recursive: true });
+  mkdirSync(xdgData, { recursive: true });
+  mkdirSync(amp, { recursive: true });
+  const env = {
+    ...process.env,
+    HOME: home,
+    XDG_CONFIG_HOME: xdgConfig,
+    XDG_DATA_HOME: xdgData,
+    AMP_DATA_DIR: amp,
+    ...extra,
+  };
+  if (!Object.prototype.hasOwnProperty.call(extra, 'AOK_MODEL')) delete env.AOK_MODEL;
+  if (!Object.prototype.hasOwnProperty.call(extra, 'AOK_PLATFORM')) delete env.AOK_PLATFORM;
+  return env;
+}
+
+function cliExec(dir, args, extraEnv) {
+  return execSync(`node "${CLI}" ${args}`, {
+    cwd: dir,
+    stdio: 'pipe',
+    encoding: 'utf-8',
+    env: isolatedEnv(dir, extraEnv),
+  });
+}
+
+function cliSpawn(dir, args, extraEnv) {
+  return spawnSync(process.execPath, [CLI, ...args], {
+    cwd: dir,
+    encoding: 'utf-8',
+    env: isolatedEnv(dir, extraEnv),
+  });
+}
+
+function encodeClaudeProject(cwd) {
+  return String(cwd).replace(/[/.]/g, '-');
+}
+
+function writeClaudeJsonl(home, cwd, rows) {
+  const projectDir = join(home, '.claude', 'projects', encodeClaudeProject(cwd));
+  mkdirSync(projectDir, { recursive: true });
+  writeFileSync(join(projectDir, 'session.jsonl'), `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`);
+}
+
 function runInit(dir, args = '') {
   execSync(`node "${CLI}" init ${args}`, { cwd: dir, stdio: 'pipe' });
 }
@@ -1244,10 +1293,7 @@ spec-reviewer
 `,
     );
 
-    const out = execSync(`node "${CLI}" handoff add-bulk-export`, {
-      cwd: dir,
-      encoding: 'utf-8',
-    });
+    const out = cliExec(dir, 'handoff add-bulk-export');
     assert.match(out, /^\/opsx:review add-bulk-export/m);
     assert.match(out, /Ти — conductor/);
     assert.match(out, /subagent-spec-reviewer/);
@@ -1281,7 +1327,7 @@ test('handoff persist fails without required sections', () => {
 
     let failed = false;
     try {
-      execSync(`node "${CLI}" handoff add-thing`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' });
+      cliExec(dir, 'handoff add-thing');
     } catch (error) {
       failed = true;
       const out = `${error.stdout || ''}${error.stderr || ''}`;
@@ -1317,16 +1363,13 @@ test('handoff restore + persist records a session in metrics.json', () => {
     writeFileSync(join(changeDir, 'tasks.md'), '- [x] 1.1 done\n- [ ] 1.2 todo\n');
     writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
 
-    execSync(`node "${CLI}" handoff add-thing --restore`, { cwd: dir, stdio: 'pipe' });
+    cliExec(dir, 'handoff add-thing --restore');
     const pendingState = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
     assert.ok(pendingState.pending, 'restore writes a pending session marker');
     assert.equal(pendingState.pending.role, 'spec-reviewer');
     assert.equal(pendingState.sessions.length, 0);
 
-    execSync(
-      `node "${CLI}" handoff add-thing --input-tokens 12000 --output-tokens 3000 --cost-usd 0.42 --model claude-sonnet`,
-      { cwd: dir, stdio: 'pipe' },
-    );
+    cliExec(dir, 'handoff add-thing --input-tokens 12000 --output-tokens 3000 --cost-usd 0.42 --model claude-sonnet');
     const metrics = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
     assert.equal(metrics.pending, null, 'persist closes the pending session');
     assert.equal(metrics.sessions.length, 1);
@@ -1355,10 +1398,10 @@ test('handoff persist without spend keeps metrics null-honest and --no-metrics s
     mkdirSync(changeDir, { recursive: true });
     writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
 
-    execSync(`node "${CLI}" handoff add-thing --no-metrics`, { cwd: dir, stdio: 'pipe' });
+    cliExec(dir, 'handoff add-thing --no-metrics');
     assert.ok(!existsSync(join(changeDir, 'metrics.json')), '--no-metrics must not create metrics.json');
 
-    execSync(`node "${CLI}" handoff add-thing`, { cwd: dir, stdio: 'pipe' });
+    cliExec(dir, 'handoff add-thing');
     const metrics = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
     assert.equal(metrics.sessions.length, 1);
     assert.equal(metrics.sessions[0].durationMs, null, 'no restore marker → duration stays null');
@@ -1378,28 +1421,106 @@ test('metrics command prints a summary and raw --json', () => {
     const changeDir = join(dir, 'openspec/changes/add-thing');
     mkdirSync(changeDir, { recursive: true });
     writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
-    execSync(
-      `node "${CLI}" handoff add-thing --started-at 2026-08-29T06:00:00Z --input-tokens 1000 --cost-usd 0.1`,
-      { cwd: dir, stdio: 'pipe' },
-    );
+    cliExec(dir, 'handoff add-thing --started-at 2026-08-29T06:00:00Z --input-tokens 1000 --cost-usd 0.1 --model claude-opus-5');
 
-    const out = execSync(`node "${CLI}" metrics add-thing`, { cwd: dir, encoding: 'utf-8' });
+    const out = cliExec(dir, 'metrics add-thing');
     assert.match(out, /sessions: {2}1/);
     assert.match(out, /spec/);
     assert.match(out, /\$0\.10/);
 
-    const raw = JSON.parse(execSync(`node "${CLI}" metrics add-thing --json`, { cwd: dir, encoding: 'utf-8' }));
+    const raw = JSON.parse(cliExec(dir, 'metrics add-thing --json'));
     assert.equal(raw.sessions[0].startedAt, '2026-08-29T06:00:00.000Z', '--started-at overrides the marker');
     assert.ok(raw.sessions[0].durationMs > 0);
 
     assert.throws(
-      () => execSync(`node "${CLI}" metrics missing-change`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' }),
+      () => cliExec(dir, 'metrics missing-change'),
       (err) => {
         assert.notEqual(err.status, 0);
         assert.match(`${err.stdout || ''}${err.stderr || ''}`, /No metrics\.json/);
         return true;
       },
     );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('handoff persist resolves --model / AOK_MODEL and warns when model is null', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-metrics-model-'));
+  try {
+    runInit(dir, '--profile generic --name MetricsModel --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+
+    cliExec(dir, 'handoff add-thing --model claude-opus-5');
+    assert.equal(JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions[0].model, 'claude-opus-5');
+
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+    cliExec(dir, 'handoff add-thing', { AOK_MODEL: 'claude-fable-5' });
+    assert.equal(JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions[1].model, 'claude-fable-5');
+
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+    const missing = cliSpawn(dir, ['handoff', 'add-thing']);
+    assert.equal(missing.status, 0);
+    const third = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions[2];
+    assert.equal(third.model, null);
+    assert.match(`${missing.stdout || ''}${missing.stderr || ''}`, /model/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('handoff persist resolves --platform / AOK_PLATFORM and ignores CURSOR_AGENT', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-metrics-platform-'));
+  try {
+    runInit(dir, '--profile generic --name MetricsPlatform --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+
+    cliExec(dir, 'handoff add-thing --platform cursor --model claude-opus-5');
+    assert.equal(JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions[0].platform, 'cursor');
+
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+    cliExec(dir, 'handoff add-thing --model claude-opus-5', { AOK_PLATFORM: 'amp' });
+    assert.equal(JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions[1].platform, 'amp');
+
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+    const before = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions.length;
+    const invalid = cliSpawn(dir, ['handoff', 'add-thing', '--platform', 'foo']);
+    assert.notEqual(invalid.status, 0);
+    const after = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
+    assert.equal(after.sessions.length, before);
+    assert.ok(!after.sessions.some((session) => session.platform === 'foo'));
+
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+    cliExec(dir, 'handoff add-thing --model claude-opus-5', { CURSOR_AGENT: '1' });
+    const last = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions.at(-1);
+    assert.equal(last.platform, null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('metrics human table prints roles and models columns', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-metrics-roles-'));
+  try {
+    runInit(dir, '--profile generic --name MetricsRoles --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+    cliExec(dir, 'handoff add-thing --model claude-opus-5');
+    const out = cliExec(dir, 'metrics add-thing');
+    assert.match(out, /models/);
+    assert.match(out, /roles/);
+    assert.match(out, /claude-opus-5/);
+    const specLine = out.split('\n').find((line) => line.startsWith('spec '));
+    assert.ok(specLine, 'phase row for spec exists');
+    assert.match(specLine, /Architect/);
+    assert.match(specLine, /claude-opus-5/);
+    assert.ok(specLine.indexOf('Architect') < specLine.indexOf('claude-opus-5'));
+    assert.doesNotMatch(out, /phase      sessions  time      tokens    cost      agents/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -1527,7 +1648,12 @@ function installOpenspecStub(dir) {
 }
 
 function runCliStub(dir, args) {
-  return execSync(`node "${CLI}" ${args}`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' });
+  return execSync(`node "${CLI}" ${args}`, {
+    cwd: dir,
+    stdio: 'pipe',
+    encoding: 'utf-8',
+    env: isolatedEnv(dir),
+  });
 }
 
 const CONTRACT_TASKS = `# Tasks
@@ -1692,6 +1818,13 @@ test('archive --sync merges ADDED/MODIFIED/REMOVED and moves the change', () => 
     assert.equal(archivedMetrics.pending, null, 'archive clears the pending marker');
     assert.equal(archivedMetrics.totals.durationMs, 3600000, 'aggregates recomputed from sessions');
     assert.deepEqual(archivedMetrics.phases.apply.agents, ['Implementer']);
+    const implementer = archivedMetrics.sessions.find((session) => session.role === 'Implementer');
+    const archiver = archivedMetrics.sessions.find((session) => session.role === 'Archiver');
+    assert.ok(implementer, 'existing Implementer session is preserved');
+    assert.equal(implementer.phase, 'apply');
+    assert.ok(archiver, 'archive appends an Archiver session');
+    assert.equal(archiver.phase, 'archive');
+    assert.equal(archiver.durationMs, null);
 
     const mainSpec = readFileSync(join(dir, 'openspec/specs/auth/spec.md'), 'utf-8');
     assert.match(mainSpec, /New Req/, 'ADDED requirement appended');
@@ -1699,6 +1832,212 @@ test('archive --sync merges ADDED/MODIFIED/REMOVED and moves the change', () => 
     assert.doesNotMatch(mainSpec, /SHALL use the original behavior/, 'old body removed by MODIFIED');
     assert.doesNotMatch(mainSpec, /Dead Req/, 'REMOVED requirement deleted');
     assert.ok(existsSync(join(dir, 'openspec/specs/newcap/spec.md')), 'new capability spec created');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('archive without metrics.json creates Archiver session and warns on null USD', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-archive-metrics-create-'));
+  try {
+    runInit(dir, '--profile generic --name ArchiveCreate --lang en');
+    makeArchiveFixture(dir, 'add-auth');
+    installOpenspecStub(dir);
+    const result = cliSpawn(dir, ['archive', 'add-auth', '--sync']);
+    assert.equal(result.status, 0);
+    const combined = `${result.stdout || ''}${result.stderr || ''}`;
+    assert.match(combined, /warning|null|costUsd|USD|spend/i);
+    const archiveRoot = join(dir, 'openspec/changes/archive');
+    const entry = readdirSync(archiveRoot).find((d) => d.endsWith('-add-auth'));
+    assert.ok(existsSync(join(archiveRoot, entry, 'metrics.json')));
+    const metrics = JSON.parse(readFileSync(join(archiveRoot, entry, 'metrics.json'), 'utf-8'));
+    assert.ok(metrics.archivedAt);
+    assert.equal(metrics.pending, null);
+    const archiver = metrics.sessions.find((session) => session.role === 'Archiver');
+    assert.ok(archiver);
+    assert.equal(archiver.phase, 'archive');
+    assert.equal(archiver.durationMs, null);
+    assert.equal(archiver.costUsd, null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('archive --platform foo fails before move', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-archive-platform-'));
+  try {
+    runInit(dir, '--profile generic --name ArchivePlatform --lang en');
+    makeArchiveFixture(dir, 'add-auth');
+    installOpenspecStub(dir);
+    const result = cliSpawn(dir, ['archive', 'add-auth', '--sync', '--platform', 'foo']);
+    assert.notEqual(result.status, 0);
+    assert.ok(existsSync(join(dir, 'openspec/changes/add-auth')), 'change stays in place');
+    assert.ok(!existsSync(join(dir, 'openspec/changes/archive')) || readdirSync(join(dir, 'openspec/changes/archive')).filter((d) => d.endsWith('-add-auth')).length === 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('persist Claude fixture fills session totals; flags override; --no-collect skips adapters', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-metrics-collect-'));
+  try {
+    runInit(dir, '--profile generic --name MetricsCollect --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+    cliExec(dir, 'handoff add-thing --restore');
+    const at = new Date().toISOString();
+    writeClaudeJsonl(join(dir, '.aok-home'), dir, [
+      {
+        type: 'assistant',
+        cwd: dir,
+        timestamp: at,
+        message: {
+          id: 'msg-1',
+          role: 'assistant',
+          model: 'claude-opus-4-7',
+          usage: { input_tokens: 10, output_tokens: 5, total_cost_usd: 1.25 },
+        },
+      },
+      {
+        type: 'assistant',
+        cwd: dir,
+        timestamp: at,
+        message: {
+          id: 'msg-2',
+          role: 'assistant',
+          model: 'gpt-5.6-sol',
+          usage: { input_tokens: 2, output_tokens: 1 },
+        },
+      },
+    ]);
+
+    cliExec(dir, 'handoff add-thing');
+    const collected = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
+    assert.equal(collected.sessions[0].sources.length, 2);
+    assert.equal(collected.spendByPlatform.claude.source, 'claude-jsonl');
+    const sourceTotal = collected.sessions[0].sources.reduce((sum, src) => sum + src.totalTokens, 0);
+    assert.equal(collected.sessions[0].totalTokens, sourceTotal);
+    assert.equal(collected.sessions[0].costUsd, 1.25);
+    assert.equal(collected.spend.costUsd, 1.25);
+    assert.ok(collected.sessions[0].models.includes('claude-opus-4-7'));
+    assert.ok(collected.sessions[0].models.includes('gpt-5.6-sol'));
+    assert.equal(collected.sessions[0].model, 'claude-opus-4-7');
+
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+    cliExec(dir, 'handoff add-thing --restore');
+    writeClaudeJsonl(join(dir, '.aok-home'), dir, [
+      {
+        type: 'assistant',
+        cwd: dir,
+        timestamp: new Date().toISOString(),
+        message: {
+          id: 'msg-3',
+          role: 'assistant',
+          model: 'claude-opus-4-7',
+          usage: { input_tokens: 4, output_tokens: 1, total_cost_usd: 0.2 },
+        },
+      },
+    ]);
+    cliExec(dir, 'handoff add-thing --cost-usd 9.99');
+    const overridden = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
+    const second = overridden.sessions[1];
+    assert.equal(second.costUsd, 9.99);
+    assert.ok(second.sources.some((src) => src.id === 'msg-3'));
+    assert.equal(overridden.spendByPlatform.claude.source, 'claude-jsonl');
+    assert.ok(overridden.sessions.some((session) => session.sources && session.sources.length));
+
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+    cliExec(dir, 'handoff add-thing --restore');
+    writeClaudeJsonl(join(dir, '.aok-home'), dir, [
+      {
+        type: 'assistant',
+        cwd: dir,
+        timestamp: new Date().toISOString(),
+        message: {
+          id: 'msg-4',
+          role: 'assistant',
+          model: 'claude-opus-4-7',
+          usage: { input_tokens: 9, output_tokens: 3, total_cost_usd: 0.5 },
+        },
+      },
+    ]);
+    cliExec(dir, 'handoff add-thing --no-collect');
+    const skipped = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
+    const last = skipped.sessions.at(-1);
+    assert.deepEqual(last.sources, []);
+    assert.equal(last.totalTokens, null);
+
+    const human = cliExec(dir, 'metrics add-thing');
+    assert.match(human, /by platform/);
+    assert.match(human, /by model/);
+    assert.doesNotMatch(human, /21\.5/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('metrics prints platform and model tables without a unified Amp+USD total', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-metrics-tables-'));
+  try {
+    runInit(dir, '--profile generic --name MetricsTables --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(
+      join(changeDir, 'metrics.json'),
+      `${JSON.stringify({
+        version: 1,
+        change: 'add-thing',
+        spend: { inputTokens: null, outputTokens: null, totalTokens: null, costUsd: 1.5 },
+        spendByPlatform: {
+          cursor: { inputTokens: null, outputTokens: null, totalTokens: null, costUsd: null, ampCredits: null, source: 'none' },
+          claude: { inputTokens: 10, outputTokens: 5, totalTokens: 15, costUsd: 1.5, ampCredits: null, source: 'claude-jsonl' },
+          amp: { inputTokens: 8, outputTokens: 2, totalTokens: 10, costUsd: null, ampCredits: 20, source: 'amp-thread' },
+        },
+        spendByModel: [{ model: 'claude-opus-4-7', platform: 'claude', totalTokens: 15, costUsd: 1.5, ampCredits: null }],
+        totals: { sessions: 1, durationMs: null, leadTimeMs: null, cloudSessions: 0 },
+        phases: { spec: { sessions: 1, durationMs: null, totalTokens: 15, costUsd: 1.5, agents: ['Architect'], models: ['claude-opus-4-7'] } },
+        sessions: [{ role: 'Architect', phase: 'spec', model: 'claude-opus-4-7', endedAt: '2026-08-29T07:00:00.000Z', durationMs: null }],
+        pending: null,
+      }, null, 2)}\n`,
+    );
+    const out = cliExec(dir, 'metrics add-thing');
+    assert.match(out, /platform/);
+    assert.match(out, /model/);
+    assert.match(out, /\$1\.50/);
+    assert.doesNotMatch(out, /21\.5/);
+    assert.doesNotMatch(out, /\$21\.50/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('archive --no-collect finalizes without Archiver sources', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-archive-nocollect-'));
+  try {
+    runInit(dir, '--profile generic --name ArchiveNoCollect --lang en');
+    makeArchiveFixture(dir, 'add-auth');
+    writeClaudeJsonl(join(dir, '.aok-home'), dir, [
+      {
+        type: 'assistant',
+        cwd: dir,
+        timestamp: new Date().toISOString(),
+        message: {
+          id: 'msg-arch',
+          role: 'assistant',
+          model: 'claude-opus-4-7',
+          usage: { input_tokens: 3, output_tokens: 1 },
+        },
+      },
+    ]);
+    installOpenspecStub(dir);
+    runCliStub(dir, 'archive add-auth --sync --no-collect');
+    const archiveRoot = join(dir, 'openspec/changes/archive');
+    const entry = readdirSync(archiveRoot).find((d) => d.endsWith('-add-auth'));
+    const metrics = JSON.parse(readFileSync(join(archiveRoot, entry, 'metrics.json'), 'utf-8'));
+    const archiver = metrics.sessions.find((session) => session.role === 'Archiver');
+    assert.ok(archiver);
+    assert.deepEqual(archiver.sources, []);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -2310,7 +2649,7 @@ test('handoff persist appends decisions.md without duplicates and keeps topic hi
     writeFileSync(join(changeDir, 'tasks.md'), '- [ ] 1.1 pending\n');
     writeHandoffFixture(changeDir, name, '- foo-topic: variant A');
 
-    execSync(`node "${CLI}" handoff ${name}`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' });
+    cliExec(dir, `handoff ${name}`);
     const decisionsPath = join(changeDir, 'decisions.md');
     assert.ok(existsSync(decisionsPath));
     const first = readFileSync(decisionsPath, 'utf-8');
@@ -2318,11 +2657,11 @@ test('handoff persist appends decisions.md without duplicates and keeps topic hi
     assert.match(first, /append-only/);
     assert.match(first, new RegExp(`- ${localIsoDate()} foo-topic: variant A`));
 
-    execSync(`node "${CLI}" handoff ${name}`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' });
+    cliExec(dir, `handoff ${name}`);
     assert.equal(readFileSync(decisionsPath, 'utf-8'), first);
 
     setHandoffDecisions(join(changeDir, 'handoff.md'), '- foo-topic: variant B');
-    execSync(`node "${CLI}" handoff ${name}`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' });
+    cliExec(dir, `handoff ${name}`);
     const second = readFileSync(decisionsPath, 'utf-8');
     assert.match(second, /foo-topic: variant A/);
     assert.match(second, /foo-topic: variant B/);
@@ -2340,7 +2679,7 @@ test('handoff persist does not create decisions.md when Decisions is none', () =
     const changeDir = join(dir, 'openspec/changes', name);
     mkdirSync(changeDir, { recursive: true });
     writeHandoffFixture(changeDir, name, 'none');
-    execSync(`node "${CLI}" handoff ${name}`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' });
+    cliExec(dir, `handoff ${name}`);
     assert.ok(!existsSync(join(changeDir, 'decisions.md')));
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -2355,9 +2694,9 @@ test('persistMemoryFromHandoff mirrors Decision:* from decisions.md last topic w
     const changeDir = join(dir, 'openspec/changes', name);
     mkdirSync(changeDir, { recursive: true });
     writeHandoffFixture(changeDir, name, '- foo-topic: variant A');
-    execSync(`node "${CLI}" handoff ${name}`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' });
+    cliExec(dir, `handoff ${name}`);
     setHandoffDecisions(join(changeDir, 'handoff.md'), '- foo-topic: variant B');
-    execSync(`node "${CLI}" handoff ${name}`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' });
+    cliExec(dir, `handoff ${name}`);
 
     const entities = memoryEntities(dir);
     const decision = entities.find((item) => item.name === 'Decision:foo-topic');
@@ -2379,7 +2718,7 @@ test('handoff --restore prints decisions.md or decisions: none', () => {
     const missingDir = join(dir, 'openspec/changes', missing);
     mkdirSync(missingDir, { recursive: true });
     writeHandoffFixture(missingDir, missing, 'none');
-    execSync(`node "${CLI}" handoff ${missing}`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' });
+    cliExec(dir, `handoff ${missing}`);
     const noneOut = execSync(`node "${CLI}" handoff ${missing} --restore`, {
       cwd: dir,
       encoding: 'utf-8',
@@ -2391,7 +2730,7 @@ test('handoff --restore prints decisions.md or decisions: none', () => {
     const changeDir = join(dir, 'openspec/changes', name);
     mkdirSync(changeDir, { recursive: true });
     writeHandoffFixture(changeDir, name, '- export-format: xlsx — matches existing reports');
-    execSync(`node "${CLI}" handoff ${name}`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' });
+    cliExec(dir, `handoff ${name}`);
     const restored = execSync(`node "${CLI}" handoff ${name} --restore`, {
       cwd: dir,
       encoding: 'utf-8',
