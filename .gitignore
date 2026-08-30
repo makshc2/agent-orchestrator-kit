@@ -5,3 +5,9 @@ node_modules/
 .cursor/
 .cursor/memory.json
 .amp/settings.json
+.cursor
+.claude
+.agents/figma.local.env
+.agents/github.local.env
+.agents/gitlab.local.env
+.agents/spend/

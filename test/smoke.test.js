@@ -28,6 +28,17 @@ function isolatedEnv(dir, extra = {}) {
   };
   if (!Object.prototype.hasOwnProperty.call(extra, 'AOK_MODEL')) delete env.AOK_MODEL;
   if (!Object.prototype.hasOwnProperty.call(extra, 'AOK_PLATFORM')) delete env.AOK_PLATFORM;
+  for (const key of [
+    'CURSOR_AGENT',
+    'CURSOR_CONVERSATION_ID',
+    'CLAUDECODE',
+    'CLAUDE_CODE',
+    'CLAUDE_CODE_ENTRYPOINT',
+    'AMP_CURRENT_THREAD',
+    'AMP_THREAD_ID',
+  ]) {
+    if (!Object.prototype.hasOwnProperty.call(extra, key)) delete env[key];
+  }
   return env;
 }
 
@@ -1354,6 +1365,29 @@ specs ready
 spec-reviewer
 `;
 
+function handoffWithMetrics(overrides = {}) {
+  const rows = {
+    platform: 'unknown',
+    model: 'unknown',
+    input_tokens: 'unknown',
+    output_tokens: 'unknown',
+    cost_usd: 'unknown',
+    amp_credits: 'unknown',
+    spend_source: 'unknown',
+    ...overrides,
+  };
+  return `${METRICS_HANDOFF}
+## Metrics
+- platform: ${rows.platform}
+- model: ${rows.model}
+- input_tokens: ${rows.input_tokens}
+- output_tokens: ${rows.output_tokens}
+- cost_usd: ${rows.cost_usd}
+- amp_credits: ${rows.amp_credits}
+- spend_source: ${rows.spend_source}
+`;
+}
+
 test('handoff restore + persist records a session in metrics.json', () => {
   const dir = mkdtempSync(join(tmpdir(), 'aok-metrics-'));
   try {
@@ -1414,7 +1448,7 @@ test('handoff persist without spend keeps metrics null-honest and --no-metrics s
   }
 });
 
-test('handoff persist self-heals the Cursor spend hook and collects hook usage', () => {
+test('persist and restore do not create .cursor/hooks.json; update installs four events', () => {
   const dir = mkdtempSync(join(tmpdir(), 'aok-spend-hook-'));
   try {
     runInit(dir, '--profile generic --name SpendHook --lang en');
@@ -1422,27 +1456,19 @@ test('handoff persist self-heals the Cursor spend hook and collects hook usage',
     mkdirSync(changeDir, { recursive: true });
     writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
 
-    // init already installed the hook — remove it to prove persist self-heals
-    rmSync(join(dir, 'scripts/cursor-spend-hook.cjs'), { force: true });
-    rmSync(join(dir, 'scripts/cursor-spend-collect.cjs'), { force: true });
     rmSync(join(dir, '.cursor/hooks.json'), { force: true });
 
-    // restore opens the collect window; the usage record must land inside it
     cliExec(dir, 'handoff add-thing --restore');
-    const spendDir = join(dir, '.agents/spend');
-    mkdirSync(spendDir, { recursive: true });
-    const at = new Date().toISOString();
-    writeFileSync(
-      join(spendDir, 'cursor-usage.jsonl'),
-      `${JSON.stringify({ id: 'g-smoke', event: 'stop', model: 'cursor-grok-4.6', inputTokens: 500, outputTokens: 25, at })}\n`,
-    );
+    assert.ok(!existsSync(join(dir, '.cursor/hooks.json')), 'restore must not create hooks.json');
 
-    const stdout = cliExec(dir, 'handoff add-thing');
-    assert.match(stdout, /^\/opsx:/m, 'stdout stays a clean next-thread prompt');
-    assert.doesNotMatch(stdout, /spend hook/i, 'hook status goes to stderr, not stdout');
+    const persist = cliSpawn(dir, ['handoff', 'add-thing']);
+    assert.equal(persist.status, 0);
+    assert.match(persist.stdout, /^\/opsx:/m, 'stdout stays a clean next-thread prompt');
+    assert.doesNotMatch(`${persist.stdout}\n${persist.stderr}`, /spend hook/i);
+    assert.ok(!existsSync(join(dir, '.cursor/hooks.json')), 'persist must not create hooks.json');
 
-    assert.ok(existsSync(join(dir, 'scripts/cursor-spend-hook.cjs')), 'persist restores the hook script');
-    assert.ok(existsSync(join(dir, 'scripts/cursor-spend-collect.cjs')), 'persist restores the collect script');
+    cliExec(dir, 'update');
+    assert.ok(existsSync(join(dir, '.cursor/hooks.json')), 'update installs hooks.json');
     const hooksConfig = JSON.parse(readFileSync(join(dir, '.cursor/hooks.json'), 'utf-8'));
     for (const event of ['stop', 'subagentStop', 'afterAgentResponse']) {
       assert.ok(
@@ -1454,17 +1480,6 @@ test('handoff persist self-heals the Cursor spend hook and collects hook usage',
       (hooksConfig.hooks.sessionEnd || []).some((entry) => String(entry.command || '').includes('cursor-spend-collect.cjs')),
       'hooks.json registers sessionEnd collect',
     );
-
-    const metrics = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
-    const session = metrics.sessions[0];
-    assert.ok(session.sources.some((src) => src.id === 'g-smoke' && src.platform === 'cursor'));
-    assert.equal(session.inputTokens, 500);
-    assert.equal(session.outputTokens, 25);
-    assert.equal(metrics.spendByPlatform.cursor.source, 'cursor-hook');
-    assert.equal(metrics.spendByPlatform.cursor.totalTokens, 525);
-
-    const gitignore = readFileSync(join(dir, '.gitignore'), 'utf-8');
-    assert.ok(gitignore.split('\n').includes('.agents/spend/'), '.agents/spend/ is gitignored');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -1478,7 +1493,7 @@ test('next persist collects hook rows written after the previous persist', () =>
     mkdirSync(changeDir, { recursive: true });
     writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
 
-    cliExec(dir, 'handoff add-thing --model cursor-grok-4.6');
+    cliExec(dir, 'handoff add-thing --model cursor-grok-4.6 --collect');
     const first = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
     assert.equal(first.sessions.length, 1);
     const endedAt = first.sessions[0].endedAt;
@@ -1491,7 +1506,7 @@ test('next persist collects hook rows written after the previous persist', () =>
     writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
     cliExec(dir, 'handoff add-thing --restore');
     writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
-    cliExec(dir, 'handoff add-thing --model cursor-grok-4.6');
+    cliExec(dir, 'handoff add-thing --model cursor-grok-4.6 --collect');
 
     const metrics = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
     assert.equal(metrics.sessions.length, 2);
@@ -1535,6 +1550,75 @@ test('metrics --collect backfills the last session without adding another sessio
     const again = cliExec(dir, 'metrics add-thing --collect');
     assert.match(again, /collect: 0 new source/);
     assert.equal(JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions.length, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('persist infers model from Amp sources and --collect backfills leftover Amp usage', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-amp-infer-'));
+  try {
+    runInit(dir, '--profile generic --name AmpInfer --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+    const threadsDir = join(dir, '.aok-amp', 'threads');
+    mkdirSync(threadsDir, { recursive: true });
+    writeFileSync(join(threadsDir, 'T-live.json'), JSON.stringify({
+      id: 'T-live',
+      env: { initial: { cwd: dir } },
+      messages: [{
+        messageId: 'amp-live',
+        usage: {
+          inputTokens: 40,
+          outputTokens: 6,
+          model: 'amp-sonnet',
+          timestamp: '2026-08-29T12:00:00.000Z',
+        },
+      }],
+    }));
+
+    cliExec(dir, 'handoff add-thing --started-at 2026-08-29T11:00:00Z --collect', { AMP_CURRENT_THREAD: 'T-live' });
+    const afterPersist = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
+    assert.equal(afterPersist.sessions.length, 1);
+    assert.equal(afterPersist.sessions[0].model, 'amp-sonnet');
+    assert.equal(afterPersist.sessions[0].platform, 'amp');
+    assert.ok(afterPersist.sessions[0].sources.some((src) => src.id === 'T-live:amp-live'));
+    assert.equal(afterPersist.spendByPlatform.amp.source, 'amp-thread');
+    assert.equal(afterPersist.spendByModel[0].model, 'amp-sonnet');
+
+    const leftoverAt = afterPersist.sessions[0].endedAt;
+    writeFileSync(join(threadsDir, 'T-live.json'), JSON.stringify({
+      id: 'T-live',
+      env: { initial: { cwd: dir } },
+      messages: [
+        {
+          messageId: 'amp-live',
+          usage: {
+            inputTokens: 40,
+            outputTokens: 6,
+            model: 'amp-sonnet',
+            timestamp: afterPersist.sessions[0].endedAt,
+          },
+        },
+        {
+          messageId: 'amp-late',
+          usage: {
+            inputTokens: 12,
+            outputTokens: 3,
+            model: 'amp-sonnet',
+            timestamp: leftoverAt,
+          },
+        },
+      ],
+    }));
+
+    const out = cliExec(dir, 'metrics add-thing --collect', { AMP_CURRENT_THREAD: 'T-live' });
+    assert.match(out, /collect: 1 new source/);
+    const afterCollect = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
+    assert.equal(afterCollect.sessions.length, 1);
+    assert.ok(afterCollect.sessions[0].sources.some((src) => src.id === 'T-live:amp-late'));
+    assert.equal(afterCollect.sessions[0].totalTokens, 61);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -1632,7 +1716,7 @@ test('handoff persist resolves --model / AOK_MODEL and warns when model is null'
   }
 });
 
-test('handoff persist resolves --platform / AOK_PLATFORM and ignores CURSOR_AGENT', () => {
+test('handoff persist resolves --platform / AOK_PLATFORM and infers host env', () => {
   const dir = mkdtempSync(join(tmpdir(), 'aok-metrics-platform-'));
   try {
     runInit(dir, '--profile generic --name MetricsPlatform --lang en');
@@ -1657,8 +1741,19 @@ test('handoff persist resolves --platform / AOK_PLATFORM and ignores CURSOR_AGEN
 
     writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
     cliExec(dir, 'handoff add-thing --model claude-opus-5', { CURSOR_AGENT: '1' });
-    const last = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions.at(-1);
-    assert.equal(last.platform, null);
+    assert.equal(JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions.at(-1).platform, 'cursor');
+
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+    cliExec(dir, 'handoff add-thing --model claude-opus-5', { CLAUDECODE: '1' });
+    assert.equal(JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions.at(-1).platform, 'claude');
+
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+    cliExec(dir, 'handoff add-thing --model claude-opus-5', { AMP_CURRENT_THREAD: 'T-archive' });
+    assert.equal(JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions.at(-1).platform, 'amp');
+
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+    cliExec(dir, 'handoff add-thing --platform cursor --model claude-opus-5', { AMP_CURRENT_THREAD: 'T-archive' });
+    assert.equal(JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions.at(-1).platform, 'cursor');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -2039,7 +2134,7 @@ test('archive --platform foo fails before move', () => {
   }
 });
 
-test('persist Claude fixture fills session totals; flags override; --no-collect skips adapters', () => {
+test('persist Claude fixture fills session totals; flags override; default persist skips adapters', () => {
   const dir = mkdtempSync(join(tmpdir(), 'aok-metrics-collect-'));
   try {
     runInit(dir, '--profile generic --name MetricsCollect --lang en');
@@ -2073,7 +2168,7 @@ test('persist Claude fixture fills session totals; flags override; --no-collect 
       },
     ]);
 
-    cliExec(dir, 'handoff add-thing');
+    cliExec(dir, 'handoff add-thing --collect');
     const collected = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
     assert.equal(collected.sessions[0].sources.length, 2);
     assert.equal(collected.spendByPlatform.claude.source, 'claude-jsonl');
@@ -2100,7 +2195,7 @@ test('persist Claude fixture fills session totals; flags override; --no-collect 
         },
       },
     ]);
-    cliExec(dir, 'handoff add-thing --cost-usd 9.99');
+    cliExec(dir, 'handoff add-thing --cost-usd 9.99 --collect');
     const overridden = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
     const second = overridden.sessions[1];
     assert.equal(second.costUsd, 9.99);
@@ -2123,11 +2218,15 @@ test('persist Claude fixture fills session totals; flags override; --no-collect 
         },
       },
     ]);
-    cliExec(dir, 'handoff add-thing --no-collect');
+    cliExec(dir, 'handoff add-thing');
     const skipped = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
     const last = skipped.sessions.at(-1);
     assert.deepEqual(last.sources, []);
     assert.equal(last.totalTokens, null);
+
+    const unknownFlag = cliSpawn(dir, ['handoff', 'add-thing', '--no-collect']);
+    assert.notEqual(unknownFlag.status, 0);
+    assert.match(`${unknownFlag.stdout || ''}${unknownFlag.stderr || ''}`, /unknown option|--no-collect/i);
 
     const human = cliExec(dir, 'metrics add-thing');
     assert.match(human, /by platform/);
@@ -2173,7 +2272,7 @@ test('metrics prints platform and model tables without a unified Amp+USD total',
   }
 });
 
-test('archive --no-collect finalizes without Archiver sources', () => {
+test('archive without --collect finalizes without Archiver sources', () => {
   const dir = mkdtempSync(join(tmpdir(), 'aok-archive-nocollect-'));
   try {
     runInit(dir, '--profile generic --name ArchiveNoCollect --lang en');
@@ -2192,7 +2291,7 @@ test('archive --no-collect finalizes without Archiver sources', () => {
       },
     ]);
     installOpenspecStub(dir);
-    runCliStub(dir, 'archive add-auth --sync --no-collect');
+    runCliStub(dir, 'archive add-auth --sync');
     const archiveRoot = join(dir, 'openspec/changes/archive');
     const entry = readdirSync(archiveRoot).find((d) => d.endsWith('-add-auth'));
     const metrics = JSON.parse(readFileSync(join(archiveRoot, entry, 'metrics.json'), 'utf-8'));
@@ -3179,3 +3278,285 @@ test('archive writes Runtime into the final handoff', () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('parseMetricsSection normalizes values and persist sums totalTokens without a section key', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-metrics-parse-'));
+  try {
+    runInit(dir, '--profile generic --name MetricsParse --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'handoff.md'), handoffWithMetrics({
+      platform: 'cursor',
+      model: 'unknown',
+      input_tokens: '128,000',
+      output_tokens: '9400',
+      cost_usd: '$1.25',
+      amp_credits: 'none',
+      spend_source: 'self-report',
+    }).replace('- spend_source: self-report', '- spend_source: self-report\n- duration_ms: 999'));
+
+    const result = cliSpawn(dir, ['handoff', 'add-thing']);
+    assert.equal(result.status, 0);
+    const metrics = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
+    const session = metrics.sessions[0];
+    assert.equal(session.inputTokens, 128000);
+    assert.equal(session.outputTokens, 9400);
+    assert.equal(session.totalTokens, 137400);
+    assert.equal(session.costUsd, 1.25);
+    assert.equal(session.model, null);
+    assert.equal(session.spendSource, 'self-report');
+    assert.ok(!Object.prototype.hasOwnProperty.call(session, 'durationMs') || session.durationMs !== 999);
+
+    writeFileSync(join(changeDir, 'handoff.md'), handoffWithMetrics({ platform: 'chatgpt', model: 'claude-opus-5' }));
+    const invalid = cliSpawn(dir, ['handoff', 'add-thing']);
+    assert.equal(invalid.status, 0);
+    const second = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions[1];
+    assert.equal(second.platform, null);
+    assert.match(`${invalid.stderr || ''}`, /invalid platform|chatgpt/i);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('persist resolve chains: flags beat self-report; self-report beats env; empty is unreported', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-metrics-chain-'));
+  try {
+    runInit(dir, '--profile generic --name MetricsChain --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+
+    writeFileSync(join(changeDir, 'handoff.md'), handoffWithMetrics({
+      platform: 'cursor',
+      model: 'claude-opus-5',
+      input_tokens: '100',
+      output_tokens: '50',
+      cost_usd: '0.10',
+    }));
+    cliExec(dir, 'handoff add-thing --input-tokens 7 --output-tokens 2 --cost-usd 9.99 --model cursor-grok-4.6');
+    const flagged = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions[0];
+    assert.equal(flagged.inputTokens, 7);
+    assert.equal(flagged.outputTokens, 2);
+    assert.equal(flagged.costUsd, 9.99);
+    assert.equal(flagged.model, 'cursor-grok-4.6');
+    assert.equal(flagged.spendSource, 'flag');
+    const afterFlag = readFileSync(join(changeDir, 'handoff.md'), 'utf-8');
+    assert.match(afterFlag, /input_tokens: 100/);
+    assert.doesNotMatch(afterFlag, /input_tokens: 7/);
+
+    writeFileSync(join(changeDir, 'handoff.md'), handoffWithMetrics({
+      platform: 'amp',
+      model: 'claude-opus-5',
+      input_tokens: '40',
+      output_tokens: '6',
+      spend_source: 'self-report',
+    }));
+    cliExec(dir, 'handoff add-thing', { AOK_MODEL: 'gpt-5.6-sol', AOK_PLATFORM: 'cursor', CURSOR_AGENT: '1' });
+    const self = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions[1];
+    assert.equal(self.model, 'claude-opus-5');
+    assert.equal(self.platform, 'amp');
+    assert.equal(self.inputTokens, 40);
+    assert.equal(self.spendSource, 'self-report');
+
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+    const empty = cliSpawn(dir, ['handoff', 'add-thing']);
+    assert.equal(empty.status, 0);
+    assert.match(empty.stdout, /^\/opsx:/);
+    assert.match(empty.stderr, /unreported/);
+    const third = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions[2];
+    assert.equal(third.spendSource, 'unreported');
+    assert.equal(third.totalTokens, null);
+    const skeleton = readFileSync(join(changeDir, 'handoff.md'), 'utf-8');
+    assert.match(skeleton, /## Metrics/);
+    assert.match(skeleton, /input_tokens: unknown/);
+
+    writeClaudeJsonl(join(dir, '.aok-home'), dir, [
+      {
+        type: 'assistant',
+        cwd: dir,
+        timestamp: new Date().toISOString(),
+        message: {
+          id: 'msg-skip',
+          role: 'assistant',
+          model: 'claude-opus-4-7',
+          usage: { input_tokens: 9, output_tokens: 3 },
+        },
+      },
+    ]);
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+    cliExec(dir, 'handoff add-thing');
+    const skipped = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions.at(-1);
+    assert.deepEqual(skipped.sources, []);
+
+    writeClaudeJsonl(join(dir, '.aok-home'), dir, [
+      {
+        type: 'assistant',
+        cwd: dir,
+        timestamp: new Date().toISOString(),
+        message: {
+          id: 'msg-keep',
+          role: 'assistant',
+          model: 'claude-opus-4-7',
+          usage: { input_tokens: 5, output_tokens: 1 },
+        },
+      },
+    ]);
+    writeFileSync(join(changeDir, 'handoff.md'), handoffWithMetrics({
+      platform: 'claude',
+      model: 'claude-opus-5',
+      input_tokens: '1000',
+      output_tokens: '0',
+      spend_source: 'self-report',
+    }));
+    cliExec(dir, 'handoff add-thing --collect --model cursor-grok-4.6');
+    const collected = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions.at(-1);
+    assert.ok(collected.sources.length >= 1);
+    assert.equal(collected.inputTokens, 1000);
+    assert.equal(collected.model, 'cursor-grok-4.6');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('spendByPlatform uses self-report without doubling matching sources; metrics shows unreported', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-metrics-agg-'));
+  try {
+    runInit(dir, '--profile generic --name MetricsAgg --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+
+    writeFileSync(join(changeDir, 'handoff.md'), handoffWithMetrics({
+      platform: 'cursor',
+      model: 'cursor-grok-4.6',
+      input_tokens: '800',
+      output_tokens: '200',
+      cost_usd: '0.30',
+      spend_source: 'self-report',
+    }));
+    cliExec(dir, 'handoff add-thing');
+
+    writeFileSync(join(changeDir, 'handoff.md'), handoffWithMetrics({
+      platform: 'amp',
+      model: 'amp-sonnet',
+      input_tokens: '400',
+      output_tokens: '100',
+      amp_credits: '12',
+      spend_source: 'self-report',
+    }));
+    cliExec(dir, 'handoff add-thing');
+
+    const metrics = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
+    assert.equal(metrics.spendByPlatform.cursor.totalTokens, 1000);
+    assert.equal(metrics.spendByPlatform.cursor.costUsd, 0.30);
+    assert.equal(metrics.spendByPlatform.cursor.source, 'none');
+    assert.equal(metrics.spendByPlatform.amp.totalTokens, 500);
+    assert.equal(metrics.spendByPlatform.amp.ampCredits, 12);
+    assert.equal(metrics.spendByPlatform.amp.source, 'none');
+
+    writeFileSync(
+      join(changeDir, 'metrics.json'),
+      `${JSON.stringify({
+        version: 1,
+        change: 'add-thing',
+        spend: { inputTokens: 1000, outputTokens: 0, totalTokens: 1000, costUsd: null },
+        spendByPlatform: defaultLikePlatforms(),
+        spendByModel: [],
+        totals: { sessions: 3, durationMs: null, leadTimeMs: null, cloudSessions: 0 },
+        phases: { spec: { sessions: 3, durationMs: null, totalTokens: 1000, costUsd: null, agents: ['Architect'], models: [] } },
+        sessions: [
+          {
+            role: 'Architect',
+            phase: 'spec',
+            platform: 'claude',
+            model: 'claude-opus-5',
+            inputTokens: 1000,
+            outputTokens: 0,
+            totalTokens: 1000,
+            spendSource: 'self-report',
+            sources: [{ id: 's1', platform: 'claude', model: 'claude-opus-5', inputTokens: 1000, outputTokens: 0, totalTokens: 1000 }],
+            endedAt: '2026-08-30T08:00:00.000Z',
+            durationMs: null,
+          },
+        ],
+        pending: null,
+      }, null, 2)}\n`,
+    );
+    cliExec(dir, 'handoff add-thing --restore');
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+    cliExec(dir, 'handoff add-thing');
+    const after = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
+    assert.equal(after.spendByPlatform.claude.totalTokens, 1000);
+
+    const human = cliExec(dir, 'metrics add-thing');
+    assert.match(human, /unreported/);
+    assert.match(human, /by platform/);
+    assert.match(human, /by model/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('metrics treats legacy sessions without spendSource as unreported without rewriting the file', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-metrics-legacy-'));
+  try {
+    runInit(dir, '--profile generic --name MetricsLegacy --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    const payload = {
+      version: 1,
+      change: 'add-thing',
+      spend: { inputTokens: null, outputTokens: null, totalTokens: null, costUsd: null },
+      spendByPlatform: {
+        cursor: { inputTokens: null, outputTokens: null, totalTokens: null, costUsd: null, ampCredits: null, source: 'none' },
+        claude: { inputTokens: null, outputTokens: null, totalTokens: null, costUsd: null, ampCredits: null, source: 'none' },
+        amp: { inputTokens: null, outputTokens: null, totalTokens: null, costUsd: null, ampCredits: null, source: 'none' },
+      },
+      spendByModel: [],
+      totals: { sessions: 2, durationMs: null, leadTimeMs: null, cloudSessions: 0 },
+      phases: {},
+      sessions: [
+        { role: 'Architect', phase: 'spec', endedAt: '2026-08-29T07:00:00.000Z', durationMs: null },
+        { role: 'Implementer', phase: 'apply', endedAt: '2026-08-29T08:00:00.000Z', durationMs: null, spendSource: 'self-report' },
+      ],
+      pending: null,
+    };
+    const filePath = join(changeDir, 'metrics.json');
+    const before = `${JSON.stringify(payload, null, 2)}\n`;
+    writeFileSync(filePath, before);
+    const out = cliExec(dir, 'metrics add-thing');
+    assert.match(out, /unreported: 1/);
+    assert.match(out, /\(unreported\)/);
+    assert.equal(readFileSync(filePath, 'utf-8'), before);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('handoff and archive help show --collect and not --no-collect; archive stdout has tables', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-metrics-help-'));
+  try {
+    runInit(dir, '--profile generic --name MetricsHelp --lang en');
+    const handoffHelp = cliExec(dir, 'handoff --help');
+    assert.match(handoffHelp, /--collect/);
+    assert.doesNotMatch(handoffHelp, /--no-collect/);
+    const archiveHelp = cliExec(dir, 'archive --help');
+    assert.match(archiveHelp, /--collect/);
+    assert.doesNotMatch(archiveHelp, /--no-collect/);
+
+    makeArchiveFixture(dir, 'add-auth');
+    installOpenspecStub(dir);
+    const archived = runSpawn(dir, ['archive', 'add-auth', '--sync']);
+    assert.equal(archived.status, 0, archived.stderr);
+    assert.match(archived.stdout, /by platform/);
+    assert.match(archived.stdout, /by model/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function defaultLikePlatforms() {
+  return {
+    cursor: { inputTokens: null, outputTokens: null, totalTokens: null, costUsd: null, ampCredits: null, source: 'none' },
+    claude: { inputTokens: 1000, outputTokens: 0, totalTokens: 1000, costUsd: null, ampCredits: null, source: 'none' },
+    amp: { inputTokens: null, outputTokens: null, totalTokens: null, costUsd: null, ampCredits: null, source: 'none' },
+  };
+}

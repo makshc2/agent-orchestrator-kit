@@ -3,7 +3,7 @@
     "memory": {
       "command": "node",
       "args": [
-        "templates/scripts/memory-mcp-launcher.cjs"
+        "scripts/memory-mcp-launcher.cjs"
       ]
     }
   }

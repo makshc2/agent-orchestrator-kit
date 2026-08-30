@@ -98,7 +98,7 @@ test('claude jsonl: window, cwd, encode, cache_*, null cost, dedup', () => {
   rmSync(root, { recursive: true, force: true });
 });
 
-test('amp thread: trees uri match, skip without trees, no ledger → null credits', () => {
+test('amp thread: trees uri match, fallback cwd signals, skip other project, no ledger → null credits', () => {
   const root = mkdtempSync(join(tmpdir(), 'aok-collect-amp-'));
   const cwd = join(root, 'work');
   mkdirSync(cwd, { recursive: true });
@@ -168,6 +168,75 @@ test('amp thread: trees uri match, skip without trees, no ledger → null credit
     windowEnd: '2026-08-29T13:00:00.000Z',
   });
   assert.ok(!skipped.sources.some((src) => String(src.id).includes('amp-notrees')));
+
+  writeAmpThread(amp, {
+    env: { initial: { cwd } },
+    messages: [
+      {
+        messageId: 'amp-cwd',
+        usage: {
+          inputTokens: 9,
+          outputTokens: 1,
+          model: 'amp-model',
+          timestamp: '2026-08-29T12:00:00.000Z',
+        },
+      },
+    ],
+  });
+  const byCwd = collectSpend({
+    cwd,
+    env,
+    homedir: join(root, 'home'),
+    windowStart: '2026-08-29T11:00:00.000Z',
+    windowEnd: '2026-08-29T13:00:00.000Z',
+  });
+  assert.ok(byCwd.sources.some((src) => src.id === 't1:amp-cwd'));
+
+  writeFileSync(join(amp, 'threads', 'T-current.json'), JSON.stringify({
+    id: 'T-current',
+    messages: [
+      {
+        messageId: 'amp-current',
+        usage: {
+          inputTokens: 4,
+          outputTokens: 1,
+          model: 'amp-model',
+          timestamp: '2026-08-29T12:00:00.000Z',
+        },
+      },
+    ],
+  }));
+  const byThread = collectSpend({
+    cwd,
+    env: { ...env, AMP_CURRENT_THREAD: 'T-current' },
+    homedir: join(root, 'home'),
+    windowStart: '2026-08-29T11:00:00.000Z',
+    windowEnd: '2026-08-29T13:00:00.000Z',
+  });
+  assert.ok(byThread.sources.some((src) => src.id === 'T-current:amp-current'));
+
+  writeAmpThread(amp, {
+    messages: [
+      {
+        messageId: 'amp-mention',
+        content: `working in ${cwd}`,
+        usage: {
+          inputTokens: 3,
+          outputTokens: 1,
+          model: 'amp-model',
+          timestamp: '2026-08-29T12:00:00.000Z',
+        },
+      },
+    ],
+  });
+  const byMention = collectSpend({
+    cwd,
+    env,
+    homedir: join(root, 'home'),
+    windowStart: '2026-08-29T11:00:00.000Z',
+    windowEnd: '2026-08-29T13:00:00.000Z',
+  });
+  assert.ok(byMention.sources.some((src) => src.id === 't1:amp-mention'));
 
   writeAmpThread(amp, {
     env: { initial: { trees: [{ uri: 'file:///tmp/other-project' }] } },

@@ -162,6 +162,7 @@ const HANDOFF_SECTIONS = [
   'Subagents to spawn',
   'Constraints',
   'Runtime',
+  'Metrics',
   'Prompt',
 ];
 const CLOUD_ENV_MARKERS = ['CURSOR_BACKGROUND_AGENT'];
@@ -474,7 +475,7 @@ function printSpendHealth(projectDir) {
   const records = countCursorUsageRecords(projectDir);
   const cursorState = scriptOk && entryOk
     ? `ok${records != null ? ` (${records} records)` : ' (no turns recorded yet)'}`
-    : 'not configured — run npx agent-orchestrator-kit update';
+    : 'optional — not configured (init/update/sync/mcp-setup)';
   console.log(`  cursor   ${cursorState}`);
   const home = process.env.HOME || '';
   const claudeOk = home && existsSync(join(home, '.claude', 'projects'));
@@ -1022,16 +1023,135 @@ function applyRuntimeToFields(fields, opts, env) {
 }
 
 const VALID_PLATFORMS = new Set(['cursor', 'claude', 'amp']);
+const METRICS_NULL_TOKENS = new Set(['unknown', 'none', 'n/a', 'na', '-', '—', '–', 'null']);
 
-function resolveModel(opts, env) {
+function emptyMetricsFields(warnings = []) {
+  return {
+    platform: null,
+    model: null,
+    inputTokens: null,
+    outputTokens: null,
+    totalTokens: null,
+    costUsd: null,
+    ampCredits: null,
+    spendSource: null,
+    warnings,
+  };
+}
+
+function normalizeMetricsBlank(value) {
+  const raw = value == null ? '' : String(value).trim();
+  if (!raw) return null;
+  const lower = raw.toLowerCase();
+  if (METRICS_NULL_TOKENS.has(lower) || METRICS_NULL_TOKENS.has(raw)) return null;
+  return raw;
+}
+
+function parseMetricsNumber(raw, key, warnings) {
+  const normalized = normalizeMetricsBlank(raw);
+  if (normalized == null) return null;
+  const cleaned = normalized.replace(/[$,\s]/g, '');
+  const n = Number(cleaned);
+  if (!Number.isFinite(n)) {
+    warnings.push(`metrics: unparsable ${key} in ## Metrics: ${raw}`);
+    return null;
+  }
+  return n;
+}
+
+function parseMetricsSection(body) {
+  const warnings = [];
+  const values = {};
+  const present = new Set();
+  for (const line of String(body || '').split(/\r?\n/)) {
+    const match = line.match(/^\s*[-*]\s*([A-Za-z][A-Za-z0-9_]*)\s*:\s*(.*)$/);
+    if (!match) continue;
+    const key = match[1].toLowerCase();
+    values[key] = match[2].trim();
+    present.add(key);
+  }
+  const result = emptyMetricsFields(warnings);
+  const platformRaw = normalizeMetricsBlank(values.platform);
+  if (platformRaw) {
+    const lower = platformRaw.toLowerCase();
+    if (VALID_PLATFORMS.has(lower)) result.platform = lower;
+    else {
+      result.platform = null;
+      warnings.push(`metrics: invalid platform in ## Metrics: ${platformRaw}`);
+    }
+  }
+  result.model = normalizeMetricsBlank(values.model);
+  result.inputTokens = parseMetricsNumber(values.input_tokens, 'input_tokens', warnings);
+  result.outputTokens = parseMetricsNumber(values.output_tokens, 'output_tokens', warnings);
+  result.totalTokens = present.has('total_tokens')
+    ? parseMetricsNumber(values.total_tokens, 'total_tokens', warnings)
+    : null;
+  result.costUsd = parseMetricsNumber(values.cost_usd, 'cost_usd', warnings);
+  result.ampCredits = parseMetricsNumber(values.amp_credits, 'amp_credits', warnings);
+  result.spendSource = normalizeMetricsBlank(values.spend_source);
+  return result;
+}
+
+function formatMetricsField(value) {
+  return value == null || value === '' ? 'unknown' : String(value);
+}
+
+function renderMetricsSection(metrics) {
+  const m = metrics || emptyMetricsFields();
+  return `## Metrics
+- platform: ${formatMetricsField(m.platform)}
+- model: ${formatMetricsField(m.model)}
+- input_tokens: ${formatMetricsField(m.inputTokens)}
+- output_tokens: ${formatMetricsField(m.outputTokens)}
+- cost_usd: ${formatMetricsField(m.costUsd)}
+- amp_credits: ${formatMetricsField(m.ampCredits)}
+- spend_source: ${formatMetricsField(m.spendSource)}`;
+}
+
+function printMetricsSectionWarnings(metrics, platformAlreadyWarned) {
+  for (const warning of (metrics && metrics.warnings) || []) {
+    if (platformAlreadyWarned && /invalid platform/i.test(warning)) continue;
+    console.error(warning);
+  }
+}
+
+function firstNonNull(...values) {
+  for (const value of values) {
+    if (value != null) return value;
+  }
+  return null;
+}
+
+function resolveModel(opts, env, reported) {
   const flag = opts && opts.model != null ? String(opts.model).trim() : '';
   if (flag) return flag;
+  const fromReport = reported && reported.model != null ? String(reported.model).trim() : '';
+  if (fromReport) return fromReport;
   const fromEnv = env && env.AOK_MODEL != null ? String(env.AOK_MODEL).trim() : '';
   if (fromEnv) return fromEnv;
   return null;
 }
 
-function resolvePlatform(opts, env) {
+function envFlagOn(value) {
+  if (value == null) return false;
+  const normalized = String(value).trim().toLowerCase();
+  return normalized !== '' && normalized !== '0' && normalized !== 'false';
+}
+
+function inferPlatformFromHost(env) {
+  if (!env) return null;
+  if (env.AMP_CURRENT_THREAD != null && String(env.AMP_CURRENT_THREAD).trim()) return 'amp';
+  if (env.AMP_THREAD_ID != null && String(env.AMP_THREAD_ID).trim()) return 'amp';
+  if (envFlagOn(env.CURSOR_AGENT) || (env.CURSOR_CONVERSATION_ID != null && String(env.CURSOR_CONVERSATION_ID).trim())) {
+    return 'cursor';
+  }
+  if (envFlagOn(env.CLAUDECODE) || envFlagOn(env.CLAUDE_CODE) || (env.CLAUDE_CODE_ENTRYPOINT != null && String(env.CLAUDE_CODE_ENTRYPOINT).trim())) {
+    return 'claude';
+  }
+  return null;
+}
+
+function resolvePlatform(opts, env, reported) {
   const flag = opts && opts.platform != null ? String(opts.platform).trim() : '';
   if (flag) {
     const lower = flag.toLowerCase();
@@ -1040,13 +1160,19 @@ function resolvePlatform(opts, env) {
     }
     return { value: lower };
   }
+  const fromReport = reported && reported.platform != null ? String(reported.platform).trim() : '';
+  if (fromReport) {
+    const lower = fromReport.toLowerCase();
+    if (VALID_PLATFORMS.has(lower)) return { value: lower };
+    return { value: null, warn: 'invalid platform in ## Metrics (use cursor, claude, or amp)' };
+  }
   const fromEnv = env && env.AOK_PLATFORM != null ? String(env.AOK_PLATFORM).trim() : '';
   if (fromEnv) {
     const lower = fromEnv.toLowerCase();
     if (VALID_PLATFORMS.has(lower)) return { value: lower };
     return { value: null, warn: 'invalid AOK_PLATFORM (use cursor, claude, or amp)' };
   }
-  return { value: null };
+  return { value: inferPlatformFromHost(env) };
 }
 
 function warnMissingModel() {
@@ -1055,6 +1181,12 @@ function warnMissingModel() {
 
 function warnMissingUsd() {
   console.error('metrics: spend.costUsd is null — USD spend was not collected');
+}
+
+function warnUnreportedSelfReport() {
+  console.error(
+    'metrics: session spend is unreported — fill ## Metrics in handoff.md with platform, model, input_tokens, output_tokens, cost_usd, amp_credits, spend_source (use unknown when a value is missing)',
+  );
 }
 
 function gitTry(projectDir, command) {
@@ -1157,7 +1289,9 @@ ${fields.constraints}
 
 ## Runtime
 - runtime: ${runtime}
-- agent_id: ${agentId}${prompt}
+- agent_id: ${agentId}
+
+${renderMetricsSection(fields.metrics)}${prompt}
 `;
 }
 
@@ -1178,6 +1312,7 @@ function fieldsFromSections(changeName, sections, extra = {}) {
     constraints: extra.constraints || sectionOr(sections, 'Constraints', ''),
     runtime: extra.runtime || runtimeParsed.runtime,
     agentId: extra.agentId || runtimeParsed.agentId,
+    metrics: extra.metrics || parseMetricsSection(sectionOr(sections, 'Metrics', '')),
     status: extra.status || '',
     tasks: extra.tasks || '',
     review: extra.review || '',
@@ -1608,9 +1743,8 @@ function uniqueSourceModels(sources) {
   return seen;
 }
 
-function primaryModelFromSources(sources) {
-  if (!sources || !sources.length) return null;
-  const ranked = [...sources].sort((a, b) => {
+function rankSources(sources) {
+  return [...sources].sort((a, b) => {
     const ta = a.totalTokens ?? 0;
     const tb = b.totalTokens ?? 0;
     if (tb !== ta) return tb - ta;
@@ -1618,12 +1752,79 @@ function primaryModelFromSources(sources) {
     if (platformCmp !== 0) return platformCmp;
     return String(a.id || '').localeCompare(String(b.id || ''));
   });
-  const model = ranked[0] && ranked[0].model;
+}
+
+function primaryModelFromSources(sources) {
+  if (!sources || !sources.length) return null;
+  const top = rankSources(sources)[0];
+  const model = top && top.model;
   return model == null || model === '' ? null : String(model);
 }
 
+function primaryPlatformFromSources(sources) {
+  if (!sources || !sources.length) return null;
+  const platform = rankSources(sources)[0] && rankSources(sources)[0].platform;
+  return platform && VALID_PLATFORMS.has(platform) ? platform : null;
+}
+
 function hasSpendOverride(opts) {
-  return opts.inputTokens != null || opts.outputTokens != null || opts.totalTokens != null || opts.costUsd != null;
+  return Boolean(
+    opts
+    && (opts.inputTokens != null || opts.outputTokens != null || opts.totalTokens != null || opts.costUsd != null || opts.ampCredits != null),
+  );
+}
+
+function reportedHasSpendNumbers(reported) {
+  if (!reported) return false;
+  return (
+    reported.inputTokens != null
+    || reported.outputTokens != null
+    || reported.totalTokens != null
+    || reported.costUsd != null
+    || reported.ampCredits != null
+  );
+}
+
+function sourceAmpCredits(sources) {
+  let sum = null;
+  for (const src of sources || []) {
+    sum = addNullable(sum, numOrNull(src.ampCredits));
+  }
+  return sum;
+}
+
+function resolveSessionSpend(opts, reported, sources) {
+  const flags = opts || {};
+  const self = reported || emptyMetricsFields();
+  const fromSources = sessionTotalsFromSources(sources || []);
+  const sourceCredits = sourceAmpCredits(sources || []);
+  const flagInput = numOrNull(flags.inputTokens);
+  const flagOutput = numOrNull(flags.outputTokens);
+  const flagTotal = numOrNull(flags.totalTokens);
+  const flagCost = numOrNull(flags.costUsd);
+  const flagCredits = numOrNull(flags.ampCredits);
+  const inputTokens = firstNonNull(flagInput, self.inputTokens, fromSources.inputTokens);
+  const outputTokens = firstNonNull(flagOutput, self.outputTokens, fromSources.outputTokens);
+  let totalTokens = firstNonNull(flagTotal, self.totalTokens, fromSources.totalTokens);
+  if (totalTokens == null && (inputTokens != null || outputTokens != null)) {
+    totalTokens = (inputTokens ?? 0) + (outputTokens ?? 0);
+  }
+  const costUsd = firstNonNull(flagCost, self.costUsd, fromSources.costUsd);
+  const ampCredits = firstNonNull(flagCredits, self.ampCredits, sourceCredits);
+  let spendSource = 'unreported';
+  if (self.spendSource) spendSource = String(self.spendSource);
+  else if (hasSpendOverride(flags)) spendSource = 'flag';
+  else if (reportedHasSpendNumbers(self)) spendSource = 'self-report';
+  else if (
+    fromSources.inputTokens != null
+    || fromSources.outputTokens != null
+    || fromSources.totalTokens != null
+    || fromSources.costUsd != null
+    || sourceCredits != null
+  ) {
+    spendSource = 'adapter';
+  }
+  return { inputTokens, outputTokens, totalTokens, costUsd, ampCredits, spendSource };
 }
 
 function sessionTotalsFromFlags(opts) {
@@ -1670,16 +1871,19 @@ function runCollectSpend(metrics, windowStart, windowEnd) {
   }
 }
 
-function applyCollectedSessionFields(session, sources, resolvedModel, opts) {
-  session.sources = sources;
-  const uniqueModels = uniqueSourceModels(sources);
-  session.model = primaryModelFromSources(sources) || resolvedModel || null;
+function applyCollectedSessionFields(session, sources, resolvedModel, opts, reported) {
+  session.sources = sources || [];
+  const uniqueModels = uniqueSourceModels(session.sources);
+  if (!session.model) session.model = resolvedModel || primaryModelFromSources(session.sources) || null;
+  if (!session.platform) session.platform = primaryPlatformFromSources(session.sources) || null;
   if (uniqueModels.length > 1) session.models = uniqueModels;
-  const totals = hasSpendOverride(opts) ? sessionTotalsFromFlags(opts) : sessionTotalsFromSources(sources);
-  session.inputTokens = totals.inputTokens;
-  session.outputTokens = totals.outputTokens;
-  session.totalTokens = totals.totalTokens;
-  session.costUsd = totals.costUsd;
+  const spend = resolveSessionSpend(opts, reported, session.sources);
+  session.inputTokens = spend.inputTokens;
+  session.outputTokens = spend.outputTokens;
+  session.totalTokens = spend.totalTokens;
+  session.costUsd = spend.costUsd;
+  session.ampCredits = spend.ampCredits;
+  session.spendSource = spend.spendSource;
 }
 
 function sessionTotalsLookOverridden(session) {
@@ -1711,12 +1915,19 @@ function metricsBackfillFile(filePath, changeName) {
   if (!incoming.length) return { filePath, added: 0 };
   const overridden = sessionTotalsLookOverridden(last);
   const merged = [...(last.sources || []), ...incoming];
-  if (overridden) {
+  const keepReportedTotals = overridden
+    || last.spendSource === 'flag'
+    || last.spendSource === 'self-report'
+    || (last.spendSource && last.spendSource !== 'adapter' && last.spendSource !== 'unreported');
+  if (keepReportedTotals) {
     last.sources = merged;
     const uniqueModels = uniqueSourceModels(merged);
     if (uniqueModels.length > 1) last.models = uniqueModels;
   } else {
-    applyCollectedSessionFields(last, merged, last.model, {});
+    applyCollectedSessionFields(last, merged, last.model, {}, {
+      model: last.model,
+      platform: last.platform,
+    });
   }
   metrics.updatedAt = nowIso;
   recomputeMetricsAggregates(metrics);
@@ -1724,42 +1935,87 @@ function metricsBackfillFile(filePath, changeName) {
   return { filePath, added: incoming.length };
 }
 
+function adapterSourceName(platform) {
+  if (platform === 'claude') return 'claude-jsonl';
+  if (platform === 'amp') return 'amp-thread';
+  if (platform === 'cursor') return 'cursor-hook';
+  return null;
+}
+
+function spendTuple(obj) {
+  return {
+    inputTokens: numOrNull(obj && obj.inputTokens),
+    outputTokens: numOrNull(obj && obj.outputTokens),
+    totalTokens: numOrNull(obj && obj.totalTokens),
+    costUsd: numOrNull(obj && obj.costUsd),
+    ampCredits: numOrNull(obj && obj.ampCredits),
+  };
+}
+
+function spendTuplesMatch(a, b) {
+  return ['inputTokens', 'outputTokens', 'totalTokens', 'costUsd'].every((key) => {
+    const left = a[key];
+    const right = b[key];
+    if (left == null && right == null) return true;
+    return left === right;
+  });
+}
+
+function addSpendNums(target, nums) {
+  target.inputTokens = addNullable(target.inputTokens, nums.inputTokens);
+  target.outputTokens = addNullable(target.outputTokens, nums.outputTokens);
+  target.totalTokens = addNullable(target.totalTokens, nums.totalTokens);
+  target.costUsd = addNullable(target.costUsd, nums.costUsd);
+  target.ampCredits = addNullable(target.ampCredits, nums.ampCredits);
+}
+
 function recomputeSpendMaps(metrics) {
   const byPlatform = defaultSpendByPlatform();
   const byModel = new Map();
-  for (const session of metrics.sessions || []) {
-    for (const src of session.sources || []) {
-      const platform = src.platform;
-      if (platform && byPlatform[platform]) {
-        const bucket = byPlatform[platform];
-        bucket.inputTokens = addNullable(bucket.inputTokens, numOrNull(src.inputTokens));
-        bucket.outputTokens = addNullable(bucket.outputTokens, numOrNull(src.outputTokens));
-        bucket.totalTokens = addNullable(bucket.totalTokens, numOrNull(src.totalTokens));
-        bucket.costUsd = addNullable(bucket.costUsd, numOrNull(src.costUsd));
-        bucket.ampCredits = addNullable(bucket.ampCredits, numOrNull(src.ampCredits));
-        if (platform === 'claude') bucket.source = 'claude-jsonl';
-        else if (platform === 'amp') bucket.source = 'amp-thread';
-        else if (platform === 'cursor') bucket.source = 'cursor-hook';
-      }
-      if (src.model) {
-        const key = `${src.model}::${src.platform || ''}`;
-        const row = byModel.get(key) || {
-          model: src.model,
-          platform: src.platform || null,
-          inputTokens: null,
-          outputTokens: null,
-          totalTokens: null,
-          costUsd: null,
-          ampCredits: null,
-        };
-        row.inputTokens = addNullable(row.inputTokens, numOrNull(src.inputTokens));
-        row.outputTokens = addNullable(row.outputTokens, numOrNull(src.outputTokens));
-        row.totalTokens = addNullable(row.totalTokens, numOrNull(src.totalTokens));
-        row.costUsd = addNullable(row.costUsd, numOrNull(src.costUsd));
-        row.ampCredits = addNullable(row.ampCredits, numOrNull(src.ampCredits));
-        byModel.set(key, row);
-      }
+
+  function addModelRow(model, platform, nums) {
+    if (!model) return;
+    const key = `${model}::${platform || ''}`;
+    const row = byModel.get(key) || {
+      model,
+      platform: platform || null,
+      inputTokens: null,
+      outputTokens: null,
+      totalTokens: null,
+      costUsd: null,
+      ampCredits: null,
+    };
+    addSpendNums(row, nums);
+    byModel.set(key, row);
+  }
+
+  function addSourceRow(src) {
+    const nums = spendTuple(src);
+    if (src.platform && byPlatform[src.platform]) {
+      addSpendNums(byPlatform[src.platform], nums);
+      const label = adapterSourceName(src.platform);
+      if (label) byPlatform[src.platform].source = label;
     }
+    addModelRow(src.model, src.platform, nums);
+  }
+
+  for (const session of metrics.sessions || []) {
+    const sessionNums = spendTuple(session);
+    const sourceTotals = sessionTotalsFromSources(session.sources || []);
+    sourceTotals.ampCredits = sourceAmpCredits(session.sources || []);
+    const sources = session.sources || [];
+    const sourcesMatchSession = sources.length > 0 && spendTuplesMatch(sessionNums, sourceTotals);
+
+    if (sourcesMatchSession) {
+      for (const src of sources) addSourceRow(src);
+      continue;
+    }
+
+    if (session.platform && byPlatform[session.platform]) {
+      addSpendNums(byPlatform[session.platform], sessionNums);
+    }
+    addModelRow(session.model, session.platform, sessionNums);
+    for (const src of sources) addSourceRow(src);
   }
   metrics.spendByPlatform = byPlatform;
   metrics.spendByModel = [...byModel.values()];
@@ -1820,11 +2076,12 @@ function metricsRecordSessionEnd(projectDir, fields, opts = {}) {
   const metrics = loadMetricsFile(filePath, fields.changeName, nowIso);
   const startedAt = isoOrNull(opts.startedAt) || (metrics.pending && metrics.pending.startedAt) || null;
   const durationMs = startedAt ? Math.max(0, Date.parse(nowIso) - Date.parse(startedAt)) : null;
-  const resolvedModel = opts.model === undefined ? resolveModel(opts, process.env) : opts.model;
+  const reported = opts.reported || fields.metrics || emptyMetricsFields();
+  const resolvedModel = opts.model === undefined ? resolveModel(opts, process.env, reported) : opts.model;
   const windowStart = collectWindowStart(metrics);
-  const collected = opts.collect === false
-    ? { sources: [] }
-    : runCollectSpend(metrics, windowStart, nowIso);
+  const collected = opts.collect === true
+    ? runCollectSpend(metrics, windowStart, nowIso)
+    : { sources: [] };
   const session = {
     startedAt,
     endedAt: nowIso,
@@ -1841,14 +2098,20 @@ function metricsRecordSessionEnd(projectDir, fields, opts = {}) {
     outputTokens: null,
     totalTokens: null,
     costUsd: null,
+    ampCredits: null,
+    spendSource: 'unreported',
   };
-  applyCollectedSessionFields(session, collected.sources || [], resolvedModel, opts);
+  applyCollectedSessionFields(session, collected.sources || [], resolvedModel, opts, reported);
   metrics.sessions.push(session);
   metrics.pending = null;
   metrics.updatedAt = nowIso;
   recomputeMetricsAggregates(metrics);
-  if (session.model == null) warnMissingModel();
   saveMetricsFile(filePath, metrics);
+  if (opts.collect === true) metricsBackfillFile(filePath, fields.changeName);
+  const latest = loadMetricsFile(filePath, fields.changeName, nowIso);
+  const last = (latest.sessions || []).at(-1);
+  if (last && last.spendSource === 'unreported') warnUnreportedSelfReport();
+  if (!last || last.model == null) warnMissingModel();
   return filePath;
 }
 
@@ -1857,10 +2120,11 @@ function metricsFinalizeArchive(targetDir, changeName, opts = {}) {
   const nowIso = new Date().toISOString();
   const metrics = loadMetricsFile(filePath, changeName, nowIso);
   const windowStart = lastSessionEndedAt(metrics) || metrics.createdAt;
-  const collected = opts.collect === false
-    ? { sources: [] }
-    : runCollectSpend(metrics, windowStart, nowIso);
-  const resolvedModel = opts.model === undefined ? resolveModel(opts, process.env) : opts.model;
+  const collected = opts.collect === true
+    ? runCollectSpend(metrics, windowStart, nowIso)
+    : { sources: [] };
+  const reported = opts.reported || emptyMetricsFields();
+  const resolvedModel = opts.model === undefined ? resolveModel(opts, process.env, reported) : opts.model;
   const session = {
     startedAt: nowIso,
     endedAt: nowIso,
@@ -1877,16 +2141,22 @@ function metricsFinalizeArchive(targetDir, changeName, opts = {}) {
     outputTokens: null,
     totalTokens: null,
     costUsd: null,
+    ampCredits: null,
+    spendSource: 'unreported',
   };
-  applyCollectedSessionFields(session, collected.sources || [], resolvedModel, {});
+  applyCollectedSessionFields(session, collected.sources || [], resolvedModel, opts, reported);
   metrics.sessions.push(session);
   metrics.archivedAt = nowIso;
   metrics.pending = null;
   metrics.updatedAt = nowIso;
   recomputeMetricsAggregates(metrics);
-  if (session.model == null) warnMissingModel();
-  if (metrics.spend.costUsd === null) warnMissingUsd();
   saveMetricsFile(filePath, metrics);
+  if (opts.collect === true) metricsBackfillFile(filePath, changeName);
+  const latest = loadMetricsFile(filePath, changeName, nowIso);
+  const last = (latest.sessions || []).at(-1);
+  if (last && last.spendSource === 'unreported') warnUnreportedSelfReport();
+  if (!last || last.model == null) warnMissingModel();
+  if (latest.spend.costUsd === null) warnMissingUsd();
   return filePath;
 }
 
@@ -1907,6 +2177,92 @@ function formatMetricsNumber(value) {
 
 function formatMetricsCost(value) {
   return value == null ? '—' : `$${Number(value).toFixed(2)}`;
+}
+
+function sessionSpendSourceLabel(session) {
+  const raw = session && session.spendSource;
+  if (raw == null || String(raw).trim() === '') return 'unreported';
+  return String(raw);
+}
+
+function renderMetricsSummary(metrics) {
+  const lines = [];
+  const sessions = Array.isArray(metrics.sessions) ? metrics.sessions : [];
+  const unreported = sessions.filter((session) => sessionSpendSourceLabel(session) === 'unreported').length;
+  lines.push(`sessions:  ${metrics.totals.sessions}${metrics.totals.cloudSessions ? ` (cloud: ${metrics.totals.cloudSessions})` : ''}`);
+  lines.push(`work time: ${formatMetricsDuration(metrics.totals.durationMs)}`);
+  lines.push(`lead time: ${formatMetricsDuration(metrics.totals.leadTimeMs)}`);
+  lines.push(`tokens:    ${formatMetricsNumber(metrics.spend.totalTokens)} (in: ${formatMetricsNumber(metrics.spend.inputTokens)}, out: ${formatMetricsNumber(metrics.spend.outputTokens)})`);
+  lines.push(`cost:      ${formatMetricsCost(metrics.spend.costUsd)}`);
+  lines.push(`unreported: ${unreported}`);
+  if (metrics.archivedAt) lines.push(`archived:  ${metrics.archivedAt}`);
+  if (metrics.pending) {
+    lines.push(`open session since ${metrics.pending.startedAt} (${metrics.pending.role || 'unknown role'})`);
+  }
+
+  const phaseOrder = ['explore', 'design', 'spec', 'review', 'apply', 'archive', 'other'];
+  const phaseKeys = phaseOrder.filter((key) => metrics.phases[key]);
+  if (phaseKeys.length) {
+    lines.push('');
+    lines.push('phase      sessions  time      tokens    cost      roles                models');
+    for (const key of phaseKeys) {
+      const phase = metrics.phases[key];
+      lines.push([
+        key.padEnd(10),
+        String(phase.sessions).padEnd(9),
+        formatMetricsDuration(phase.durationMs).padEnd(9),
+        formatMetricsNumber(phase.totalTokens).padEnd(9),
+        formatMetricsCost(phase.costUsd).padEnd(9),
+        (phase.agents.join(', ') || '—').padEnd(20),
+        phase.models.join(', ') || '—',
+      ].join(' '));
+    }
+  }
+
+  const byPlatform = metrics.spendByPlatform || defaultSpendByPlatform();
+  lines.push('');
+  lines.push('by platform:');
+  lines.push('platform   tokens    cost      credits   source');
+  for (const key of ['cursor', 'claude', 'amp']) {
+    const row = byPlatform[key] || emptyPlatformSpend();
+    lines.push([
+      key.padEnd(10),
+      formatMetricsNumber(row.totalTokens).padEnd(9),
+      formatMetricsCost(row.costUsd).padEnd(9),
+      formatMetricsNumber(row.ampCredits).padEnd(9),
+      row.source || 'none',
+    ].join(' '));
+  }
+
+  lines.push('');
+  lines.push('by model:');
+  lines.push('model                platform   tokens    cost      credits');
+  const byModel = Array.isArray(metrics.spendByModel) ? metrics.spendByModel : [];
+  if (!byModel.length) {
+    lines.push('—                     —          —         —         —');
+  } else {
+    for (const row of byModel) {
+      lines.push([
+        String(row.model || '—').padEnd(20),
+        String(row.platform || '—').padEnd(10),
+        formatMetricsNumber(row.totalTokens).padEnd(9),
+        formatMetricsCost(row.costUsd).padEnd(9),
+        formatMetricsNumber(row.ampCredits),
+      ].join(' '));
+    }
+  }
+
+  if (sessions.length) {
+    lines.push('');
+    lines.push('recent sessions:');
+    for (const session of sessions.slice(-5)) {
+      const spendLabel = session.totalTokens != null || session.costUsd != null
+        ? ` — ${formatMetricsNumber(session.totalTokens)} tok, ${formatMetricsCost(session.costUsd)}`
+        : '';
+      lines.push(`- ${session.endedAt}  ${String(session.phase || '').padEnd(7)} ${formatMetricsDuration(session.durationMs).padEnd(9)} ${session.role || '(no role)'}${session.model ? ` [${session.model}]` : ''} (${sessionSpendSourceLabel(session)})${spendLabel}`);
+    }
+  }
+  return lines;
 }
 
 function resolveMetricsFile(projectDir, changeName) {
@@ -3078,7 +3434,11 @@ program
   .option('--force', 'confirm archiving without merge when delta specs exist', false)
   .option('--model <name>', 'LLM product id recorded on the Archiver session')
   .option('--platform <platform>', 'Session platform: cursor | claude | amp')
-  .option('--no-collect', 'Skip local spend adapters when finalizing metrics')
+  .option('--input-tokens <n>', 'Input tokens spent in the Archiver session')
+  .option('--output-tokens <n>', 'Output tokens spent in the Archiver session')
+  .option('--total-tokens <n>', 'Total tokens spent in the Archiver session (default: input + output)')
+  .option('--cost-usd <usd>', 'Cost of the Archiver session in USD')
+  .option('--collect', 'Additionally collect local spend adapters', false)
   .action((name, opts) => {
     const projectDir = process.cwd();
     const fail = (msg) => {
@@ -3198,6 +3558,11 @@ program
     if (existsSync(archivedHandoffPath)) {
       priorFields = fieldsFromSections(name, parseHandoffMarkdown(readFileSync(archivedHandoffPath, 'utf-8')));
     }
+    const reported = priorFields.metrics || emptyMetricsFields();
+    const archivePlatform = resolvePlatform(opts, process.env, reported);
+    const archiveModel = resolveModel(opts, process.env, reported);
+    if (archivePlatform.warn) console.error(archivePlatform.warn);
+    printMetricsSectionWarnings(reported, Boolean(archivePlatform.warn));
     const runtimeResult = resolveRuntime({}, process.env, priorFields);
     const progress = parseTasksProgress(targetDir);
     const fields = {
@@ -3214,6 +3579,7 @@ program
       constraints: 'Pipeline complete — no next session.',
       runtime: runtimeResult.value || 'local',
       agentId: resolveAgentId({}, process.env, priorFields),
+      metrics: reported,
       status: 'archived',
       tasks: progress ? `${progress.done}/${progress.total}` : '',
       review: parseReviewVerdict(targetDir) || '',
@@ -3222,12 +3588,17 @@ program
     writeFileSync(join(targetDir, 'handoff.md'), `${buildHandoffMarkdown(fields).trim()}\n`);
     const memoryPath = persistMemoryFromHandoff(projectDir, fields);
     const metricsPath = metricsFinalizeArchive(targetDir, name, {
-      model: resolvedModel,
-      platform: platformResult.value || null,
+      model: archiveModel,
+      platform: archivePlatform.value || null,
       runtime: fields.runtime,
       agentId: fields.agentId,
       tasks: fields.tasks,
-      collect: opts.collect !== false,
+      collect: opts.collect === true,
+      inputTokens: opts.inputTokens,
+      outputTokens: opts.outputTokens,
+      totalTokens: opts.totalTokens,
+      costUsd: opts.costUsd,
+      reported,
     });
 
     console.log(`change:   ${name}`);
@@ -3237,6 +3608,10 @@ program
     console.log(`handoff:  ${join(targetRel, 'handoff.md')} (next_command: none)`);
     console.log(`memory:   ${memoryPath.replace(`${projectDir}/`, '')}`);
     console.log(`metrics:  ${metricsPath.replace(`${projectDir}/`, '')} (archived_at set)`);
+    try {
+      const archivedMetrics = loadMetricsFile(metricsPath, name, new Date().toISOString());
+      for (const line of renderMetricsSummary(archivedMetrics)) console.log(line);
+    } catch {}
     log.ok(`archived ${name}`);
   });
 
@@ -3444,7 +3819,7 @@ program
   .option('--total-tokens <n>', 'Total tokens spent in this session (default: input + output)')
   .option('--cost-usd <usd>', 'Cost of this session in USD')
   .option('--no-metrics', 'Skip recording this session into metrics.json')
-  .option('--no-collect', 'Skip local spend adapters for this persist')
+  .option('--collect', 'Additionally collect local spend adapters', false)
   .action((changeName, opts) => {
     const projectDir = process.cwd();
     const resolved = resolveHandoffChange(projectDir, changeName);
@@ -3505,9 +3880,6 @@ program
         const metricsPath = metricsRecordSessionStart(projectDir, name, fields ? fields.nextRole : '');
         log.ok(`metrics: session start recorded (${metricsPath.replace(`${projectDir}/`, '')})`);
       }
-      const spendHook = ensureCursorSpendHook(projectDir);
-      if (spendHook.error) log.warn(`Cursor spend hook: ${spendHook.error}`);
-      else if (spendHook.hooksJson) log.ok('Cursor spend hook installed — restart Cursor once to activate it');
       return;
     }
 
@@ -3575,14 +3947,16 @@ program
       return;
     }
 
-    const platformResult = resolvePlatform(opts, process.env);
+    const reported = fields.metrics || emptyMetricsFields();
+    const platformResult = resolvePlatform(opts, process.env, reported);
     if (platformResult.error) {
       log.err(platformResult.error);
       process.exitCode = 1;
       return;
     }
     if (platformResult.warn) console.error(platformResult.warn);
-    const resolvedModel = resolveModel(opts, process.env);
+    printMetricsSectionWarnings(reported, Boolean(platformResult.warn));
+    const resolvedModel = resolveModel(opts, process.env, reported);
 
     const prompt = buildNextSessionPrompt(fields, agentLanguage).replace(/^\n+|\n+$/g, '');
     fields.prompt = prompt;
@@ -3593,10 +3967,6 @@ program
     const memoryPath = persistMemoryFromHandoff(projectDir, fields);
     console.error(pc.green('  ✓'), `Memory JSON upserted: ${memoryPath}`);
 
-    const spendHook = ensureCursorSpendHook(projectDir);
-    if (spendHook.error) console.error(pc.yellow('  !'), `Cursor spend hook: ${spendHook.error}`);
-    else if (spendHook.hooksJson) console.error(pc.green('  ✓'), 'Cursor spend hook installed — restart Cursor once to activate it');
-
     if (opts.metrics !== false) {
       const metricsPath = metricsRecordSessionEnd(projectDir, fields, {
         startedAt: opts.startedAt,
@@ -3606,7 +3976,8 @@ program
         outputTokens: opts.outputTokens,
         totalTokens: opts.totalTokens,
         costUsd: opts.costUsd,
-        collect: opts.collect !== false,
+        collect: opts.collect === true,
+        reported,
       });
       console.error(pc.green('  ✓'), `metrics.json updated: ${metricsPath.replace(`${projectDir}/`, '')}`);
     }
@@ -3624,7 +3995,6 @@ program
   .option('--collect', 'Backfill the last session from local spend adapters without adding a new session', false)
   .action((changeName, opts) => {
     const projectDir = process.cwd();
-    ensureCursorSpendHook(projectDir);
     let name = changeName;
     let collectedAlready = false;
     if (!name) {
@@ -3685,77 +4055,7 @@ program
 
     log.title(`metrics  ${name}${archived ? '  (archived)' : ''}`);
     console.log(`file:      ${filePath.replace(`${projectDir}/`, '')}`);
-    console.log(`sessions:  ${metrics.totals.sessions}${metrics.totals.cloudSessions ? ` (cloud: ${metrics.totals.cloudSessions})` : ''}`);
-    console.log(`work time: ${formatMetricsDuration(metrics.totals.durationMs)}`);
-    console.log(`lead time: ${formatMetricsDuration(metrics.totals.leadTimeMs)}`);
-    console.log(`tokens:    ${formatMetricsNumber(metrics.spend.totalTokens)} (in: ${formatMetricsNumber(metrics.spend.inputTokens)}, out: ${formatMetricsNumber(metrics.spend.outputTokens)})`);
-    console.log(`cost:      ${formatMetricsCost(metrics.spend.costUsd)}`);
-    if (metrics.archivedAt) console.log(`archived:  ${metrics.archivedAt}`);
-    if (metrics.pending) log.warn(`open session since ${metrics.pending.startedAt} (${metrics.pending.role || 'unknown role'})`);
-
-    const phaseOrder = ['explore', 'design', 'spec', 'review', 'apply', 'archive', 'other'];
-    const phaseKeys = phaseOrder.filter((key) => metrics.phases[key]);
-    if (phaseKeys.length) {
-      console.log('');
-      console.log('phase      sessions  time      tokens    cost      roles                models');
-      for (const key of phaseKeys) {
-        const phase = metrics.phases[key];
-        const cols = [
-          key.padEnd(10),
-          String(phase.sessions).padEnd(9),
-          formatMetricsDuration(phase.durationMs).padEnd(9),
-          formatMetricsNumber(phase.totalTokens).padEnd(9),
-          formatMetricsCost(phase.costUsd).padEnd(9),
-          (phase.agents.join(', ') || '—').padEnd(20),
-          phase.models.join(', ') || '—',
-        ];
-        console.log(cols.join(' '));
-      }
-    }
-
-    const byPlatform = metrics.spendByPlatform || defaultSpendByPlatform();
-    console.log('');
-    console.log('by platform:');
-    console.log('platform   tokens    cost      credits   source');
-    for (const key of ['cursor', 'claude', 'amp']) {
-      const row = byPlatform[key] || emptyPlatformSpend();
-      console.log([
-        key.padEnd(10),
-        formatMetricsNumber(row.totalTokens).padEnd(9),
-        formatMetricsCost(row.costUsd).padEnd(9),
-        formatMetricsNumber(row.ampCredits).padEnd(9),
-        row.source || 'none',
-      ].join(' '));
-    }
-
-    console.log('');
-    console.log('by model:');
-    console.log('model                platform   tokens    cost      credits');
-    const byModel = Array.isArray(metrics.spendByModel) ? metrics.spendByModel : [];
-    if (!byModel.length) {
-      console.log('—                     —          —         —         —');
-    } else {
-      for (const row of byModel) {
-        console.log([
-          String(row.model || '—').padEnd(20),
-          String(row.platform || '—').padEnd(10),
-          formatMetricsNumber(row.totalTokens).padEnd(9),
-          formatMetricsCost(row.costUsd).padEnd(9),
-          formatMetricsNumber(row.ampCredits),
-        ].join(' '));
-      }
-    }
-
-    if (metrics.sessions.length) {
-      console.log('');
-      console.log('recent sessions:');
-      for (const session of metrics.sessions.slice(-5)) {
-        const spendLabel = session.totalTokens != null || session.costUsd != null
-          ? ` — ${formatMetricsNumber(session.totalTokens)} tok, ${formatMetricsCost(session.costUsd)}`
-          : '';
-        console.log(`- ${session.endedAt}  ${session.phase.padEnd(7)} ${formatMetricsDuration(session.durationMs).padEnd(9)} ${session.role || '(no role)'}${session.model ? ` [${session.model}]` : ''}${spendLabel}`);
-      }
-    }
+    for (const line of renderMetricsSummary(metrics)) console.log(line);
   });
 
 program.parse();

@@ -21,7 +21,7 @@ Archive is one CLI call, no phase subagents.
    npx agent-orchestrator-kit archive <name> [--sync | --no-sync --force]
    ```
 
-   Gates, optional `--sync`, move to `archive/YYYY-MM-DD-<name>`, validate+rollback, final `handoff.md` (`next_command: none`) + memory. A successful `archive` always creates or updates `metrics.json` (`archivedAt`, Archiver session) and runs collect unless `--no-collect`; if `spend.costUsd` is `null` — stderr warning, not a gate.
+   Gates, optional `--sync`, move to `archive/YYYY-MM-DD-<name>`, validate+rollback, final `handoff.md` (`next_command: none`) + memory. A successful `archive` always creates or updates `metrics.json` (`archivedAt`, Archiver session) and prints the change-wide metrics summary. Collect runs only with `--collect`; if `spend.costUsd` is `null` — stderr warning, not a gate.
 
 4. **Show stdout as-is.** On exit ≠ 0, report the gate from stderr and stop — no manual merge/move.
 

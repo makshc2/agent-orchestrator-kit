@@ -43,6 +43,19 @@ function stripFileUri(uri) {
   return value.startsWith('file://') ? value.slice('file://'.length) : value;
 }
 
+function normalizeFsPath(value) {
+  const stripped = stripFileUri(value).trim();
+  if (!stripped) return '';
+  if (stripped.length > 1 && stripped.endsWith('/')) return stripped.replace(/\/+$/, '');
+  return stripped;
+}
+
+function pathsEqual(a, b) {
+  const left = normalizeFsPath(a);
+  const right = normalizeFsPath(b);
+  return Boolean(left) && left === right;
+}
+
 function parseTime(value) {
   if (value == null || value === '') return NaN;
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -188,10 +201,69 @@ function ampRoot(env, homedir) {
   return join(homedir || env.HOME || osHomedir(), '.local', 'share', 'amp');
 }
 
-function ampTreesMatch(thread, cwd) {
+function ampTrees(thread) {
   const trees = thread && thread.env && thread.env.initial && thread.env.initial.trees;
-  if (!Array.isArray(trees) || trees.length === 0) return false;
-  return trees.some((tree) => tree && stripFileUri(tree.uri) === cwd);
+  return Array.isArray(trees) ? trees : [];
+}
+
+function ampCwdCandidates(thread) {
+  const out = [];
+  const push = (value) => {
+    if (typeof value === 'string' && value.trim()) out.push(value);
+  };
+  push(thread && thread.cwd);
+  push(thread && thread.workdir);
+  const env = thread && thread.env;
+  if (env && typeof env === 'object') {
+    push(env.cwd);
+    push(env.PWD);
+    push(env.pwd);
+    if (env.initial && typeof env.initial === 'object') {
+      push(env.initial.cwd);
+      push(env.initial.PWD);
+      push(env.initial.workdir);
+      push(env.initial.workspace);
+    }
+  }
+  const meta = thread && thread.meta;
+  if (meta && typeof meta === 'object') {
+    push(meta.cwd);
+    push(meta.workdir);
+  }
+  return out;
+}
+
+function ampCurrentThreadId(env) {
+  if (!env || typeof env !== 'object') return '';
+  for (const key of ['AMP_CURRENT_THREAD', 'AMP_THREAD_ID']) {
+    const value = env[key];
+    if (value != null && String(value).trim()) return String(value).trim();
+  }
+  return '';
+}
+
+function ampThreadMentionsCwd(thread, cwd) {
+  const target = normalizeFsPath(cwd);
+  if (!target || target.length < 2) return false;
+  let blob;
+  try {
+    blob = JSON.stringify(thread);
+  } catch {
+    return false;
+  }
+  return blob.includes(target) || blob.includes(`file://${target}`);
+}
+
+function ampThreadMatches(thread, cwd, env, fileName) {
+  const trees = ampTrees(thread);
+  if (trees.length > 0) {
+    return trees.some((tree) => tree && pathsEqual(tree.uri, cwd));
+  }
+  if (ampCwdCandidates(thread).some((candidate) => pathsEqual(candidate, cwd))) return true;
+  const threadKey = thread && thread.id ? String(thread.id) : basename(fileName, '.json');
+  const current = ampCurrentThreadId(env);
+  if (current && current === threadKey) return true;
+  return ampThreadMentionsCwd(thread, cwd);
 }
 
 function ampMessages(thread) {
@@ -260,7 +332,7 @@ function collectAmp({ cwd, windowStart, windowEnd, existing, env, homedir, notes
       continue;
     }
     if (!thread || typeof thread !== 'object') continue;
-    if (!ampTreesMatch(thread, cwd)) continue;
+    if (!ampThreadMatches(thread, cwd, env, file)) continue;
     // messageId values are thread-local counters (1, 3, 5, ...), so a bare id
     // collides across threads; namespace with the thread id for global dedup.
     const threadKey = thread.id ? String(thread.id) : basename(file, '.json');

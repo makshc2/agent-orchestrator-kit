@@ -801,12 +801,13 @@ Persist with `runtime: cloud` prints those four steps on stderr; stdout stays th
 
 Every change accumulates git-tracked `openspec/changes/<name>/metrics.json` — the data source for planning the next feature: how long each phase took, how many sessions it needed, what it cost.
 
-- **`session.model`** — LLM product id. Primary from collected sources, otherwise `--model` → `AOK_MODEL` → `null` (stderr warning). Never a Closed role.
+- **`## Metrics` self-report** — Session Exit fills `handoff.md` with `platform`, `model`, `input_tokens`, `output_tokens`, `cost_usd`, `amp_credits`, `spend_source` (`unknown` when missing). Persist reads that section; `metrics.json` is the source of truth for what landed. CLI flags do not rewrite the section.
+- **`session.model`** — `--model` → `## Metrics: model` → `AOK_MODEL` → collected sources (only with `--collect`) → `null` (stderr warning). Never a Closed role.
 - **Session start** — `handoff --restore` writes a `pending` marker (`startedAt`, expected role).
-- **Session end** — `handoff <name>` closes the pending session: duration, closed role, mapped phase (`explore` / `design` / `spec` / `review` / `apply` / `archive`), runtime (local/cloud), tasks snapshot (`n/m`), and persist/archive auto-collect local usage from Claude JSONL, Amp threads, and the Cursor spend hook file (.agents/spend/cursor-usage.jsonl). `--input-tokens` / `--output-tokens` / `--total-tokens` / `--cost-usd` override session totals only and do not wipe `spendByPlatform` / `spendByModel`. Never guess. Never invent USD from Amp credits. Never Cursor SDK / npm sqlite / a pricing table. No restore marker? Pass `--started-at <iso>` or the duration stays honestly `null`.
-- **Archive** — successful `archive <name>` always creates or finalizes `metrics.json`, sets `archivedAt`, appends an Archiver session, and runs collect unless `--no-collect`.
-- **Platform** — optional `--platform` / `AOK_PLATFORM` (`cursor|claude|amp` only). Invalid `--platform` fails before persist/move.
-- **Cursor spend hook (mandatory)** — Cursor never writes token usage to disk, so the kit installs `scripts/cursor-spend-hook.cjs` plus `.cursor/hooks.json` entries (`stop` / `subagentStop` / `afterAgentResponse`) in every project: the hook appends each turn's `input_tokens` / `output_tokens` / model from the hook payload to gitignored `.agents/spend/cursor-usage.jsonl`, and collect reads it (`source: "cursor-hook"`). Persist collect starts at the previous session `endedAt` (not the new `pending.startedAt`), so a late `stop` row is picked up by the next persist or archive. `sessionEnd` runs `scripts/cursor-spend-collect.cjs`, and `metrics --collect` backfills the last session without adding a new one. Installed by `init` / `update` / `sync` / `mcp-setup` and self-healed on every `handoff` restore/persist — no manual step, no flags. Restart Cursor once after the first install. `status` shows a `Spend capture` section. Claude (`~/.claude/projects/*.jsonl`) and Amp (`~/.local/share/amp/threads/*.json`) already persist usage locally and need no hook.
+- **Session end** — `handoff <name>` closes the pending session: duration, closed role, mapped phase (`explore` / `design` / `spec` / `review` / `apply` / `archive`), runtime (local/cloud), tasks snapshot (`n/m`), and spend from flags → self-report → optional `--collect` adapters. `--input-tokens` / `--output-tokens` / `--total-tokens` / `--cost-usd` override session totals only and do not wipe `spendByPlatform` / `spendByModel`. Never guess. Never invent USD from Amp credits. Never Cursor SDK / npm sqlite / a pricing table. No restore marker? Pass `--started-at <iso>` or the duration stays honestly `null`.
+- **Archive** — successful `archive <name>` always creates or finalizes `metrics.json`, sets `archivedAt`, appends an Archiver session from the archived `## Metrics` (or archive flags), prints the same human summary as `metrics <name>`, and collects adapters only with `--collect`.
+- **Platform** — `--platform` → `## Metrics: platform` → `AOK_PLATFORM` → host env (Amp / Cursor / Claude Code) → collected sources (`cursor|claude|amp` only). Invalid `--platform` fails before persist/move.
+- **Cursor spend hook (optional)** — Cursor never writes token usage to disk, so the kit can install `scripts/cursor-spend-hook.cjs` plus `.cursor/hooks.json` entries (`stop` / `subagentStop` / `afterAgentResponse`) in `init` / `update` / `sync` / `mcp-setup`: the hook appends each turn's tokens to gitignored `.agents/spend/cursor-usage.jsonl`. Collect is opt-in (`handoff`/`archive`/`metrics --collect`). Persist and restore do not self-heal the hook. `sessionEnd` still runs `scripts/cursor-spend-collect.cjs`. Restart Cursor once after the first install. `status` shows a `Spend capture` section. Claude (`~/.claude/projects/*.jsonl`) and Amp (`~/.local/share/amp/threads/*.json`) already persist usage locally and need no hook.
 
 Aggregates are recomputed on every write: per-phase totals (`durationMs`, tokens, `costUsd`, `sessions`, `roles`, `models`) plus overall `totals` (`sessions`, `cloudSessions`, `durationMs` = sum of session work time, `leadTimeMs` = wall clock from first session start to last session end), `spend` (USD only), and separate **by platform** / **by model** tables. Numbers are null-honest: a metric nobody reported stays `null`, never a fake `0`. No single total that adds Amp credits to USD.
 
@@ -816,7 +817,7 @@ npx agent-orchestrator-kit metrics add-thing          # human summary: phases, t
 npx agent-orchestrator-kit metrics add-thing --json   # raw metrics.json (works for archived changes too)
 ```
 
-Recording is on by default and never a persist/archive/`gate-check` gate; opt out per persist with `--no-metrics`. `--no-collect` skips adapters only.
+Recording is on by default and never a persist/archive/`gate-check` gate; opt out per persist with `--no-metrics`. Adapters run only with `--collect`.
 
 ### Skill inventory
 
@@ -981,6 +982,12 @@ The kit moves toward an Agentic Factory in four phases. **One phase = one OpenSp
 Phase bounds and non-goals: [`openspec/specs/agentic-factory-roadmap/spec.md`](openspec/specs/agentic-factory-roadmap/spec.md).
 
 ## Changelog
+
+### 0.7.0
+- **`## Metrics` self-report** — persist reads the session section in `handoff.md`; `metrics.json` is the source of truth; CLI flags do not rewrite the section
+- **BREAKING** — `--no-collect` removed; `handoff` and `archive` collect local adapters only with opt-in `--collect`
+- Archive prints the same human summary as `metrics <name>` (by phase / platform / model, `spendSource`, unreported count)
+- Cursor spend hook is optional setup (`init` / `update` / `sync` / `mcp-setup`); persist and restore no longer self-heal `.cursor/hooks.json`
 
 ### 0.6.0
 - **Mandatory Cursor spend hook** — `scripts/cursor-spend-hook.cjs` + `.cursor/hooks.json` (`stop` / `subagentStop` / `afterAgentResponse`) write `.agents/spend/cursor-usage.jsonl`; `sessionEnd` + `metrics --collect` backfill the last session; installed by `init` / `update` / `sync` / `mcp-setup` and self-healed on `handoff`

@@ -6,11 +6,29 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - **Spend collect window** — persist no longer starts the collect window at `pending.startedAt`. Cursor `stop` writes `.agents/spend/cursor-usage.jsonl` after persist, and the next restore moved `pending.startedAt` past that row, so tokens never reached `metrics.json`. Window is now `[last session.endedAt || createdAt, endedAt]`
+- **Amp collect without trees** — a thread is no longer skipped solely because `env.initial.trees` is missing; cwd fields, `AMP_CURRENT_THREAD` / `AMP_THREAD_ID`, or an exact cwd mention still match. Foreign `trees[]` still exclude the thread
+- **Amp leftover after persist/archive** — persist and archive run the same last-session backfill as `metrics --collect`, so Amp usage written during the command can still land on the last session
+- **Session platform/model** — persist/archive infer `platform` from Amp / Cursor / Claude Code host env when `--platform` / `AOK_PLATFORM` are missing, and still take primary `model` / `platform` from collected sources
 
 ### Added
 - **`metrics --collect`** — backfill the last session from local adapters without adding a new session
 - **`sessionEnd` spend collect hook** — `scripts/cursor-spend-collect.cjs` merges leftover hook rows into the last session after `stop` has flushed jsonl
 - **`afterAgentResponse`** is now a Cursor spend-hook event alongside `stop` / `subagentStop`
+
+## [0.7.0] - 2026-08-30
+
+### Breaking
+- **`--no-collect` removed** — persist and archive no longer collect local spend adapters by default. Pass `--collect` to run Claude JSONL, Amp thread, and Cursor hook adapters. Scripts that still pass `--no-collect` fail as an unknown option.
+
+### Added
+- **`## Metrics` in `handoff.md`** — Session Exit self-report (`platform`, `model`, `input_tokens`, `output_tokens`, `cost_usd`, `amp_credits`, `spend_source`). Persist and archive resolve spend from flags → self-report → optional `--collect` sources. The section stays the agent's declaration; `metrics.json` is the source of truth.
+- **`session.spendSource`** and **`session.ampCredits`** — origin of the numbers (`self-report` / `flag` / `adapter` / `unreported`, or a custom `spend_source`) and Amp credits kept out of USD totals.
+- **Archive summary** — after finalize, `archive` prints the same human tables as `metrics <name>` (by phase / platform / model, unreported count).
+
+### Changed
+- **Resolve chains** — `model`: `--model` → `## Metrics` → `AOK_MODEL` → sources (with `--collect`) → `null`. `platform`: `--platform` → `## Metrics` → `AOK_PLATFORM` → host env → sources.
+- **Cursor spend hook** — still installed by `init` / `update` / `sync` / `mcp-setup`; persist, restore, and `metrics` no longer self-heal `.cursor/hooks.json`.
+- **`spendByPlatform` / `spendByModel`** — include session-level self-report; matching `sources` are counted once; buckets without adapters keep `source: "none"`.
 
 ## [0.6.0] - 2026-08-29
 
