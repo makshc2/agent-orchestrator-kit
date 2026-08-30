@@ -74,7 +74,7 @@ npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-veri
 
 See [Installation](#installation) for profile/CI options.
 
-**🔄 Already have the kit installed? Upgrade to latest (auto-collect spend + Cursor hook in v0.6.0+, change metrics in v0.5.0+, factory phases 1–3 in v0.4.0+, lean pipeline / archive CLI in v0.3.0+, handoff CLI in v0.1.14+, Figma PAT in v0.1.11+):**
+**🔄 Already have the kit installed? Upgrade to latest (`## Metrics` self-report + opt-in `--collect` in v0.7.0 — **BREAKING:** `--no-collect` is gone; change metrics in v0.5.0+, factory phases 1–3 in v0.4.0+, lean pipeline / archive CLI in v0.3.0+, handoff CLI in v0.1.14+, Figma PAT in v0.1.11+):**
 
 ```bash
 npx agent-orchestrator-kit@latest update
@@ -597,10 +597,10 @@ After PR merged + CI green:
 Archive is a **deterministic CLI**, not an agent workflow:
 
 ```bash
-npx agent-orchestrator-kit archive <name> [--sync | --no-sync --force]
+npx agent-orchestrator-kit archive <name> [--sync | --no-sync --force] [--collect]
 ```
 
-It checks the gates (APPROVE in `review.md` when required, all tasks `[x]`, target folder free), merges delta specs into `openspec/specs/` (`--sync`: ADDED append, MODIFIED replace, REMOVED delete), moves the change to `openspec/changes/archive/YYYY-MM-DD-<name>`, and runs `npx openspec validate --all --strict` with a full rollback on failure (main specs restored, new spec files deleted, move reverted). With delta specs present you must decide: `--sync` merges, `--no-sync --force` archives without merging, and no flag refuses with exit 1. It finishes by writing the final `handoff.md` (`next_command: none`) and updating memory. The `/opsx:archive` command is a thin wrapper that calls this CLI; the `spec-archiver` subagent remains only as a fallback when the CLI is unavailable.
+It checks the gates (APPROVE in `review.md` when required, all tasks `[x]`, target folder free), merges delta specs into `openspec/specs/` (`--sync`: ADDED append, MODIFIED replace, REMOVED delete), moves the change to `openspec/changes/archive/YYYY-MM-DD-<name>`, and runs `npx openspec validate --all --strict` with a full rollback on failure (main specs restored, new spec files deleted, move reverted). With delta specs present you must decide: `--sync` merges, `--no-sync --force` archives without merging, and no flag refuses with exit 1. It finishes by writing the final `handoff.md` (`next_command: none`), updating memory, and printing the same human metrics summary as `metrics <name>`. Fill `## Metrics` in the change `handoff.md` before archive so the Archiver session can resolve platform / model / spend. `--collect` is optional. The `/opsx:archive` command is a thin wrapper that calls this CLI; the `spec-archiver` subagent remains only as a fallback when the CLI is unavailable.
 
 ## Configuration
 
@@ -811,13 +811,28 @@ Every change accumulates git-tracked `openspec/changes/<name>/metrics.json` — 
 
 Aggregates are recomputed on every write: per-phase totals (`durationMs`, tokens, `costUsd`, `sessions`, `roles`, `models`) plus overall `totals` (`sessions`, `cloudSessions`, `durationMs` = sum of session work time, `leadTimeMs` = wall clock from first session start to last session end), `spend` (USD only), and separate **by platform** / **by model** tables. Numbers are null-honest: a metric nobody reported stays `null`, never a fake `0`. No single total that adds Amp credits to USD.
 
-```bash
-npx agent-orchestrator-kit handoff add-thing --input-tokens 12000 --output-tokens 3000 --cost-usd 0.42 --model claude-sonnet
-npx agent-orchestrator-kit metrics add-thing          # human summary: phases, tokens, cost, roles / models
-npx agent-orchestrator-kit metrics add-thing --json   # raw metrics.json (works for archived changes too)
+Fill `## Metrics` in `handoff.md` **before** persist (unknown is fine; do not invent `0`):
+
+```markdown
+## Metrics
+- platform: cursor
+- model: cursor-grok-4.6
+- input_tokens: 128000
+- output_tokens: 9400
+- cost_usd: unknown
+- amp_credits: unknown
+- spend_source: self-report
 ```
 
-Recording is on by default and never a persist/archive/`gate-check` gate; opt out per persist with `--no-metrics`. Adapters run only with `--collect`.
+```bash
+npx agent-orchestrator-kit handoff add-thing
+npx agent-orchestrator-kit handoff add-thing --collect   # optional: Claude JSONL / Amp threads / Cursor hook
+npx agent-orchestrator-kit metrics add-thing             # human summary: phases, tokens, cost, roles / models
+npx agent-orchestrator-kit metrics add-thing --json      # raw metrics.json (works for archived changes too)
+npx agent-orchestrator-kit archive add-thing --sync      # finalize + the same tables as metrics
+```
+
+Recording is on by default and never a persist/archive/`gate-check` gate; opt out per persist with `--no-metrics`. Adapters run only with `--collect`. Flags (`--model`, `--platform`, `--input-tokens`, …) override session totals in `metrics.json` and do not rewrite the `## Metrics` section.
 
 ### Skill inventory
 
@@ -916,9 +931,10 @@ npx agent-orchestrator-kit hooks-setup
 npx agent-orchestrator-kit mcp-setup [--vcs github|gitlab] [--no-browser]
   Install GitHub/GitLab (from origin) and browser MCP launchers
 
-npx agent-orchestrator-kit archive <name> [--sync | --no-sync --force]
+npx agent-orchestrator-kit archive <name> [--sync | --no-sync --force] [--collect]
   Gate-check a completed change, optionally merge delta specs, move to
-  openspec/changes/archive/YYYY-MM-DD-<name>, validate, write final handoff
+  openspec/changes/archive/YYYY-MM-DD-<name>, validate, write final handoff,
+  and print the change-wide metrics summary. --collect also runs adapters.
 
 npx agent-orchestrator-kit handoff [change-name] [options]
   --restore          Print the restore briefing instead of persisting
@@ -928,15 +944,18 @@ npx agent-orchestrator-kit handoff [change-name] [options]
   --cloud-check      Verify change artifacts are committed and pushed
                      (cloud: non-zero on failure; local: warning, exit 0)
   --started-at <iso> Session start override when --restore was not run
-  --model <name>     Model used in this session (metrics.json)
+  --model <name>     LLM product id (metrics.json); never a Closed role
+  --platform <id>    cursor | claude | amp
   --input-tokens <n> / --output-tokens <n> / --total-tokens <n>
                      Token spend for this session (total defaults to in+out)
   --cost-usd <usd>   Session cost in USD
+  --collect          Also run local spend adapters (off by default)
   --no-metrics       Skip recording this session into metrics.json
 
-npx agent-orchestrator-kit metrics [change-name] [--json]
+npx agent-orchestrator-kit metrics [change-name] [--json] [--collect]
   Show recorded session metrics for a change (active or archived):
-  time per phase, sessions, tokens, cost, roles, models, lead time
+  time per phase, sessions, tokens, cost, roles, models, lead time.
+  --collect backfills the last session from adapters without adding a session.
 ```
 
 ## Directory Reference
