@@ -380,6 +380,35 @@ test('cursor hook jsonl: window, dedup, max record per repeated id, no-token row
   rmSync(root, { recursive: true, force: true });
 });
 
+test('cursor hook jsonl: non-grok model writes fallback estimate', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aok-collect-cursor-fallback-'));
+  const cwd = join(root, 'work');
+  const spendDir = join(cwd, '.agents', 'spend');
+  mkdirSync(spendDir, { recursive: true });
+  writeFileSync(join(spendDir, 'cursor-usage.jsonl'), `${JSON.stringify({
+    id: 'g-gpt',
+    event: 'stop',
+    model: 'gpt-5.6',
+    inputTokens: 1000000,
+    outputTokens: 1000000,
+    at: '2026-08-29T12:00:00.000Z',
+  })}\n`);
+  const result = collectSpend({
+    cwd,
+    env: { HOME: join(root, 'home'), AMP_DATA_DIR: join(root, 'amp'), XDG_CONFIG_HOME: join(root, 'xdg') },
+    homedir: join(root, 'home'),
+    windowStart: '2026-08-29T11:00:00.000Z',
+    windowEnd: '2026-08-29T13:00:00.000Z',
+  });
+  const cursorSources = result.sources.filter((src) => src.platform === 'cursor');
+  assert.equal(cursorSources.length, 1);
+  assert.equal(cursorSources[0].costUsd, null);
+  assert.equal(cursorSources[0].costUsdEstimated, 18);
+  assert.equal(cursorSources[0].costSource, 'api-estimate-fallback');
+  assert.equal(cursorSources[0].platform, 'cursor');
+  rmSync(root, { recursive: true, force: true });
+});
+
 test('cursor spend hook script records usage and stays silent without token fields', () => {
   const root = mkdtempSync(join(tmpdir(), 'aok-hook-script-'));
   mkdirSync(join(root, '.agents'), { recursive: true });

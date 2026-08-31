@@ -1,0 +1,387 @@
+{
+  "version": 1,
+  "change": "surface-estimated-spend",
+  "createdAt": "2026-08-31T11:36:56.160Z",
+  "updatedAt": "2026-08-31T12:04:05.901Z",
+  "archivedAt": "2026-08-31T12:04:05.901Z",
+  "spend": {
+    "inputTokens": 22541190,
+    "outputTokens": 106391,
+    "totalTokens": 22647581,
+    "costUsd": null,
+    "costUsdEstimated": 34.7155
+  },
+  "spendByPlatform": {
+    "cursor": {
+      "inputTokens": 22541190,
+      "outputTokens": 106391,
+      "totalTokens": 22647581,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": 34.7155,
+      "source": "cursor-hook"
+    },
+    "claude": {
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null,
+      "source": "none"
+    },
+    "amp": {
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null,
+      "source": "none"
+    }
+  },
+  "spendByModel": [
+    {
+      "model": "cursor-grok-4.6",
+      "platform": "cursor",
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null
+    },
+    {
+      "model": "cursor-grok-4.6-xhigh-fast",
+      "platform": "cursor",
+      "inputTokens": 22541190,
+      "outputTokens": 106391,
+      "totalTokens": 22647581,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": 34.7155
+    }
+  ],
+  "totals": {
+    "sessions": 6,
+    "durationMs": 761567,
+    "leadTimeMs": 1443852,
+    "cloudSessions": 0
+  },
+  "phases": {
+    "apply": {
+      "sessions": 1,
+      "durationMs": null,
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "costUsdEstimated": null,
+      "agents": [
+        "Implementer"
+      ],
+      "models": [
+        "cursor-grok-4.6"
+      ]
+    },
+    "other": {
+      "sessions": 1,
+      "durationMs": 100319,
+      "inputTokens": 12180167,
+      "outputTokens": 47797,
+      "totalTokens": 12227964,
+      "costUsd": null,
+      "costUsdEstimated": 25.0672,
+      "agents": [
+        "Conductor"
+      ],
+      "models": [
+        "cursor-grok-4.6"
+      ]
+    },
+    "review": {
+      "sessions": 2,
+      "durationMs": 477709,
+      "inputTokens": 7109956,
+      "outputTokens": 40370,
+      "totalTokens": 7150326,
+      "costUsd": null,
+      "costUsdEstimated": 9.6483,
+      "agents": [
+        "Spec Reviewer"
+      ],
+      "models": [
+        "cursor-grok-4.6"
+      ]
+    },
+    "spec": {
+      "sessions": 1,
+      "durationMs": 183539,
+      "inputTokens": 3251067,
+      "outputTokens": 18224,
+      "totalTokens": 3269291,
+      "costUsd": null,
+      "costUsdEstimated": null,
+      "agents": [
+        "Architect"
+      ],
+      "models": [
+        "cursor-grok-4.6"
+      ]
+    },
+    "archive": {
+      "sessions": 1,
+      "durationMs": null,
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "costUsdEstimated": null,
+      "agents": [
+        "Archiver"
+      ],
+      "models": []
+    }
+  },
+  "sessions": [
+    {
+      "startedAt": null,
+      "endedAt": "2026-08-31T11:36:56.160Z",
+      "durationMs": null,
+      "role": "Implementer",
+      "phase": "apply",
+      "runtime": "local",
+      "agentId": "none",
+      "model": "cursor-grok-4.6",
+      "platform": "cursor",
+      "threadId": null,
+      "tasks": "11/11",
+      "sources": [],
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null,
+      "spendSource": "unreported"
+    },
+    {
+      "startedAt": "2026-08-31T11:40:02.049Z",
+      "endedAt": "2026-08-31T11:41:42.368Z",
+      "durationMs": 100319,
+      "role": "Conductor",
+      "phase": "other",
+      "runtime": "local",
+      "agentId": "none",
+      "model": "cursor-grok-4.6",
+      "platform": "cursor",
+      "threadId": null,
+      "tasks": "11/11",
+      "sources": [
+        {
+          "id": "c1aaad02-5934-4ba6-bacd-f2bc8c02464b",
+          "platform": "cursor",
+          "model": "cursor-grok-4.6-xhigh-fast",
+          "inputTokens": 5576542,
+          "outputTokens": 16313,
+          "totalTokens": 5592855,
+          "costUsd": null,
+          "ampCredits": null,
+          "at": "2026-08-31T11:37:34.037Z",
+          "cacheReadTokens": 5411712,
+          "costUsdEstimated": 12.5336,
+          "costSource": "api-estimate"
+        },
+        {
+          "id": "5962b635-ec12-4bf5-91e3-061c1f8db0f7",
+          "platform": "cursor",
+          "model": "cursor-grok-4.6-xhigh-fast",
+          "inputTokens": 5576542,
+          "outputTokens": 16313,
+          "totalTokens": 5592855,
+          "costUsd": null,
+          "ampCredits": null,
+          "at": "2026-08-31T11:37:34.155Z",
+          "cacheReadTokens": 5411712,
+          "costUsdEstimated": 12.5336,
+          "costSource": "api-estimate"
+        },
+        {
+          "id": "339959c3-d555-400e-b9af-9a5ed257c0be",
+          "platform": "cursor",
+          "model": "cursor-grok-4.6-xhigh-fast",
+          "inputTokens": 1027083,
+          "outputTokens": 15171,
+          "totalTokens": 1042254,
+          "costUsd": null,
+          "ampCredits": null,
+          "at": "2026-08-31T11:41:55.467Z"
+        }
+      ],
+      "inputTokens": 12180167,
+      "outputTokens": 47797,
+      "totalTokens": 12227964,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": 25.0672,
+      "spendSource": "adapter"
+    },
+    {
+      "startedAt": "2026-08-31T11:42:45.045Z",
+      "endedAt": "2026-08-31T11:44:35.641Z",
+      "durationMs": 110596,
+      "role": "Spec Reviewer",
+      "phase": "review",
+      "runtime": "local",
+      "agentId": "none",
+      "model": "cursor-grok-4.6",
+      "platform": "cursor",
+      "threadId": null,
+      "tasks": "11/11",
+      "sources": [
+        {
+          "id": "a02855ec-f06b-49e5-b11b-ec0acf335169",
+          "platform": "cursor",
+          "model": "cursor-grok-4.6-xhigh-fast",
+          "inputTokens": 4505155,
+          "outputTokens": 14693,
+          "totalTokens": 4519848,
+          "costUsd": null,
+          "ampCredits": null,
+          "at": "2026-08-31T11:42:39.015Z",
+          "cacheReadTokens": 4457600,
+          "costUsdEstimated": 9.6483,
+          "costSource": "api-estimate"
+        },
+        {
+          "id": "4d4ea1b3-9cfe-4b1a-a52c-c9c08034a4a3",
+          "platform": "cursor",
+          "model": "cursor-grok-4.6-xhigh-fast",
+          "inputTokens": 1096673,
+          "outputTokens": 12052,
+          "totalTokens": 1108725,
+          "costUsd": null,
+          "ampCredits": null,
+          "at": "2026-08-31T11:44:48.928Z"
+        }
+      ],
+      "inputTokens": 5601828,
+      "outputTokens": 26745,
+      "totalTokens": 5628573,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": 9.6483,
+      "spendSource": "adapter"
+    },
+    {
+      "startedAt": "2026-08-31T11:47:41.133Z",
+      "endedAt": "2026-08-31T11:50:44.672Z",
+      "durationMs": 183539,
+      "role": "Architect",
+      "phase": "spec",
+      "runtime": "local",
+      "agentId": "none",
+      "model": "cursor-grok-4.6",
+      "platform": "cursor",
+      "threadId": null,
+      "tasks": "11/11",
+      "sources": [
+        {
+          "id": "2086baaa-ad41-4f6f-aaa1-4490a8312894",
+          "platform": "cursor",
+          "model": "cursor-grok-4.6-xhigh-fast",
+          "inputTokens": 2187549,
+          "outputTokens": 4660,
+          "totalTokens": 2192209,
+          "costUsd": null,
+          "ampCredits": null,
+          "at": "2026-08-31T11:50:54.125Z"
+        },
+        {
+          "id": "da2a9785-d0fd-4ae2-b46c-ec2668388406",
+          "platform": "cursor",
+          "model": "cursor-grok-4.6-xhigh-fast",
+          "inputTokens": 1063518,
+          "outputTokens": 13564,
+          "totalTokens": 1077082,
+          "costUsd": null,
+          "ampCredits": null,
+          "at": "2026-08-31T11:51:04.023Z"
+        }
+      ],
+      "inputTokens": 3251067,
+      "outputTokens": 18224,
+      "totalTokens": 3269291,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null,
+      "spendSource": "unreported"
+    },
+    {
+      "startedAt": "2026-08-31T11:53:11.411Z",
+      "endedAt": "2026-08-31T11:59:18.524Z",
+      "durationMs": 367113,
+      "role": "Spec Reviewer",
+      "phase": "review",
+      "runtime": "local",
+      "agentId": "none",
+      "model": "cursor-grok-4.6",
+      "platform": "cursor",
+      "threadId": null,
+      "tasks": "11/11",
+      "sources": [
+        {
+          "id": "c75fc31e-9152-4af5-a4c8-d534c6f5798f",
+          "platform": "cursor",
+          "model": "cursor-grok-4.6-xhigh-fast",
+          "inputTokens": 1287058,
+          "outputTokens": 12643,
+          "totalTokens": 1299701,
+          "costUsd": null,
+          "ampCredits": null,
+          "at": "2026-08-31T11:59:54.106Z"
+        },
+        {
+          "id": "7a465476-8334-492f-bd8a-e37cc6f45502",
+          "platform": "cursor",
+          "model": "cursor-grok-4.6-xhigh-fast",
+          "inputTokens": 221070,
+          "outputTokens": 982,
+          "totalTokens": 222052,
+          "costUsd": null,
+          "ampCredits": null,
+          "at": "2026-08-31T12:02:29.928Z"
+        }
+      ],
+      "inputTokens": 1508128,
+      "outputTokens": 13625,
+      "totalTokens": 1521753,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null,
+      "spendSource": "unreported"
+    },
+    {
+      "startedAt": "2026-08-31T12:04:05.901Z",
+      "endedAt": "2026-08-31T12:04:05.901Z",
+      "durationMs": null,
+      "role": "Archiver",
+      "phase": "archive",
+      "runtime": "local",
+      "agentId": "none",
+      "model": null,
+      "platform": "cursor",
+      "threadId": null,
+      "tasks": "11/11",
+      "sources": [],
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null,
+      "spendSource": "unreported"
+    }
+  ],
+  "pending": null
+}

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { program } from 'commander';
 import pc from 'picocolors';
-import { readFileSync, existsSync, mkdirSync, copyFileSync, readdirSync, statSync, writeFileSync, rmSync, renameSync, chmodSync } from 'fs';
+import { readFileSync, existsSync, mkdirSync, copyFileSync, readdirSync, statSync, writeFileSync, rmSync, renameSync, chmodSync, realpathSync } from 'fs';
 import { join, dirname, basename, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
@@ -4248,4 +4248,18 @@ program
     for (const line of renderMetricsSummary(metrics)) console.log(line);
   });
 
-program.parse();
+function isDirectCliRun() {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return resolve(entry) === fileURLToPath(import.meta.url);
+  }
+}
+
+if (isDirectCliRun()) {
+  program.parse();
+}
+
+export { formatMetricsCostLine, resolveSessionSpend };

@@ -4,7 +4,7 @@ import { homedir as osHomedir } from 'os';
 import { execFileSync } from 'child_process';
 import { listRecentAmpThreadIds } from './session-client.js';
 import { formatUtcIso, parseFlexibleIso } from './metrics-time.js';
-import { estimateCursorCostUsd } from './cursor-cost-estimate.js';
+import { describeCursorCostEstimate } from './cursor-cost-estimate.js';
 import { ampAgentMode, matchAmpUsageModel, parseAmpUsageDetails } from './amp-usage.js';
 
 const PLATFORMS = ['cursor', 'claude', 'amp'];
@@ -535,7 +535,7 @@ function collectCursor({ cwd, windowStart, windowEnd, existing, notes }) {
     if (inputTokens == null && outputTokens == null) continue;
     const model = row.model || row.modelId;
     const cacheReadTokens = numOrNull(row.cacheReadTokens);
-    const estimated = estimateCursorCostUsd({
+    const described = describeCursorCostEstimate({
       model,
       inputTokens,
       outputTokens,
@@ -551,8 +551,8 @@ function collectCursor({ cwd, windowStart, windowEnd, existing, notes }) {
       ampCredits: null,
       at: row.at,
       cacheReadTokens,
-      costUsdEstimated: estimated,
-      costSource: estimated != null ? 'api-estimate' : null,
+      costUsdEstimated: described?.usd ?? null,
+      costSource: described?.costSource ?? null,
     });
     const previous = bestById.get(id);
     if (!previous || (record.totalTokens ?? 0) >= (previous.totalTokens ?? 0)) {

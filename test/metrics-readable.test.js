@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { formatKyivDisplay, formatUtcIso, parseFlexibleIso } from '../bin/metrics-time.js';
 import { parseAmpUsageDetails, matchAmpUsageModel, ampAgentMode } from '../bin/amp-usage.js';
-import { estimateCursorCostUsd } from '../bin/cursor-cost-estimate.js';
+import { describeCursorCostEstimate, estimateCursorCostUsd } from '../bin/cursor-cost-estimate.js';
+import { formatMetricsCostLine, resolveSessionSpend } from '../bin/agent-orchestrator.js';
 
 test('parseFlexibleIso accepts broken Amp microsecond+.000Z stamps', () => {
   const broken = '2026-08-31T07:08:17.563464.000Z';
@@ -45,6 +46,17 @@ Output tokens: 13,036
   assert.equal(ampAgentMode({ agentMode: 'low', meta: { agentMode: 'medium' } }), 'low');
 });
 
+test('parseAmpUsageDetails without Cost line leaves costUsd null', () => {
+  const parsed = parseAmpUsageDetails(`Total tokens: 1,000
+Input tokens: 800
+Output tokens: 200
+`);
+  assert.equal(parsed.costUsd, null);
+  assert.equal(parsed.totalTokens, 1000);
+  assert.equal(parsed.inputTokens, 800);
+  assert.equal(parsed.outputTokens, 200);
+});
+
 test('estimateCursorCostUsd uses grok-4.6 API rates and long-context cliff', () => {
   const short = estimateCursorCostUsd({
     model: 'cursor-grok-4.6',
@@ -58,5 +70,49 @@ test('estimateCursorCostUsd uses grok-4.6 API rates and long-context cliff', () 
     outputTokens: 7425,
   });
   assert.ok(longFast > 8);
-  assert.equal(estimateCursorCostUsd({ model: 'unknown-model', inputTokens: 10, outputTokens: 1 }), null);
+  const grokDescribed = describeCursorCostEstimate({
+    model: 'cursor-grok-4.6-high-fast',
+    inputTokens: 400,
+    outputTokens: 40,
+  });
+  assert.equal(grokDescribed.costSource, 'api-estimate');
+  assert.equal(typeof grokDescribed.usd, 'number');
+});
+
+test('estimateCursorCostUsd fallback for non-grok models', () => {
+  assert.equal(estimateCursorCostUsd({ model: 'gpt-5.6', inputTokens: 1000000, outputTokens: 1000000 }), 18);
+  assert.deepEqual(
+    describeCursorCostEstimate({ model: 'gpt-5.6', inputTokens: 1000000, outputTokens: 1000000 }),
+    { usd: 18, costSource: 'api-estimate-fallback' },
+  );
+  assert.equal(estimateCursorCostUsd({ model: 'gpt-5.6', totalTokens: 1000000 }), 3.5);
+  assert.equal(estimateCursorCostUsd({ model: 'gpt-5.6', inputTokens: 1000000, outputTokens: null }), 3);
+  assert.deepEqual(
+    describeCursorCostEstimate({ model: 'gpt-5.6', inputTokens: 1000000, outputTokens: 0 }),
+    { usd: 3, costSource: 'api-estimate-fallback' },
+  );
+  assert.equal(estimateCursorCostUsd({ model: 'gpt-5.6-fast', inputTokens: 1000000, outputTokens: 1000000 }), 18);
+  assert.equal(estimateCursorCostUsd({ model: '', inputTokens: 1000000 }), 3);
+  assert.equal(estimateCursorCostUsd({ model: 'gpt-5.6' }), null);
+  assert.equal(describeCursorCostEstimate({ model: 'gpt-5.6' }), null);
+});
+
+test('formatMetricsCostLine shows billed and estimate without mixing credits', () => {
+  assert.equal(formatMetricsCostLine({ costUsd: 1.3, costUsdEstimated: 8.98 }), '$1.30 billed + ~$8.98 est.');
+  assert.equal(formatMetricsCostLine({ costUsd: 1.3, costUsdEstimated: null }), '$1.30');
+  assert.equal(formatMetricsCostLine({ costUsd: null, costUsdEstimated: 8.98 }), '~$8.98 est.');
+  assert.equal(formatMetricsCostLine({ costUsd: null, costUsdEstimated: null }), '—');
+  const mixed = formatMetricsCostLine({ costUsd: 1.3, costUsdEstimated: 8.98, ampCredits: 20 });
+  assert.match(mixed, /billed/);
+  assert.match(mixed, /est\./);
+  assert.equal(mixed.includes('20'), false);
+});
+
+test('resolveSessionSpend keeps self-report and flags out of costUsdEstimated', () => {
+  const fromSelf = resolveSessionSpend({}, { costUsd: 0.42 }, []);
+  assert.equal(fromSelf.costUsd, 0.42);
+  assert.equal(fromSelf.costUsdEstimated, null);
+  const fromFlag = resolveSessionSpend({ costUsd: 9.99 }, {}, []);
+  assert.equal(fromFlag.costUsd, 9.99);
+  assert.equal(fromFlag.costUsdEstimated, null);
 });
