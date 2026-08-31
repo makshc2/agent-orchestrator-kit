@@ -28,6 +28,7 @@ function isolatedEnv(dir, extra = {}) {
   };
   if (!Object.prototype.hasOwnProperty.call(extra, 'AOK_MODEL')) delete env.AOK_MODEL;
   if (!Object.prototype.hasOwnProperty.call(extra, 'AOK_PLATFORM')) delete env.AOK_PLATFORM;
+  if (!Object.prototype.hasOwnProperty.call(extra, 'AOK_AMP_BIN')) env.AOK_AMP_BIN = join(dir, '.no-amp-bin');
   for (const key of [
     'CURSOR_AGENT',
     'CURSOR_CONVERSATION_ID',
@@ -1754,6 +1755,83 @@ test('handoff persist resolves --platform / AOK_PLATFORM and infers host env', (
     writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
     cliExec(dir, 'handoff add-thing --platform cursor --model claude-opus-5', { AMP_CURRENT_THREAD: 'T-archive' });
     assert.equal(JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions.at(-1).platform, 'cursor');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('restore locks Amp client and persist collects Amp without host env', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-lock-amp-'));
+  try {
+    runInit(dir, '--profile generic --name LockAmp --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+    const restoreOut = cliExec(dir, 'handoff add-thing --restore', { AMP_CURRENT_THREAD: 'T-lock' });
+    assert.match(restoreOut, /client amp T-lock/);
+    const pending = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).pending;
+    assert.equal(pending.platform, 'amp');
+    assert.equal(pending.threadId, 'T-lock');
+
+    const threadsDir = join(dir, '.aok-amp', 'threads');
+    mkdirSync(threadsDir, { recursive: true });
+    writeFileSync(join(threadsDir, 'T-lock.json'), JSON.stringify({
+      id: 'T-lock',
+      env: { initial: { cwd: dir } },
+      messages: [{
+        messageId: 'amp-lock',
+        usage: {
+          inputTokens: 20,
+          outputTokens: 4,
+          model: 'glm-5p2',
+          timestamp: new Date().toISOString(),
+        },
+      }],
+    }));
+
+    cliExec(dir, 'handoff add-thing --model glm-5p2');
+    const metrics = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
+    assert.equal(metrics.pending, null);
+    assert.equal(metrics.sessions[0].platform, 'amp');
+    assert.equal(metrics.sessions[0].threadId, 'T-lock');
+    assert.ok(metrics.sessions[0].sources.some((src) => src.id === 'T-lock:amp-lock'));
+    assert.equal(metrics.spendByPlatform.amp.totalTokens, 24);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('restore locks Cursor client and persist does not ingest Amp disk threads', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-lock-cursor-'));
+  try {
+    runInit(dir, '--profile generic --name LockCursor --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+    const threadsDir = join(dir, '.aok-amp', 'threads');
+    mkdirSync(threadsDir, { recursive: true });
+    writeFileSync(join(threadsDir, 'T-other.json'), JSON.stringify({
+      id: 'T-other',
+      env: { initial: { cwd: dir } },
+      messages: [{
+        messageId: 'amp-other',
+        usage: {
+          inputTokens: 99,
+          outputTokens: 1,
+          model: 'glm-5p2',
+          timestamp: new Date().toISOString(),
+        },
+      }],
+    }));
+
+    cliExec(dir, 'handoff add-thing --restore', { CURSOR_AGENT: '1' });
+    const pending = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).pending;
+    assert.equal(pending.platform, 'cursor');
+
+    cliExec(dir, 'handoff add-thing --model cursor-grok-4.6');
+    const session = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions[0];
+    assert.equal(session.platform, 'cursor');
+    assert.equal((session.sources || []).length, 0);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

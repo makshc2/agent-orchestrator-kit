@@ -6,7 +6,7 @@ change-metrics — requirements merged from change fix-metrics-model-and-spend.
 
 ### Requirement: Файл metrics.json є git-tracked журналом change-у
 
-Kit SHALL писати `openspec/changes/<name>/metrics.json` (після archive — у `openspec/changes/archive/YYYY-MM-DD-<name>/metrics.json`) зі схемою версії `1`: `version`, `change`, `createdAt`, `updatedAt`, `archivedAt` (`null` до фіналізації), `spend` (`inputTokens`, `outputTokens`, `totalTokens`, `costUsd`), `spendByPlatform` (ключі `cursor`, `claude`, `amp` → `inputTokens`, `outputTokens`, `totalTokens`, `costUsd`, `ampCredits`, `source`), `spendByModel` (масив `{ model, platform, inputTokens, outputTokens, totalTokens, costUsd, ampCredits }`), `totals` (`sessions`, `durationMs`, `leadTimeMs`, `cloudSessions`), `phases` (ключ фази → `sessions`, `durationMs`, spend-поля, `agents`, `models`), `sessions` (масив записів), `pending` (`{ startedAt, role }` або `null`). Запис сесії SHALL містити `spendSource` (непорожній рядок), `ampCredits` (число або `null`), `sources` (масив `{ id, platform, model, inputTokens, outputTokens, totalTokens, costUsd, ampCredits, at }`; порожній, коли `--collect` не передано) і опційно `models` (масив id), коли моделей більше однієї. Файл MUST бути git-tracked (не в gitignored cache). Пошкоджений або відсутній JSON SHALL замінюватись default-об'єктом з тими самими ключами, без падіння CLI. Відсутні нові поля в legacy-файлі SHALL мержитись з default (`spendByPlatform` з трьома ключами і `null`-полями, `spendByModel: []`, `sources: []`, `spendSource: "unreported"`, `ampCredits: null`).
+Kit SHALL писати `openspec/changes/<name>/metrics.json` (після archive — у `openspec/changes/archive/YYYY-MM-DD-<name>/metrics.json`) зі схемою версії `1`: `version`, `change`, `createdAt`, `updatedAt`, `archivedAt` (`null` до фіналізації), `spend` (`inputTokens`, `outputTokens`, `totalTokens`, `costUsd`), `spendByPlatform` (ключі `cursor`, `claude`, `amp` → `inputTokens`, `outputTokens`, `totalTokens`, `costUsd`, `ampCredits`, `source`), `spendByModel` (масив `{ model, platform, inputTokens, outputTokens, totalTokens, costUsd, ampCredits }`), `totals` (`sessions`, `durationMs`, `leadTimeMs`, `cloudSessions`), `phases` (ключ фази → `sessions`, `durationMs`, spend-поля, `agents`, `models`), `sessions` (масив записів), `pending` (`{ startedAt, role, platform, threadId, clientSource }` або `null`). Запис сесії SHALL містити `spendSource` (непорожній рядок), `ampCredits` (число або `null`), `threadId` (Amp id або `null`), `sources` (масив `{ id, platform, model, inputTokens, outputTokens, totalTokens, costUsd, ampCredits, at }`; порожній, коли клієнт невідомий і немає `--collect`) і опційно `models` (масив id), коли моделей більше однієї. Файл MUST бути git-tracked (не в gitignored cache). Пошкоджений або відсутній JSON SHALL замінюватись default-об'єктом з тими самими ключами, без падіння CLI. Відсутні нові поля в legacy-файлі SHALL мержитись з default (`spendByPlatform` з трьома ключами і `null`-полями, `spendByModel: []`, `sources: []`, `spendSource: "unreported"`, `ampCredits: null`).
 
 #### Scenario: Restore створює валідний скелет
 
@@ -39,7 +39,7 @@ Kit SHALL писати `openspec/changes/<name>/metrics.json` (після archiv
 
 ### Requirement: Restore записує старт сесії, persist — її закриття
 
-`handoff --restore` SHALL записувати `pending` (`startedAt` = зараз, `role` з next role handoff-файлу, якщо він є). `handoff <name>` SHALL додавати елемент у `sessions` з: `startedAt` з `--started-at` або `pending.startedAt` або `null`; `endedAt` = зараз; `durationMs` = різниця або `null`; `role` = Closed role; `phase` = результат `phaseForRole` (`Explorer`→`explore`, `Architect`→`spec`, `Implementer`/`apply`→`apply`, review→`review`, design→`design`, Archiver→`archive`, інакше `other`); `runtime` і `agentId` з runtime-ланцюжка; `tasks` зі знімка progress; `model`, `platform`, токени, `costUsd`, `ampCredits` і `spendSource` з ланцюжка прапорець → `## Metrics` → (`--collect` sources) → `null`; `sources` з collect (або `[]` без `--collect`). Після запису `pending` MUST стати `null`. Агрегати (`phases`, `totals`, `spend`, `spendByPlatform`, `spendByModel`) SHALL перераховуватись на кожному записі.
+`handoff --restore` SHALL записувати `pending` (`startedAt` = зараз, `role` з next role handoff-файлу, якщо він є, `platform`, `threadId`, `clientSource` з детекту клієнта). `handoff <name>` SHALL додавати елемент у `sessions` з: `startedAt` з `--started-at` або `pending.startedAt` або `null`; `endedAt` = зараз; `durationMs` = різниця або `null`; `role` = Closed role; `phase` = результат `phaseForRole` (`Explorer`→`explore`, `Architect`→`spec`, `Implementer`/`apply`→`apply`, review→`review`, design→`design`, Archiver→`archive`, інакше `other`); `runtime` і `agentId` з runtime-ланцюжка; `tasks` зі знімка progress; `model`, `platform`, токени, `costUsd`, `ampCredits` і `spendSource` з ланцюжка прапорець → `## Metrics` → (`--collect` sources) → `null`; `sources` з collect клієнта, зафіксованого на restore (або всі адаптери при `--collect`; `[]` коли клієнт невідомий і немає `--collect`). Після запису `pending` MUST стати `null`. Агрегати (`phases`, `totals`, `spend`, `spendByPlatform`, `spendByModel`) SHALL перераховуватись на кожному записі.
 
 Порядок persist MUST бути: прочитати `## Metrics` → записати сесію в `metrics.json` → надрукувати попередження в stderr → надрукувати next-thread prompt у stdout. Prompt MUST лишатись єдиним вмістом stdout.
 
@@ -51,6 +51,39 @@ Kit SHALL писати `openspec/changes/<name>/metrics.json` (після archiv
 - **AND** `sessions` має один запис з `role: Architect`, `phase: spec`, `model: claude-opus-5`, `totalTokens: 15000`, `costUsd: 0.42`
 - **AND** `phases.spec.agents` містить `Architect`
 - **AND** `phases.spec.models` містить `claude-opus-5`
+
+### Requirement: Restore фіксує клієнта сесії, persist йде його флоу
+
+`handoff --restore` SHALL визначити клієнта сесії і записати його в `pending`: `platform` (`cursor` | `claude` | `amp` | `null`), `threadId` (Amp thread id або `null`), `clientSource` (непорожній рядок джерела). Резолв клієнта: `--platform` / `AOK_PLATFORM` → `AMP_CURRENT_THREAD` / `AMP_THREAD_ID` → `CURSOR_AGENT` / `CURSOR_CONVERSATION_ID` → Claude Code env → батьківський процес `amp` і/або свіжий `~/.local/share/amp/session.json` `lastThreadByTerminal[tty]` (вікно свіжості ≤ 2h; `/dev/null` і pipe MUST NOT рахуватись як tty) → `null`. Якщо батько є `amp` і tty немає, `pending.threadId` SHALL братися з першого id `amp threads list` (`clientSource: amp-threads-list`), MUST NOT з `session.json` `lastThreadId`. Amp env MUST перемагати Cursor env. `agentMode` (`low`/`medium`/`high`/`ultra`) MUST NOT ставати `session.model`.
+
+`handoff <name>` SHALL резолвити `session.platform` так: `--platform` → `## Metrics` → `AOK_PLATFORM` → `pending.platform` → host env → sources. Коли резолвлений клієнт є `amp` / `cursor` / `claude`, persist SHALL зібрати spend лише цього клієнта навіть без `--collect`. Amp-флоу: `amp threads export <pending.threadId>` (бінар `AOK_AMP_BIN` або `amp`; fail-open) плюс локальні `threads/*.json`. Cursor-флоу: hook-файл. Claude-флоу: `~/.claude/projects`. `--collect` SHALL як і раніше запускати всі три адаптери. Відсутній Amp CLI MUST NOT валити persist.
+
+#### Scenario: Amp restore + persist без Amp env збирає thread
+
+- **GIVEN** `handoff --restore` з `AMP_CURRENT_THREAD=T-lock` записав `pending.platform: amp` і `pending.threadId: T-lock`
+- **AND** після restore з’явився matching Amp usage у вікні
+- **WHEN** виконується persist без `AMP_*` і без `--collect`
+- **THEN** `sessions[0].platform` дорівнює `amp`
+- **AND** `sessions[0].sources` містить usage цього thread
+
+#### Scenario: Amp parent без tty бере id з threads list
+
+- **GIVEN** батьківський процес є `amp`
+- **AND** stdin є `/dev/null`
+- **AND** `session.json` `lastThreadId` є іншим тредом
+- **AND** `amp threads list` першим рядком дає поточний thread id
+- **WHEN** виконується `handoff --restore`
+- **THEN** `pending.platform` дорівнює `amp`
+- **AND** `pending.threadId` дорівнює id з `amp threads list`
+- **AND** `pending.threadId` не дорівнює `session.json` `lastThreadId`
+
+#### Scenario: Cursor restore не підхоплює Amp disk threads
+
+- **GIVEN** `handoff --restore` з `CURSOR_AGENT=1` записав `pending.platform: cursor`
+- **AND** у `AMP_DATA_DIR/threads` є matching usage цього cwd
+- **WHEN** виконується persist без `--collect`
+- **THEN** `sessions[0].platform` дорівнює `cursor`
+- **AND** Amp usage відсутній у `sessions[0].sources`
 
 #### Scenario: Persist без restore лишає duration null
 

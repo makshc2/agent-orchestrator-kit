@@ -1,6 +1,8 @@
 import { existsSync, readdirSync, readFileSync } from 'fs';
 import { join, basename } from 'path';
 import { homedir as osHomedir } from 'os';
+import { execFileSync } from 'child_process';
+import { listRecentAmpThreadIds } from './session-client.js';
 
 const PLATFORMS = ['cursor', 'claude', 'amp'];
 
@@ -309,6 +311,36 @@ function ampInputTokens(usage) {
   return has ? sum : null;
 }
 
+export function sourcesFromAmpThread(thread, ctx, fileName = '', via = null) {
+  const sources = [];
+  if (!thread || typeof thread !== 'object') return sources;
+  const { cwd, windowStart, windowEnd, existing, env } = ctx;
+  if (!ampThreadMatches(thread, cwd, env, fileName)) return sources;
+  const threadKey = thread.id ? String(thread.id) : basename(fileName || 'thread', '.json');
+  for (const message of ampMessages(thread)) {
+    const usage = ampUsage(message);
+    if (!usage) continue;
+    const rawId = ampId(message);
+    if (rawId == null || rawId === '') continue;
+    const id = `${threadKey}:${rawId}`;
+    if (existing.has(id)) continue;
+    if (!inWindow(usage.timestamp, windowStart, windowEnd)) continue;
+    const record = sourceRecord({
+      id,
+      platform: 'amp',
+      model: usage.model,
+      inputTokens: ampInputTokens(usage),
+      outputTokens: usage.outputTokens,
+      costUsd: null,
+      ampCredits: null,
+      at: usage.timestamp,
+    });
+    if (via) record.via = via;
+    sources.push(record);
+  }
+  return sources;
+}
+
 function collectAmp({ cwd, windowStart, windowEnd, existing, env, homedir, notes }) {
   const root = ampRoot(env, homedir);
   const threadsDir = join(root, 'threads');
@@ -324,6 +356,7 @@ function collectAmp({ cwd, windowStart, windowEnd, existing, env, homedir, notes
     notes.push('amp: cannot read threads');
     return sources;
   }
+  const ctx = { cwd, windowStart, windowEnd, existing, env, homedir, notes };
   for (const file of files) {
     let thread;
     try {
@@ -331,30 +364,59 @@ function collectAmp({ cwd, windowStart, windowEnd, existing, env, homedir, notes
     } catch {
       continue;
     }
-    if (!thread || typeof thread !== 'object') continue;
-    if (!ampThreadMatches(thread, cwd, env, file)) continue;
-    // messageId values are thread-local counters (1, 3, 5, ...), so a bare id
-    // collides across threads; namespace with the thread id for global dedup.
-    const threadKey = thread.id ? String(thread.id) : basename(file, '.json');
-    for (const message of ampMessages(thread)) {
-      const usage = ampUsage(message);
-      if (!usage) continue;
-      const rawId = ampId(message);
-      if (rawId == null || rawId === '') continue;
-      const id = `${threadKey}:${rawId}`;
-      if (existing.has(id)) continue;
-      if (!inWindow(usage.timestamp, windowStart, windowEnd)) continue;
-      sources.push(sourceRecord({
-        id,
-        platform: 'amp',
-        model: usage.model,
-        inputTokens: ampInputTokens(usage),
-        outputTokens: usage.outputTokens,
-        costUsd: null,
-        ampCredits: null,
-        at: usage.timestamp,
-      }));
+    sources.push(...sourcesFromAmpThread(thread, ctx, file));
+  }
+  return sources;
+}
+
+export function exportAmpThread(threadId, options = {}) {
+  const id = threadId == null ? '' : String(threadId).trim();
+  if (!id) return null;
+  if (typeof options.exportAmpThread === 'function') {
+    try {
+      return options.exportAmpThread(id);
+    } catch {
+      return null;
     }
+  }
+  const bin = options.ampBin || (options.env && options.env.AOK_AMP_BIN) || 'amp';
+  if (bin !== 'amp' && !existsSync(bin)) return null;
+  try {
+    const out = execFileSync(bin, ['threads', 'export', id], {
+      encoding: 'utf-8',
+      timeout: options.timeoutMs != null ? Number(options.timeoutMs) : 15000,
+      env: options.env || process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const parsed = JSON.parse(out);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function collectAmpCli(ctx) {
+  const { env, notes, ampThreadId } = ctx;
+  const ids = [];
+  const push = (value) => {
+    const id = value == null ? '' : String(value).trim();
+    if (id && !ids.includes(id)) ids.push(id);
+  };
+  push(ampThreadId);
+  push(ampCurrentThreadId(env));
+  if (!ids.length) {
+    for (const id of listRecentAmpThreadIds(ctx)) push(id);
+  }
+  const sources = [];
+  for (const id of ids) {
+    const thread = exportAmpThread(id, ctx);
+    if (!thread) {
+      notes.push(`amp: export failed for ${id}`);
+      continue;
+    }
+    const extracted = sourcesFromAmpThread(thread, ctx, `${id}.json`, 'amp-cli');
+    if (!extracted.length) notes.push(`amp: export ${id} had no matching usage`);
+    sources.push(...extracted);
   }
   return sources;
 }
@@ -424,7 +486,7 @@ function aggregate(sources) {
       bucket.costUsd = addNullable(bucket.costUsd, src.costUsd);
       bucket.ampCredits = addNullable(bucket.ampCredits, src.ampCredits);
       if (platform === 'claude') bucket.source = 'claude-jsonl';
-      else if (platform === 'amp') bucket.source = 'amp-thread';
+      else if (platform === 'amp') bucket.source = src.via === 'amp-cli' ? 'amp-cli' : 'amp-thread';
       else bucket.source = 'cursor-hook';
     }
     const model = src.model;
@@ -464,22 +526,52 @@ export function collectSpend(options = {}) {
   const windowStart = options.windowStart;
   const windowEnd = options.windowEnd;
   const notes = [];
-  const ctx = { cwd, windowStart, windowEnd, existing, env, homedir, notes };
+  const wanted = Array.isArray(options.platforms)
+    ? options.platforms.filter((name) => PLATFORMS.includes(name))
+    : PLATFORMS;
+  const run = (name) => !wanted.length || wanted.includes(name);
+  const ctx = {
+    cwd,
+    windowStart,
+    windowEnd,
+    existing,
+    env,
+    homedir,
+    notes,
+    ampThreadId: options.ampThreadId,
+    exportAmpThread: options.exportAmpThread,
+    listAmpThreads: options.listAmpThreads,
+    ampBin: options.ampBin,
+    timeoutMs: options.timeoutMs,
+  };
   let sources = [];
-  try {
-    sources = sources.concat(collectClaude(ctx));
-  } catch {
-    notes.push('claude: adapter failed');
+  if (run('claude')) {
+    try {
+      sources = sources.concat(collectClaude(ctx));
+    } catch {
+      notes.push('claude: adapter failed');
+    }
   }
-  try {
-    sources = sources.concat(collectAmp(ctx));
-  } catch {
-    notes.push('amp: adapter failed');
+  if (run('amp')) {
+    if (options.ampCli === true || typeof options.exportAmpThread === 'function') {
+      try {
+        sources = sources.concat(collectAmpCli(ctx));
+      } catch {
+        notes.push('amp: cli export failed');
+      }
+    }
+    try {
+      sources = sources.concat(collectAmp(ctx));
+    } catch {
+      notes.push('amp: adapter failed');
+    }
   }
-  try {
-    sources = sources.concat(collectCursor(ctx));
-  } catch {
-    notes.push('cursor: adapter failed');
+  if (run('cursor')) {
+    try {
+      sources = sources.concat(collectCursor(ctx));
+    } catch {
+      notes.push('cursor: adapter failed');
+    }
   }
   const { byPlatform, byModel } = aggregate(sources);
   return { sources, byPlatform, byModel, notes };

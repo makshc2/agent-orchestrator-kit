@@ -10,7 +10,7 @@ A `/opsx:*` session is incomplete without persist + the fenced next-thread promp
 ## Start (before specialist work)
 1. Honor pasted `/opsx:<phase> <name>`.
 2. `npx agent-orchestrator-kit status`
-3. `npx agent-orchestrator-kit handoff --restore` (or `handoff <name> --restore`)
+3. `npx agent-orchestrator-kit handoff --restore` (or `handoff <name> --restore`) — locks session client (`cursor`/`claude`/`amp`) into `pending`
 4. Read Memory `Change:<name>`, `Handoff:<name>`, `Decision:*` when MCP works
 5. If restore CLI failed and Memory is empty → `openspec/changes/<name>/handoff.md`. Memory failure is not a blocker when the file exists.
 6. Spawn `session-handoff` restore **only if** step 3 failed or printed no briefing (Amp: isolated `subagent-session-handoff`). Skip this spawn when CLI restore exit 0.

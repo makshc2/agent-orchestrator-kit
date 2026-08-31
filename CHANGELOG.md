@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-31
+
+### Added
+- **Locked session client** — `handoff --restore` detects `cursor` / `claude` / `amp` (env, Amp parent process, or recent `session.json` tty mapping) and stores `pending.platform` + `pending.threadId`. Persist follows that client: Amp runs `amp threads export` plus local thread JSON; Cursor reads the spend hook; Claude reads `~/.claude/projects`. `--platform` / `AOK_PLATFORM` / `## Metrics` still override.
+- **Amp CLI export adapter** (`amp-cli`) — when the locked client is Amp (or `--collect`), the kit calls `amp threads export <id>` (override `AOK_AMP_BIN`). Fail-open if Amp CLI is missing. `agentMode` (`low`/`medium`) is never stored as `session.model`.
+- **Amp web / pipe restore** — if the parent process is `amp` and stdin is `/dev/null` (no pts), the kit takes the newest id from `amp threads list` instead of stale `session.json` `lastThreadId`.
+
+### Changed
+- Persist without `--collect` now collects **only the locked/resolved client**, not all three adapters. `--collect` still runs every adapter.
+
 ## [0.7.0] - 2026-08-30
 
 ### Breaking

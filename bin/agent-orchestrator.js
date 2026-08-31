@@ -6,6 +6,7 @@ import { join, dirname, basename, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
 import { collectSpend } from './spend-collect.js';
+import { resolveRestoreClient, ampThreadIdFromEnv } from './session-client.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const KIT_ROOT = join(__dirname, '..');
@@ -484,7 +485,7 @@ function printSpendHealth(projectDir) {
     ? String(process.env.AMP_DATA_DIR).trim()
     : join(home, '.local', 'share', 'amp');
   const ampOk = existsSync(join(ampDir, 'threads'));
-  console.log(`  amp      ${ampOk ? 'ok (threads found)' : 'no local Amp data'}`);
+  console.log(`  amp      ${ampOk ? 'ok (threads found)' : 'no local Amp data'}; locked client + amp threads export`);
   console.log('');
 }
 
@@ -1151,7 +1152,7 @@ function inferPlatformFromHost(env) {
   return null;
 }
 
-function resolvePlatform(opts, env, reported) {
+function resolvePlatform(opts, env, reported, pending) {
   const flag = opts && opts.platform != null ? String(opts.platform).trim() : '';
   if (flag) {
     const lower = flag.toLowerCase();
@@ -1171,6 +1172,10 @@ function resolvePlatform(opts, env, reported) {
     const lower = fromEnv.toLowerCase();
     if (VALID_PLATFORMS.has(lower)) return { value: lower };
     return { value: null, warn: 'invalid AOK_PLATFORM (use cursor, claude, or amp)' };
+  }
+  const pendingPlatform = pending && pending.platform != null ? String(pending.platform).trim() : '';
+  if (pendingPlatform && VALID_PLATFORMS.has(pendingPlatform)) {
+    return { value: pendingPlatform };
   }
   return { value: inferPlatformFromHost(env) };
 }
@@ -1856,7 +1861,7 @@ function sessionTotalsFromSources(sources) {
   return { inputTokens, outputTokens, totalTokens, costUsd };
 }
 
-function runCollectSpend(metrics, windowStart, windowEnd) {
+function runCollectSpend(metrics, windowStart, windowEnd, extra = {}) {
   try {
     return collectSpend({
       cwd: process.cwd(),
@@ -1865,6 +1870,10 @@ function runCollectSpend(metrics, windowStart, windowEnd) {
       existingSourceIds: existingSourceIdSet(metrics),
       env: process.env,
       homedir: process.env.HOME,
+      platforms: extra.platforms,
+      ampThreadId: extra.ampThreadId,
+      ampCli: extra.ampCli === true,
+      exportAmpThread: extra.exportAmpThread,
     });
   } catch {
     return { sources: [], byPlatform: defaultSpendByPlatform(), byModel: [], notes: [] };
@@ -1910,7 +1919,11 @@ function metricsBackfillFile(filePath, changeName) {
   if (!sessions.length) return { filePath, added: 0, empty: true };
   const last = sessions[sessions.length - 1];
   const windowStart = last.startedAt || collectWindowStart(metrics);
-  const collected = runCollectSpend(metrics, windowStart, nowIso);
+  const lastPlatform = last && last.platform;
+  const collected = runCollectSpend(metrics, windowStart, nowIso, {
+    ampThreadId: last && last.threadId || ampThreadIdFromEnv(process.env) || null,
+    ampCli: lastPlatform === 'amp',
+  });
   const incoming = collected.sources || [];
   if (!incoming.length) return { filePath, added: 0 };
   const overridden = sessionTotalsLookOverridden(last);
@@ -1935,9 +1948,9 @@ function metricsBackfillFile(filePath, changeName) {
   return { filePath, added: incoming.length };
 }
 
-function adapterSourceName(platform) {
+function adapterSourceName(platform, via) {
   if (platform === 'claude') return 'claude-jsonl';
-  if (platform === 'amp') return 'amp-thread';
+  if (platform === 'amp') return via === 'amp-cli' ? 'amp-cli' : 'amp-thread';
   if (platform === 'cursor') return 'cursor-hook';
   return null;
 }
@@ -2060,11 +2073,17 @@ function recomputeMetricsAggregates(metrics) {
   recomputeSpendMaps(metrics);
 }
 
-function metricsRecordSessionStart(projectDir, changeName, role) {
+function metricsRecordSessionStart(projectDir, changeName, role, client = {}) {
   const filePath = metricsFilePath(projectDir, changeName);
   const nowIso = new Date().toISOString();
   const metrics = loadMetricsFile(filePath, changeName, nowIso);
-  metrics.pending = { startedAt: nowIso, role: role || '' };
+  metrics.pending = {
+    startedAt: nowIso,
+    role: role || '',
+    platform: client.platform || null,
+    threadId: client.threadId || null,
+    clientSource: client.source || null,
+  };
   metrics.updatedAt = nowIso;
   saveMetricsFile(filePath, metrics);
   return filePath;
@@ -2079,8 +2098,17 @@ function metricsRecordSessionEnd(projectDir, fields, opts = {}) {
   const reported = opts.reported || fields.metrics || emptyMetricsFields();
   const resolvedModel = opts.model === undefined ? resolveModel(opts, process.env, reported) : opts.model;
   const windowStart = collectWindowStart(metrics);
-  const collected = opts.collect === true
-    ? runCollectSpend(metrics, windowStart, nowIso)
+  const pending = metrics.pending || {};
+  const platform = opts.platform || pending.platform || null;
+  const collectAll = opts.collect === true;
+  const platforms = collectAll ? undefined : (platform ? [platform] : []);
+  const shouldCollect = collectAll || (Array.isArray(platforms) && platforms.length > 0);
+  const collected = shouldCollect
+    ? runCollectSpend(metrics, windowStart, nowIso, {
+      platforms,
+      ampThreadId: opts.ampThreadId || pending.threadId || ampThreadIdFromEnv(process.env) || null,
+      ampCli: collectAll || platform === 'amp',
+    })
     : { sources: [] };
   const session = {
     startedAt,
@@ -2091,7 +2119,8 @@ function metricsRecordSessionEnd(projectDir, fields, opts = {}) {
     runtime: fields.runtime || 'local',
     agentId: fields.agentId || 'none',
     model: resolvedModel || null,
-    platform: opts.platform || null,
+    platform: opts.platform || pending.platform || null,
+    threadId: opts.ampThreadId || pending.threadId || null,
     tasks: fields.tasks || null,
     sources: [],
     inputTokens: null,
@@ -2120,8 +2149,16 @@ function metricsFinalizeArchive(targetDir, changeName, opts = {}) {
   const nowIso = new Date().toISOString();
   const metrics = loadMetricsFile(filePath, changeName, nowIso);
   const windowStart = lastSessionEndedAt(metrics) || metrics.createdAt;
-  const collected = opts.collect === true
-    ? runCollectSpend(metrics, windowStart, nowIso)
+  const collectAll = opts.collect === true;
+  const platform = opts.platform || null;
+  const platforms = collectAll ? undefined : (platform ? [platform] : []);
+  const shouldCollect = collectAll || (Array.isArray(platforms) && platforms.length > 0);
+  const collected = shouldCollect
+    ? runCollectSpend(metrics, windowStart, nowIso, {
+      platforms,
+      ampThreadId: opts.ampThreadId || ampThreadIdFromEnv(process.env) || null,
+      ampCli: collectAll || platform === 'amp',
+    })
     : { sources: [] };
   const reported = opts.reported || emptyMetricsFields();
   const resolvedModel = opts.model === undefined ? resolveModel(opts, process.env, reported) : opts.model;
@@ -2197,7 +2234,10 @@ function renderMetricsSummary(metrics) {
   lines.push(`unreported: ${unreported}`);
   if (metrics.archivedAt) lines.push(`archived:  ${metrics.archivedAt}`);
   if (metrics.pending) {
-    lines.push(`open session since ${metrics.pending.startedAt} (${metrics.pending.role || 'unknown role'})`);
+    const pendingClient = metrics.pending.platform
+      ? ` ${metrics.pending.platform}${metrics.pending.threadId ? ` ${metrics.pending.threadId}` : ''}`
+      : '';
+    lines.push(`open session since ${metrics.pending.startedAt} (${metrics.pending.role || 'unknown role'}${pendingClient})`);
   }
 
   const phaseOrder = ['explore', 'design', 'spec', 'review', 'apply', 'archive', 'other'];
@@ -3877,8 +3917,18 @@ program
         log.warn(`Memory JSON empty or missing at ${memoryPath}`);
       }
       if (opts.metrics !== false && existsSync(changeDir)) {
-        const metricsPath = metricsRecordSessionStart(projectDir, name, fields ? fields.nextRole : '');
+        const client = resolveRestoreClient({
+          env: process.env,
+          cwd: projectDir,
+          homedir: process.env.HOME,
+          platform: opts.platform,
+        });
+        const metricsPath = metricsRecordSessionStart(projectDir, name, fields ? fields.nextRole : '', client);
+        const clientLabel = client.platform
+          ? `${client.platform}${client.threadId ? ` ${client.threadId}` : ''} (${client.source})`
+          : 'unknown — pass --platform or fill ## Metrics';
         log.ok(`metrics: session start recorded (${metricsPath.replace(`${projectDir}/`, '')})`);
+        log.info(`metrics: client ${clientLabel}`);
       }
       return;
     }
@@ -3948,7 +3998,8 @@ program
     }
 
     const reported = fields.metrics || emptyMetricsFields();
-    const platformResult = resolvePlatform(opts, process.env, reported);
+    const metricsPreview = loadMetricsFile(metricsFilePath(projectDir, name), name, new Date().toISOString());
+    const platformResult = resolvePlatform(opts, process.env, reported, metricsPreview.pending);
     if (platformResult.error) {
       log.err(platformResult.error);
       process.exitCode = 1;
@@ -3977,6 +4028,7 @@ program
         totalTokens: opts.totalTokens,
         costUsd: opts.costUsd,
         collect: opts.collect === true,
+        ampThreadId: (metricsPreview.pending && metricsPreview.pending.threadId) || ampThreadIdFromEnv(process.env) || null,
         reported,
       });
       console.error(pc.green('  ✓'), `metrics.json updated: ${metricsPath.replace(`${projectDir}/`, '')}`);
