@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-31
+
 ### Added
 - **Kyiv timestamps in `metrics.json`** — `createdAt` / `updatedAt` / `archivedAt` / session times / source `at` are stored as ISO-8601 with `Europe/Kyiv` offset (`2026-08-31T10:08:17.563+03:00`). Broken Amp stamps like `2026-08-31T07:08:17.563464.000Z` are parsed. Human `metrics` output prints `31.08.2026 10:08:17 (Київ +03:00)`.
 - **Amp `threads usage`** — when the locked client is Amp, persist also runs `amp threads usage <id> --details` (fail-open) and writes the billed `costUsd`, per-model costs, and `agentMode` (`low` / `medium` / `high` / `ultra`) from `amp threads export`. Mode is never stored as `session.model`. Placeholder `amp-default` yields to the real LLM id from sources.
@@ -250,6 +252,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Initial release: 5-role orchestration pipeline, `/opsx:*` commands, IDE sync
 
+[0.9.0]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.5.0...v0.6.0

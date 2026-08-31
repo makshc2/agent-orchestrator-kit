@@ -74,7 +74,7 @@ npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-veri
 
 See [Installation](#installation) for profile/CI options.
 
-**🔄 Already have the kit installed? Upgrade to latest (locked Amp/Cursor client + `amp threads export` in v0.8.0; `## Metrics` self-report + opt-in `--collect` in v0.7.0 — **BREAKING:** `--no-collect` is gone; change metrics in v0.5.0+, factory phases 1–3 in v0.4.0+, lean pipeline / archive CLI in v0.3.0+, handoff CLI in v0.1.14+, Figma PAT in v0.1.11+):**
+**🔄 Already have the kit installed? Upgrade to latest (Kyiv timestamps, Amp billed `$`, Cursor API estimate, archive auto-collect in v0.9.0; locked Amp/Cursor client in v0.8.0; `## Metrics` self-report + opt-in `--collect` in v0.7.0 — **BREAKING:** `--no-collect` is gone; change metrics in v0.5.0+, factory phases 1–3 in v0.4.0+, lean pipeline / archive CLI in v0.3.0+, handoff CLI in v0.1.14+, Figma PAT in v0.1.11+):**
 
 ```bash
 npx agent-orchestrator-kit@latest update
@@ -1002,6 +1002,16 @@ The kit moves toward an Agentic Factory in four phases. **One phase = one OpenSp
 Phase bounds and non-goals: [`openspec/specs/agentic-factory-roadmap/spec.md`](openspec/specs/agentic-factory-roadmap/spec.md).
 
 ## Changelog
+
+### 0.9.0
+- **Kyiv timestamps** in `metrics.json` (`Europe/Kyiv`, broken Amp stamps parsed)
+- Amp `threads usage --details` billed `$` + `agentMode` (never stored as `session.model`)
+- Cursor `costUsdEstimated` from xAI API rates for grok-4.6/4.5 — labeled, not mixed into billed `costUsd`
+- **Archive auto-collect** — Archiver session picks up the locked client after the last session; leftover apply `## Metrics` is not double-counted
+
+### 0.8.0
+- Locked session client on `--restore`; persist collects only that client without `--collect`
+- Amp CLI `threads export` + `threads list` when Amp runs over a pipe
 
 ### 0.7.0
 - **`## Metrics` self-report** — persist reads the session section in `handoff.md`; `metrics.json` is the source of truth; CLI flags do not rewrite the section
