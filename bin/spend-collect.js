@@ -3,7 +3,7 @@ import { join, basename } from 'path';
 import { homedir as osHomedir } from 'os';
 import { execFileSync } from 'child_process';
 import { listRecentAmpThreadIds } from './session-client.js';
-import { formatKyivIso, parseFlexibleIso } from './metrics-time.js';
+import { formatUtcIso, parseFlexibleIso } from './metrics-time.js';
 import { estimateCursorCostUsd } from './cursor-cost-estimate.js';
 import { ampAgentMode, matchAmpUsageModel, parseAmpUsageDetails } from './amp-usage.js';
 
@@ -107,7 +107,7 @@ function sourceRecord({
     totalTokens: total,
     costUsd: numOrNull(costUsd),
     ampCredits: numOrNull(ampCredits),
-    at: at == null || at === '' ? null : (formatKyivIso(at) || String(at)),
+    at: at == null || at === '' ? null : (formatUtcIso(at) || String(at)),
   };
   const cache = numOrNull(cacheReadTokens);
   if (cache != null) record.cacheReadTokens = cache;

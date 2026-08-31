@@ -706,15 +706,15 @@ Kit SHALL і надалі постачати `templates/scripts/cursor-spend-hoo
 - **THEN** `sessions.length` лишається `1`
 - **AND** `sessions[0].sources` містить цей запис
 
-### Requirement: Часові мітки metrics.json — Europe/Kyiv
+### Requirement: Часові мітки metrics.json — UTC
 
-Усі поля часу в `metrics.json` (`createdAt`, `updatedAt`, `archivedAt`, `pending.startedAt`, `session.startedAt` / `endedAt`, `source.at`) SHALL записуватись як ISO-8601 з офсетом `Europe/Kyiv` (літо `+03:00`, зима `+02:00`), наприклад `2026-08-31T10:08:17.563+03:00`. Кореневий ключ `timezone` SHALL бути `"Europe/Kyiv"`. Парсер MUST приймати легасі UTC (`…Z`), мікросекунди і зламані Amp-штампи `YYYY-MM-DDTHH:mm:ss.ssssss.000Z`. Команда `metrics` SHALL друкувати дати як `DD.MM.YYYY HH:mm:ss (Київ ±HH:MM)`. Порівняння вікон collect MUST іти через epoch ms, не через рядкове порівняння ISO.
+Усі поля часу в `metrics.json` (`createdAt`, `updatedAt`, `archivedAt`, `pending.startedAt`, `session.startedAt` / `endedAt`, `source.at`) SHALL записуватись як ISO-8601 UTC з суфіксом `Z`, наприклад `2026-08-31T07:08:17.563Z`. Kit MUST NOT писати офсет `Europe/Kyiv` і MUST NOT вимагати кореневий ключ `timezone`. Парсер MUST приймати легасі офсет (`+03:00` / `+02:00`), мікросекунди і зламані Amp-штампи `YYYY-MM-DDTHH:mm:ss.ssssss.000Z`. Команда `metrics` SHALL друкувати дати як `DD.MM.YYYY HH:mm:ss (Київ ±HH:MM)`. Порівняння вікон collect MUST іти через epoch ms, не через рядкове порівняння ISO.
 
-#### Scenario: Зламаний Amp timestamp нормалізується в Київ
+#### Scenario: Зламаний Amp timestamp нормалізується в UTC
 
 - **GIVEN** вхід `2026-08-31T07:08:17.563464.000Z`
 - **WHEN** записується `metrics.json`
-- **THEN** поле часу дорівнює `2026-08-31T10:08:17.563+03:00`
+- **THEN** поле часу дорівнює `2026-08-31T07:08:17.563Z`
 
 ### Requirement: Amp CLI віддає mode і billed USD
 

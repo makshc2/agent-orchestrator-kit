@@ -1675,7 +1675,7 @@ test('metrics command prints a summary and raw --json', () => {
     assert.match(out, /\$0\.10/);
 
     const raw = JSON.parse(cliExec(dir, 'metrics add-thing --json'));
-    assert.equal(raw.sessions[0].startedAt, '2026-08-29T09:00:00.000+03:00', '--started-at overrides the marker');
+    assert.equal(raw.sessions[0].startedAt, '2026-08-29T06:00:00.000Z', '--started-at overrides the marker');
     assert.ok(raw.sessions[0].durationMs > 0);
 
     assert.throws(

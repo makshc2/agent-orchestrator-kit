@@ -74,7 +74,7 @@ npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-veri
 
 See [Installation](#installation) for profile/CI options.
 
-**🔄 Already have the kit installed? Upgrade to latest (Kyiv timestamps, Amp billed `$`, Cursor API estimate, archive auto-collect in v0.9.0; locked Amp/Cursor client in v0.8.0; `## Metrics` self-report + opt-in `--collect` in v0.7.0 — **BREAKING:** `--no-collect` is gone; change metrics in v0.5.0+, factory phases 1–3 in v0.4.0+, lean pipeline / archive CLI in v0.3.0+, handoff CLI in v0.1.14+, Figma PAT in v0.1.11+):**
+**🔄 Already have the kit installed? Upgrade to latest (UTC timestamps + Amp stamp parse, Amp billed `$`, Cursor API estimate, archive auto-collect in v0.9.0; locked Amp/Cursor client in v0.8.0; `## Metrics` self-report + opt-in `--collect` in v0.7.0 — **BREAKING:** `--no-collect` is gone; change metrics in v0.5.0+, factory phases 1–3 in v0.4.0+, lean pipeline / archive CLI in v0.3.0+, handoff CLI in v0.1.14+, Figma PAT in v0.1.11+):**
 
 ```bash
 npx agent-orchestrator-kit@latest update
@@ -804,7 +804,7 @@ Every change accumulates git-tracked `openspec/changes/<name>/metrics.json` — 
 - **`## Metrics` self-report** — Session Exit fills `handoff.md` with `platform`, `model`, `input_tokens`, `output_tokens`, `cost_usd`, `amp_credits`, `spend_source` (`unknown` when missing). Persist reads that section; `metrics.json` is the source of truth for what landed. CLI flags do not rewrite the section.
 - **`session.model`** — `--model` → `## Metrics: model` → `AOK_MODEL` → collected sources (only with `--collect`) → `null` (stderr warning). Never a Closed role.
 - **Session start** — `handoff --restore` writes a `pending` marker (`startedAt`, expected role).
-- **Session end** — `handoff <name>` closes the pending session: duration, closed role, mapped phase (`explore` / `design` / `spec` / `review` / `apply` / `archive`), runtime (local/cloud), tasks snapshot (`n/m`), and spend from flags → self-report → adapters. `--input-tokens` / `--output-tokens` / `--total-tokens` / `--cost-usd` override session totals only and do not wipe `spendByPlatform` / `spendByModel`. Amp billed USD comes from `amp threads usage --details` (fail-open), not from converting credits. Cursor tokens get a labeled `costUsdEstimated` (xAI API rates for grok-4.6/4.5, including `-fast` and the 200k cliff) — that estimate is **not** the Cursor invoice and is never added into billed `costUsd`. Timestamps are ISO-8601 in `Europe/Kyiv`. No restore marker? Pass `--started-at <iso>` or the duration stays honestly `null`.
+- **Session end** — `handoff <name>` closes the pending session: duration, closed role, mapped phase (`explore` / `design` / `spec` / `review` / `apply` / `archive`), runtime (local/cloud), tasks snapshot (`n/m`), and spend from flags → self-report → adapters. `--input-tokens` / `--output-tokens` / `--total-tokens` / `--cost-usd` override session totals only and do not wipe `spendByPlatform` / `spendByModel`. Amp billed USD comes from `amp threads usage --details` (fail-open), not from converting credits. Cursor tokens get a labeled `costUsdEstimated` (xAI API rates for grok-4.6/4.5, including `-fast` and the 200k cliff) — that estimate is **not** the Cursor invoice and is never added into billed `costUsd`. Timestamps are ISO-8601 UTC (`…Z`). No restore marker? Pass `--started-at <iso>` or the duration stays honestly `null`.
 - **Archive** — successful `archive <name>` always creates or finalizes `metrics.json`, sets `archivedAt`, appends an Archiver session, collects the locked client (Cursor hook / Amp export+usage / Claude JSONL) in `[last session.endedAt, now]`, and prints the same human summary as `metrics <name>`. `--collect` still runs all three adapters. Leftover apply `## Metrics` that repeats the previous session is ignored so those tokens are not counted twice.
 - **Platform** — `--platform` → `## Metrics: platform` → `AOK_PLATFORM` → **pending client from `--restore`** → host env (Amp / Cursor / Claude Code) → collected sources (`cursor|claude|amp` only). Invalid `--platform` fails before persist/move.
 - **Locked client** — `--restore` records `pending.platform` and Amp `pending.threadId` before phase work. Persist follows that client’s flow even if persist runs in another shell (no `AMP_*` / `CURSOR_*`). Amp: `amp threads export` plus `amp threads usage --details` (`AOK_AMP_BIN`) and local `threads/*.json`. Export supplies `model` / tokens / `agentMode`; usage supplies billed `$`. If Amp runs tools over a pipe (`/dev/null`), thread id comes from `amp threads list`, not stale `session.json` `lastThreadId`. Cursor: spend hook file. Claude: `~/.claude/projects`. `--collect` still runs all three adapters.
@@ -1004,7 +1004,7 @@ Phase bounds and non-goals: [`openspec/specs/agentic-factory-roadmap/spec.md`](o
 ## Changelog
 
 ### 0.9.0
-- **Kyiv timestamps** in `metrics.json` (`Europe/Kyiv`, broken Amp stamps parsed)
+- **UTC timestamps** in `metrics.json` (`…Z`; broken Amp stamps parsed and normalized)
 - Amp `threads usage --details` billed `$` + `agentMode` (never stored as `session.model`)
 - Cursor `costUsdEstimated` from xAI API rates for grok-4.6/4.5 — labeled, not mixed into billed `costUsd`
 - **Archive auto-collect** — Archiver session picks up the locked client after the last session; leftover apply `## Metrics` is not double-counted

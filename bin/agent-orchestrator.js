@@ -12,8 +12,7 @@ import {
   formatKyivDisplay,
   isoOrNull,
   laterTimestamp,
-  METRICS_TIMEZONE,
-  nowKyivIso,
+  nowUtcIso,
   parseFlexibleIso,
 } from './metrics-time.js';
 
@@ -1660,7 +1659,6 @@ function defaultMetrics(changeName, nowIso) {
     createdAt: nowIso,
     updatedAt: nowIso,
     archivedAt: null,
-    timezone: METRICS_TIMEZONE,
     spend: emptySpendTotals(),
     spendByPlatform: defaultSpendByPlatform(),
     spendByModel: [],
@@ -1688,7 +1686,6 @@ function loadMetricsFile(filePath, changeName, nowIso) {
     ...parsed,
     version: METRICS_VERSION,
     change: changeName,
-    timezone: METRICS_TIMEZONE,
     spend: { ...base.spend, ...(parsed.spend && typeof parsed.spend === 'object' ? parsed.spend : {}) },
     spendByPlatform: mergeSpendByPlatform(parsed.spendByPlatform),
     spendByModel: Array.isArray(parsed.spendByModel) ? parsed.spendByModel : [],
@@ -1700,7 +1697,9 @@ function loadMetricsFile(filePath, changeName, nowIso) {
 
 function saveMetricsFile(filePath, metrics) {
   mkdirSync(dirname(filePath), { recursive: true });
-  writeFileSync(filePath, `${JSON.stringify(metrics, null, 2)}\n`);
+  const out = { ...metrics };
+  delete out.timezone;
+  writeFileSync(filePath, `${JSON.stringify(out, null, 2)}\n`);
 }
 
 function numOrNull(value) {
@@ -2001,7 +2000,7 @@ function metricsBackfillLastSession(projectDir, changeName) {
 }
 
 function metricsBackfillFile(filePath, changeName) {
-  const nowIso = nowKyivIso();
+  const nowIso = nowUtcIso();
   const metrics = loadMetricsFile(filePath, changeName, nowIso);
   const sessions = metrics.sessions || [];
   if (!sessions.length) return { filePath, added: 0, empty: true };
@@ -2179,7 +2178,7 @@ function recomputeMetricsAggregates(metrics) {
 
 function metricsRecordSessionStart(projectDir, changeName, role, client = {}) {
   const filePath = metricsFilePath(projectDir, changeName);
-  const nowIso = nowKyivIso();
+  const nowIso = nowUtcIso();
   const metrics = loadMetricsFile(filePath, changeName, nowIso);
   metrics.pending = {
     startedAt: nowIso,
@@ -2195,9 +2194,9 @@ function metricsRecordSessionStart(projectDir, changeName, role, client = {}) {
 
 function metricsRecordSessionEnd(projectDir, fields, opts = {}) {
   const filePath = metricsFilePath(projectDir, fields.changeName);
-  const nowIso = nowKyivIso();
+  const nowIso = nowUtcIso();
   const metrics = loadMetricsFile(filePath, fields.changeName, nowIso);
-  const startedAt = isoOrNull(opts.startedAt) || (metrics.pending && metrics.pending.startedAt) || null;
+  const startedAt = isoOrNull(opts.startedAt) || isoOrNull(metrics.pending && metrics.pending.startedAt) || null;
   const startedMs = parseFlexibleIso(startedAt);
   const endedMs = parseFlexibleIso(nowIso);
   const durationMs = Number.isFinite(startedMs) && Number.isFinite(endedMs)
@@ -2255,7 +2254,7 @@ function metricsRecordSessionEnd(projectDir, fields, opts = {}) {
 
 function metricsFinalizeArchive(targetDir, changeName, opts = {}) {
   const filePath = join(targetDir, 'metrics.json');
-  const nowIso = nowKyivIso();
+  const nowIso = nowUtcIso();
   const metrics = loadMetricsFile(filePath, changeName, nowIso);
   const windowStart = lastSessionEndedAt(metrics) || metrics.createdAt;
   const collectAll = opts.collect === true;
@@ -3722,7 +3721,7 @@ program
     if (existsSync(archivedHandoffPath)) {
       priorFields = fieldsFromSections(name, parseHandoffMarkdown(readFileSync(archivedHandoffPath, 'utf-8')));
     }
-    const metricsPreview = loadMetricsFile(join(targetDir, 'metrics.json'), name, nowKyivIso());
+    const metricsPreview = loadMetricsFile(join(targetDir, 'metrics.json'), name, nowUtcIso());
     const reported = dropStaleArchiveSelfReport(priorFields.metrics, metricsPreview.sessions);
     const client = resolveRestoreClient({
       env: process.env,
@@ -3788,7 +3787,7 @@ program
     console.log(`memory:   ${memoryPath.replace(`${projectDir}/`, '')}`);
     console.log(`metrics:  ${metricsPath.replace(`${projectDir}/`, '')} (archived_at set)`);
     try {
-      const archivedMetrics = loadMetricsFile(metricsPath, name, nowKyivIso());
+      const archivedMetrics = loadMetricsFile(metricsPath, name, nowUtcIso());
       for (const line of renderMetricsSummary(archivedMetrics)) console.log(line);
     } catch {}
     log.ok(`archived ${name}`);
@@ -4137,7 +4136,7 @@ program
     }
 
     const reported = fields.metrics || emptyMetricsFields();
-    const metricsPreview = loadMetricsFile(metricsFilePath(projectDir, name), name, nowKyivIso());
+    const metricsPreview = loadMetricsFile(metricsFilePath(projectDir, name), name, nowUtcIso());
     const platformResult = resolvePlatform(opts, process.env, reported, metricsPreview.pending);
     if (platformResult.error) {
       log.err(platformResult.error);
@@ -4238,7 +4237,7 @@ program
       return;
     }
 
-    const metrics = loadMetricsFile(filePath, name, nowKyivIso());
+    const metrics = loadMetricsFile(filePath, name, nowUtcIso());
     if (opts.json) {
       process.stdout.write(`${JSON.stringify(metrics, null, 2)}\n`);
       return;

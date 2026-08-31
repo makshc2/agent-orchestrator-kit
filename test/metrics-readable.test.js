@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatKyivDisplay, formatKyivIso, parseFlexibleIso } from '../bin/metrics-time.js';
+import { formatKyivDisplay, formatUtcIso, parseFlexibleIso } from '../bin/metrics-time.js';
 import { parseAmpUsageDetails, matchAmpUsageModel, ampAgentMode } from '../bin/amp-usage.js';
 import { estimateCursorCostUsd } from '../bin/cursor-cost-estimate.js';
 
@@ -8,11 +8,12 @@ test('parseFlexibleIso accepts broken Amp microsecond+.000Z stamps', () => {
   const broken = '2026-08-31T07:08:17.563464.000Z';
   const ms = parseFlexibleIso(broken);
   assert.equal(Number.isFinite(ms), true);
-  assert.equal(formatKyivIso(broken), '2026-08-31T10:08:17.563+03:00');
+  assert.equal(formatUtcIso(broken), '2026-08-31T07:08:17.563Z');
 });
 
-test('formatKyivIso converts UTC to Europe/Kyiv offset', () => {
-  assert.equal(formatKyivIso('2026-08-29T06:00:00.000Z'), '2026-08-29T09:00:00.000+03:00');
+test('formatUtcIso stores UTC and formatKyivDisplay prints Kyiv', () => {
+  assert.equal(formatUtcIso('2026-08-29T06:00:00.000Z'), '2026-08-29T06:00:00.000Z');
+  assert.equal(formatUtcIso('2026-08-29T09:00:00.000+03:00'), '2026-08-29T06:00:00.000Z');
   assert.match(formatKyivDisplay('2026-08-29T06:00:00.000Z'), /29\.08\.2026 09:00:00 \(Київ \+03:00\)/);
 });
 
