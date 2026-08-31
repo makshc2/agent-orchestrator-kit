@@ -7,6 +7,15 @@ import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
 import { collectSpend } from './spend-collect.js';
 import { resolveRestoreClient, ampThreadIdFromEnv } from './session-client.js';
+import {
+  earlierTimestamp,
+  formatKyivDisplay,
+  isoOrNull,
+  laterTimestamp,
+  METRICS_TIMEZONE,
+  nowKyivIso,
+  parseFlexibleIso,
+} from './metrics-time.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const KIT_ROOT = join(__dirname, '..');
@@ -1123,12 +1132,22 @@ function firstNonNull(...values) {
   return null;
 }
 
+function isPlaceholderModel(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return !normalized || ['unknown', 'none', 'n/a', '-', '—', 'null', 'amp-default'].includes(normalized);
+}
+
 function resolveModel(opts, env, reported) {
-  const flag = opts && opts.model != null ? String(opts.model).trim() : '';
+  const pick = (value) => {
+    const text = value == null ? '' : String(value).trim();
+    if (!text || isPlaceholderModel(text)) return '';
+    return text;
+  };
+  const flag = pick(opts && opts.model);
   if (flag) return flag;
-  const fromReport = reported && reported.model != null ? String(reported.model).trim() : '';
+  const fromReport = pick(reported && reported.model);
   if (fromReport) return fromReport;
-  const fromEnv = env && env.AOK_MODEL != null ? String(env.AOK_MODEL).trim() : '';
+  const fromEnv = pick(env && env.AOK_MODEL);
   if (fromEnv) return fromEnv;
   return null;
 }
@@ -1594,14 +1613,14 @@ function readHandoffFields(projectDir, changeName) {
 }
 
 const METRICS_VERSION = 1;
-const METRICS_SPEND_KEYS = ['inputTokens', 'outputTokens', 'totalTokens', 'costUsd'];
+const METRICS_SPEND_KEYS = ['inputTokens', 'outputTokens', 'totalTokens', 'costUsd', 'costUsdEstimated'];
 
 function metricsFilePath(projectDir, changeName) {
   return join(projectDir, 'openspec', 'changes', changeName, 'metrics.json');
 }
 
 function emptySpendTotals() {
-  return { inputTokens: null, outputTokens: null, totalTokens: null, costUsd: null };
+  return { inputTokens: null, outputTokens: null, totalTokens: null, costUsd: null, costUsdEstimated: null };
 }
 
 function emptyPlatformSpend(source = 'none') {
@@ -1611,6 +1630,7 @@ function emptyPlatformSpend(source = 'none') {
     totalTokens: null,
     costUsd: null,
     ampCredits: null,
+    costUsdEstimated: null,
     source,
   };
 }
@@ -1640,6 +1660,7 @@ function defaultMetrics(changeName, nowIso) {
     createdAt: nowIso,
     updatedAt: nowIso,
     archivedAt: null,
+    timezone: METRICS_TIMEZONE,
     spend: emptySpendTotals(),
     spendByPlatform: defaultSpendByPlatform(),
     spendByModel: [],
@@ -1667,6 +1688,7 @@ function loadMetricsFile(filePath, changeName, nowIso) {
     ...parsed,
     version: METRICS_VERSION,
     change: changeName,
+    timezone: METRICS_TIMEZONE,
     spend: { ...base.spend, ...(parsed.spend && typeof parsed.spend === 'object' ? parsed.spend : {}) },
     spendByPlatform: mergeSpendByPlatform(parsed.spendByPlatform),
     spendByModel: Array.isArray(parsed.spendByModel) ? parsed.spendByModel : [],
@@ -1703,12 +1725,6 @@ function phaseForRole(role) {
   return 'other';
 }
 
-function isoOrNull(value) {
-  if (!value) return null;
-  const ms = Date.parse(String(value));
-  return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
-}
-
 function sessionFieldOrSources(session, key) {
   if (session[key] != null && session[key] !== '') return numOrNull(session[key]);
   let sum = null;
@@ -1721,7 +1737,7 @@ function sessionFieldOrSources(session, key) {
 function lastSessionEndedAt(metrics) {
   let last = null;
   for (const session of metrics.sessions || []) {
-    if (session.endedAt && (last == null || session.endedAt > last)) last = session.endedAt;
+    if (session.endedAt) last = last == null ? session.endedAt : laterTimestamp(last, session.endedAt);
   }
   return last;
 }
@@ -1738,6 +1754,33 @@ function existingSourceIdSet(metrics) {
     }
   }
   return ids;
+}
+
+function lastNonArchiverSession(sessions) {
+  const list = Array.isArray(sessions) ? sessions : [];
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    if (list[i] && list[i].role !== 'Archiver') return list[i];
+  }
+  return null;
+}
+
+function dropStaleArchiveSelfReport(reported, sessions) {
+  const base = reported && typeof reported === 'object' ? { ...reported } : emptyMetricsFields();
+  const last = lastNonArchiverSession(sessions);
+  if (!last) return base;
+  const sameInput = numOrNull(base.inputTokens) != null && numOrNull(base.inputTokens) === numOrNull(last.inputTokens);
+  const sameOutput = numOrNull(base.outputTokens) === numOrNull(last.outputTokens);
+  if (sameInput && sameOutput) {
+    base.inputTokens = null;
+    base.outputTokens = null;
+    base.totalTokens = null;
+    base.costUsd = null;
+    base.ampCredits = null;
+    if (!base.spendSource || base.spendSource === 'self-report') base.spendSource = null;
+  }
+  if (base.model && last.model && base.model === last.model) base.model = null;
+  if (base.platform && last.platform && base.platform === last.platform) base.platform = null;
+  return base;
 }
 
 function uniqueSourceModels(sources) {
@@ -1798,11 +1841,35 @@ function sourceAmpCredits(sources) {
   return sum;
 }
 
-function resolveSessionSpend(opts, reported, sources) {
+function sourceEstimatedUsd(sources) {
+  let sum = null;
+  for (const src of sources || []) {
+    sum = addNullable(sum, numOrNull(src.costUsdEstimated));
+  }
+  return sum;
+}
+
+function ampThreadTotals(threads) {
+  const list = Array.isArray(threads) ? threads : [];
+  let costUsd = null;
+  let agentMode = null;
+  const models = [];
+  for (const thread of list) {
+    costUsd = addNullable(costUsd, numOrNull(thread && thread.costUsd));
+    if (!agentMode && thread && thread.agentMode) agentMode = String(thread.agentMode);
+    for (const row of (thread && thread.models) || []) {
+      if (row && row.model && !models.includes(row.model)) models.push(row.model);
+    }
+  }
+  return { costUsd, agentMode, models };
+}
+
+function resolveSessionSpend(opts, reported, sources, extra = {}) {
   const flags = opts || {};
   const self = reported || emptyMetricsFields();
   const fromSources = sessionTotalsFromSources(sources || []);
   const sourceCredits = sourceAmpCredits(sources || []);
+  const fromAmp = ampThreadTotals(extra.ampThreads);
   const flagInput = numOrNull(flags.inputTokens);
   const flagOutput = numOrNull(flags.outputTokens);
   const flagTotal = numOrNull(flags.totalTokens);
@@ -1814,12 +1881,14 @@ function resolveSessionSpend(opts, reported, sources) {
   if (totalTokens == null && (inputTokens != null || outputTokens != null)) {
     totalTokens = (inputTokens ?? 0) + (outputTokens ?? 0);
   }
-  const costUsd = firstNonNull(flagCost, self.costUsd, fromSources.costUsd);
+  const costUsd = firstNonNull(flagCost, self.costUsd, fromAmp.costUsd, fromSources.costUsd);
   const ampCredits = firstNonNull(flagCredits, self.ampCredits, sourceCredits);
+  const costUsdEstimated = sourceEstimatedUsd(sources || []);
   let spendSource = 'unreported';
   if (self.spendSource) spendSource = String(self.spendSource);
   else if (hasSpendOverride(flags)) spendSource = 'flag';
   else if (reportedHasSpendNumbers(self)) spendSource = 'self-report';
+  else if (fromAmp.costUsd != null) spendSource = 'amp-usage';
   else if (
     fromSources.inputTokens != null
     || fromSources.outputTokens != null
@@ -1829,7 +1898,7 @@ function resolveSessionSpend(opts, reported, sources) {
   ) {
     spendSource = 'adapter';
   }
-  return { inputTokens, outputTokens, totalTokens, costUsd, ampCredits, spendSource };
+  return { inputTokens, outputTokens, totalTokens, costUsd, ampCredits, costUsdEstimated, spendSource, agentMode: fromAmp.agentMode };
 }
 
 function sessionTotalsFromFlags(opts) {
@@ -1874,25 +1943,44 @@ function runCollectSpend(metrics, windowStart, windowEnd, extra = {}) {
       ampThreadId: extra.ampThreadId,
       ampCli: extra.ampCli === true,
       exportAmpThread: extra.exportAmpThread,
+      usageAmpThread: extra.usageAmpThread,
     });
   } catch {
     return { sources: [], byPlatform: defaultSpendByPlatform(), byModel: [], notes: [] };
   }
 }
 
-function applyCollectedSessionFields(session, sources, resolvedModel, opts, reported) {
+function applyCollectedSessionFields(session, sources, resolvedModel, opts, reported, extra = {}) {
   session.sources = sources || [];
   const uniqueModels = uniqueSourceModels(session.sources);
-  if (!session.model) session.model = resolvedModel || primaryModelFromSources(session.sources) || null;
+  const fromAmp = ampThreadTotals(extra.ampThreads);
+  for (const model of fromAmp.models) {
+    if (model && !uniqueModels.includes(model)) uniqueModels.push(model);
+  }
+  if (!session.model || isPlaceholderModel(session.model)) {
+    session.model = (resolvedModel && !isPlaceholderModel(resolvedModel) ? resolvedModel : null)
+      || primaryModelFromSources(session.sources)
+      || fromAmp.models[0]
+      || null;
+  }
   if (!session.platform) session.platform = primaryPlatformFromSources(session.sources) || null;
   if (uniqueModels.length > 1) session.models = uniqueModels;
-  const spend = resolveSessionSpend(opts, reported, session.sources);
+  const spend = resolveSessionSpend(opts, reported, session.sources, extra);
   session.inputTokens = spend.inputTokens;
   session.outputTokens = spend.outputTokens;
   session.totalTokens = spend.totalTokens;
   session.costUsd = spend.costUsd;
   session.ampCredits = spend.ampCredits;
+  session.costUsdEstimated = spend.costUsdEstimated;
   session.spendSource = spend.spendSource;
+  if (spend.agentMode) session.agentMode = spend.agentMode;
+  const usageModels = [];
+  for (const thread of extra.ampThreads || []) {
+    for (const row of thread.models || []) {
+      if (row && row.model) usageModels.push(row);
+    }
+  }
+  if (usageModels.length) session.usageModels = usageModels;
 }
 
 function sessionTotalsLookOverridden(session) {
@@ -1913,7 +2001,7 @@ function metricsBackfillLastSession(projectDir, changeName) {
 }
 
 function metricsBackfillFile(filePath, changeName) {
-  const nowIso = new Date().toISOString();
+  const nowIso = nowKyivIso();
   const metrics = loadMetricsFile(filePath, changeName, nowIso);
   const sessions = metrics.sessions || [];
   if (!sessions.length) return { filePath, added: 0, empty: true };
@@ -1940,7 +2028,7 @@ function metricsBackfillFile(filePath, changeName) {
     applyCollectedSessionFields(last, merged, last.model, {}, {
       model: last.model,
       platform: last.platform,
-    });
+    }, { ampThreads: collected.ampThreads });
   }
   metrics.updatedAt = nowIso;
   recomputeMetricsAggregates(metrics);
@@ -1962,11 +2050,12 @@ function spendTuple(obj) {
     totalTokens: numOrNull(obj && obj.totalTokens),
     costUsd: numOrNull(obj && obj.costUsd),
     ampCredits: numOrNull(obj && obj.ampCredits),
+    costUsdEstimated: numOrNull(obj && obj.costUsdEstimated),
   };
 }
 
 function spendTuplesMatch(a, b) {
-  return ['inputTokens', 'outputTokens', 'totalTokens', 'costUsd'].every((key) => {
+  return ['inputTokens', 'outputTokens', 'totalTokens'].every((key) => {
     const left = a[key];
     const right = b[key];
     if (left == null && right == null) return true;
@@ -1980,6 +2069,7 @@ function addSpendNums(target, nums) {
   target.totalTokens = addNullable(target.totalTokens, nums.totalTokens);
   target.costUsd = addNullable(target.costUsd, nums.costUsd);
   target.ampCredits = addNullable(target.ampCredits, nums.ampCredits);
+  target.costUsdEstimated = addNullable(target.costUsdEstimated, nums.costUsdEstimated);
 }
 
 function recomputeSpendMaps(metrics) {
@@ -1997,6 +2087,7 @@ function recomputeSpendMaps(metrics) {
       totalTokens: null,
       costUsd: null,
       ampCredits: null,
+      costUsdEstimated: null,
     };
     addSpendNums(row, nums);
     byModel.set(key, row);
@@ -2006,7 +2097,7 @@ function recomputeSpendMaps(metrics) {
     const nums = spendTuple(src);
     if (src.platform && byPlatform[src.platform]) {
       addSpendNums(byPlatform[src.platform], nums);
-      const label = adapterSourceName(src.platform);
+      const label = adapterSourceName(src.platform, src.via);
       if (label) byPlatform[src.platform].source = label;
     }
     addModelRow(src.model, src.platform, nums);
@@ -2021,6 +2112,19 @@ function recomputeSpendMaps(metrics) {
 
     if (sourcesMatchSession) {
       for (const src of sources) addSourceRow(src);
+      if (session.costUsd != null && sourceTotals.costUsd == null && session.platform && byPlatform[session.platform]) {
+        byPlatform[session.platform].costUsd = addNullable(byPlatform[session.platform].costUsd, session.costUsd);
+      }
+      for (const row of session.usageModels || []) {
+        addModelRow(row.model, session.platform || 'amp', {
+          inputTokens: null,
+          outputTokens: null,
+          totalTokens: null,
+          costUsd: numOrNull(row.costUsd),
+          ampCredits: null,
+          costUsdEstimated: null,
+        });
+      }
       continue;
     }
 
@@ -2044,8 +2148,8 @@ function recomputeMetricsAggregates(metrics) {
     totals.sessions += 1;
     if (session.runtime === 'cloud') totals.cloudSessions += 1;
     totals.durationMs = addNullable(totals.durationMs, numOrNull(session.durationMs));
-    if (session.startedAt && (firstStart == null || session.startedAt < firstStart)) firstStart = session.startedAt;
-    if (session.endedAt && (lastEnd == null || session.endedAt > lastEnd)) lastEnd = session.endedAt;
+    if (session.startedAt) firstStart = firstStart == null ? session.startedAt : earlierTimestamp(firstStart, session.startedAt);
+    if (session.endedAt) lastEnd = lastEnd == null ? session.endedAt : laterTimestamp(lastEnd, session.endedAt);
     const key = session.phase || 'other';
     const phase = phases[key] || { sessions: 0, durationMs: null, ...emptySpendTotals(), agents: [], models: [] };
     phase.sessions += 1;
@@ -2065,7 +2169,7 @@ function recomputeMetricsAggregates(metrics) {
     phases[key] = phase;
   }
   if (firstStart && lastEnd) {
-    totals.leadTimeMs = Math.max(0, Date.parse(lastEnd) - Date.parse(firstStart));
+    totals.leadTimeMs = Math.max(0, parseFlexibleIso(lastEnd) - parseFlexibleIso(firstStart));
   }
   metrics.phases = phases;
   metrics.totals = totals;
@@ -2075,7 +2179,7 @@ function recomputeMetricsAggregates(metrics) {
 
 function metricsRecordSessionStart(projectDir, changeName, role, client = {}) {
   const filePath = metricsFilePath(projectDir, changeName);
-  const nowIso = new Date().toISOString();
+  const nowIso = nowKyivIso();
   const metrics = loadMetricsFile(filePath, changeName, nowIso);
   metrics.pending = {
     startedAt: nowIso,
@@ -2091,10 +2195,14 @@ function metricsRecordSessionStart(projectDir, changeName, role, client = {}) {
 
 function metricsRecordSessionEnd(projectDir, fields, opts = {}) {
   const filePath = metricsFilePath(projectDir, fields.changeName);
-  const nowIso = new Date().toISOString();
+  const nowIso = nowKyivIso();
   const metrics = loadMetricsFile(filePath, fields.changeName, nowIso);
   const startedAt = isoOrNull(opts.startedAt) || (metrics.pending && metrics.pending.startedAt) || null;
-  const durationMs = startedAt ? Math.max(0, Date.parse(nowIso) - Date.parse(startedAt)) : null;
+  const startedMs = parseFlexibleIso(startedAt);
+  const endedMs = parseFlexibleIso(nowIso);
+  const durationMs = Number.isFinite(startedMs) && Number.isFinite(endedMs)
+    ? Math.max(0, endedMs - startedMs)
+    : null;
   const reported = opts.reported || fields.metrics || emptyMetricsFields();
   const resolvedModel = opts.model === undefined ? resolveModel(opts, process.env, reported) : opts.model;
   const windowStart = collectWindowStart(metrics);
@@ -2128,9 +2236,10 @@ function metricsRecordSessionEnd(projectDir, fields, opts = {}) {
     totalTokens: null,
     costUsd: null,
     ampCredits: null,
+    costUsdEstimated: null,
     spendSource: 'unreported',
   };
-  applyCollectedSessionFields(session, collected.sources || [], resolvedModel, opts, reported);
+  applyCollectedSessionFields(session, collected.sources || [], resolvedModel, opts, reported, collected);
   metrics.sessions.push(session);
   metrics.pending = null;
   metrics.updatedAt = nowIso;
@@ -2146,21 +2255,22 @@ function metricsRecordSessionEnd(projectDir, fields, opts = {}) {
 
 function metricsFinalizeArchive(targetDir, changeName, opts = {}) {
   const filePath = join(targetDir, 'metrics.json');
-  const nowIso = new Date().toISOString();
+  const nowIso = nowKyivIso();
   const metrics = loadMetricsFile(filePath, changeName, nowIso);
   const windowStart = lastSessionEndedAt(metrics) || metrics.createdAt;
   const collectAll = opts.collect === true;
   const platform = opts.platform || null;
   const platforms = collectAll ? undefined : (platform ? [platform] : []);
   const shouldCollect = collectAll || (Array.isArray(platforms) && platforms.length > 0);
+  const ampThreadId = opts.ampThreadId || ampThreadIdFromEnv(process.env) || null;
   const collected = shouldCollect
     ? runCollectSpend(metrics, windowStart, nowIso, {
       platforms,
-      ampThreadId: opts.ampThreadId || ampThreadIdFromEnv(process.env) || null,
+      ampThreadId,
       ampCli: collectAll || platform === 'amp',
     })
     : { sources: [] };
-  const reported = opts.reported || emptyMetricsFields();
+  const reported = dropStaleArchiveSelfReport(opts.reported, metrics.sessions);
   const resolvedModel = opts.model === undefined ? resolveModel(opts, process.env, reported) : opts.model;
   const session = {
     startedAt: nowIso,
@@ -2171,7 +2281,8 @@ function metricsFinalizeArchive(targetDir, changeName, opts = {}) {
     runtime: opts.runtime || 'local',
     agentId: opts.agentId || 'none',
     model: resolvedModel || null,
-    platform: opts.platform || null,
+    platform,
+    threadId: ampThreadId || null,
     tasks: opts.tasks || null,
     sources: [],
     inputTokens: null,
@@ -2179,9 +2290,10 @@ function metricsFinalizeArchive(targetDir, changeName, opts = {}) {
     totalTokens: null,
     costUsd: null,
     ampCredits: null,
+    costUsdEstimated: null,
     spendSource: 'unreported',
   };
-  applyCollectedSessionFields(session, collected.sources || [], resolvedModel, opts, reported);
+  applyCollectedSessionFields(session, collected.sources || [], resolvedModel, opts, reported, collected);
   metrics.sessions.push(session);
   metrics.archivedAt = nowIso;
   metrics.pending = null;
@@ -2216,6 +2328,17 @@ function formatMetricsCost(value) {
   return value == null ? '—' : `$${Number(value).toFixed(2)}`;
 }
 
+function formatMetricsCostLine(spend) {
+  const billed = spend && spend.costUsd;
+  const estimated = spend && spend.costUsdEstimated;
+  if (billed == null && estimated == null) return '—';
+  if (billed != null && estimated != null) {
+    return `${formatMetricsCost(billed)} billed + ~${formatMetricsCost(estimated)} est.`;
+  }
+  if (billed != null) return formatMetricsCost(billed);
+  return `~${formatMetricsCost(estimated)} est.`;
+}
+
 function sessionSpendSourceLabel(session) {
   const raw = session && session.spendSource;
   if (raw == null || String(raw).trim() === '') return 'unreported';
@@ -2230,9 +2353,9 @@ function renderMetricsSummary(metrics) {
   lines.push(`work time: ${formatMetricsDuration(metrics.totals.durationMs)}`);
   lines.push(`lead time: ${formatMetricsDuration(metrics.totals.leadTimeMs)}`);
   lines.push(`tokens:    ${formatMetricsNumber(metrics.spend.totalTokens)} (in: ${formatMetricsNumber(metrics.spend.inputTokens)}, out: ${formatMetricsNumber(metrics.spend.outputTokens)})`);
-  lines.push(`cost:      ${formatMetricsCost(metrics.spend.costUsd)}`);
+  lines.push(`cost:      ${formatMetricsCostLine(metrics.spend)}`);
   lines.push(`unreported: ${unreported}`);
-  if (metrics.archivedAt) lines.push(`archived:  ${metrics.archivedAt}`);
+  if (metrics.archivedAt) lines.push(`archived:  ${formatKyivDisplay(metrics.archivedAt)}`);
   if (metrics.pending) {
     const pendingClient = metrics.pending.platform
       ? ` ${metrics.pending.platform}${metrics.pending.threadId ? ` ${metrics.pending.threadId}` : ''}`
@@ -2252,7 +2375,7 @@ function renderMetricsSummary(metrics) {
         String(phase.sessions).padEnd(9),
         formatMetricsDuration(phase.durationMs).padEnd(9),
         formatMetricsNumber(phase.totalTokens).padEnd(9),
-        formatMetricsCost(phase.costUsd).padEnd(9),
+        formatMetricsCostLine(phase).padEnd(9),
         (phase.agents.join(', ') || '—').padEnd(20),
         phase.models.join(', ') || '—',
       ].join(' '));
@@ -2268,7 +2391,7 @@ function renderMetricsSummary(metrics) {
     lines.push([
       key.padEnd(10),
       formatMetricsNumber(row.totalTokens).padEnd(9),
-      formatMetricsCost(row.costUsd).padEnd(9),
+      formatMetricsCostLine(row).padEnd(9),
       formatMetricsNumber(row.ampCredits).padEnd(9),
       row.source || 'none',
     ].join(' '));
@@ -2286,7 +2409,7 @@ function renderMetricsSummary(metrics) {
         String(row.model || '—').padEnd(20),
         String(row.platform || '—').padEnd(10),
         formatMetricsNumber(row.totalTokens).padEnd(9),
-        formatMetricsCost(row.costUsd).padEnd(9),
+        formatMetricsCostLine(row).padEnd(9),
         formatMetricsNumber(row.ampCredits),
       ].join(' '));
     }
@@ -2296,10 +2419,11 @@ function renderMetricsSummary(metrics) {
     lines.push('');
     lines.push('recent sessions:');
     for (const session of sessions.slice(-5)) {
-      const spendLabel = session.totalTokens != null || session.costUsd != null
-        ? ` — ${formatMetricsNumber(session.totalTokens)} tok, ${formatMetricsCost(session.costUsd)}`
+      const spendLabel = session.totalTokens != null || session.costUsd != null || session.costUsdEstimated != null
+        ? ` — ${formatMetricsNumber(session.totalTokens)} tok, ${formatMetricsCostLine(session)}`
         : '';
-      lines.push(`- ${session.endedAt}  ${String(session.phase || '').padEnd(7)} ${formatMetricsDuration(session.durationMs).padEnd(9)} ${session.role || '(no role)'}${session.model ? ` [${session.model}]` : ''} (${sessionSpendSourceLabel(session)})${spendLabel}`);
+      const modeLabel = session.agentMode ? ` mode:${session.agentMode}` : '';
+      lines.push(`- ${formatKyivDisplay(session.endedAt)}  ${String(session.phase || '').padEnd(7)} ${formatMetricsDuration(session.durationMs).padEnd(9)} ${session.role || '(no role)'}${session.model ? ` [${session.model}]` : ''}${modeLabel} (${sessionSpendSourceLabel(session)})${spendLabel}`);
     }
   }
   return lines;
@@ -3478,7 +3602,7 @@ program
   .option('--output-tokens <n>', 'Output tokens spent in the Archiver session')
   .option('--total-tokens <n>', 'Total tokens spent in the Archiver session (default: input + output)')
   .option('--cost-usd <usd>', 'Cost of the Archiver session in USD')
-  .option('--collect', 'Additionally collect local spend adapters', false)
+  .option('--collect', 'Collect all spend adapters (default: locked Cursor/Amp/Claude client only)', false)
   .action((name, opts) => {
     const projectDir = process.cwd();
     const fail = (msg) => {
@@ -3598,11 +3722,25 @@ program
     if (existsSync(archivedHandoffPath)) {
       priorFields = fieldsFromSections(name, parseHandoffMarkdown(readFileSync(archivedHandoffPath, 'utf-8')));
     }
-    const reported = priorFields.metrics || emptyMetricsFields();
-    const archivePlatform = resolvePlatform(opts, process.env, reported);
+    const metricsPreview = loadMetricsFile(join(targetDir, 'metrics.json'), name, nowKyivIso());
+    const reported = dropStaleArchiveSelfReport(priorFields.metrics, metricsPreview.sessions);
+    const client = resolveRestoreClient({
+      env: process.env,
+      cwd: projectDir,
+      homedir: process.env.HOME,
+      platform: opts.platform,
+    });
+    const archivePlatform = resolvePlatform(opts, process.env, reported, {
+      platform: client.platform,
+      threadId: client.threadId,
+    });
     const archiveModel = resolveModel(opts, process.env, reported);
     if (archivePlatform.warn) console.error(archivePlatform.warn);
     printMetricsSectionWarnings(reported, Boolean(archivePlatform.warn));
+    const clientLabel = archivePlatform.value || client.platform
+      ? `${archivePlatform.value || client.platform}${client.threadId ? ` ${client.threadId}` : ''}${client.source ? ` (${client.source})` : ''}`
+      : 'unknown — pass --platform or run archive from Cursor/Amp/Claude';
+    console.error(`metrics: archive client ${clientLabel}`);
     const runtimeResult = resolveRuntime({}, process.env, priorFields);
     const progress = parseTasksProgress(targetDir);
     const fields = {
@@ -3629,7 +3767,8 @@ program
     const memoryPath = persistMemoryFromHandoff(projectDir, fields);
     const metricsPath = metricsFinalizeArchive(targetDir, name, {
       model: archiveModel,
-      platform: archivePlatform.value || null,
+      platform: archivePlatform.value || client.platform || null,
+      ampThreadId: client.threadId || ampThreadIdFromEnv(process.env) || null,
       runtime: fields.runtime,
       agentId: fields.agentId,
       tasks: fields.tasks,
@@ -3649,7 +3788,7 @@ program
     console.log(`memory:   ${memoryPath.replace(`${projectDir}/`, '')}`);
     console.log(`metrics:  ${metricsPath.replace(`${projectDir}/`, '')} (archived_at set)`);
     try {
-      const archivedMetrics = loadMetricsFile(metricsPath, name, new Date().toISOString());
+      const archivedMetrics = loadMetricsFile(metricsPath, name, nowKyivIso());
       for (const line of renderMetricsSummary(archivedMetrics)) console.log(line);
     } catch {}
     log.ok(`archived ${name}`);
@@ -3998,7 +4137,7 @@ program
     }
 
     const reported = fields.metrics || emptyMetricsFields();
-    const metricsPreview = loadMetricsFile(metricsFilePath(projectDir, name), name, new Date().toISOString());
+    const metricsPreview = loadMetricsFile(metricsFilePath(projectDir, name), name, nowKyivIso());
     const platformResult = resolvePlatform(opts, process.env, reported, metricsPreview.pending);
     if (platformResult.error) {
       log.err(platformResult.error);
@@ -4099,7 +4238,7 @@ program
       return;
     }
 
-    const metrics = loadMetricsFile(filePath, name, new Date().toISOString());
+    const metrics = loadMetricsFile(filePath, name, nowKyivIso());
     if (opts.json) {
       process.stdout.write(`${JSON.stringify(metrics, null, 2)}\n`);
       return;

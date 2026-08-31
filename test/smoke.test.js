@@ -1675,7 +1675,7 @@ test('metrics command prints a summary and raw --json', () => {
     assert.match(out, /\$0\.10/);
 
     const raw = JSON.parse(cliExec(dir, 'metrics add-thing --json'));
-    assert.equal(raw.sessions[0].startedAt, '2026-08-29T06:00:00.000Z', '--started-at overrides the marker');
+    assert.equal(raw.sessions[0].startedAt, '2026-08-29T09:00:00.000+03:00', '--started-at overrides the marker');
     assert.ok(raw.sessions[0].durationMs > 0);
 
     assert.throws(
@@ -2376,6 +2376,164 @@ test('archive without --collect finalizes without Archiver sources', () => {
     const archiver = metrics.sessions.find((session) => session.role === 'Archiver');
     assert.ok(archiver);
     assert.deepEqual(archiver.sources, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('archive collects Cursor hook into the Archiver session without --collect', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-archive-cursor-'));
+  try {
+    runInit(dir, '--profile generic --name ArchiveCursor --lang en');
+    const changeDir = makeArchiveFixture(dir, 'add-auth');
+    writeFileSync(
+      join(changeDir, 'metrics.json'),
+      `${JSON.stringify({
+        version: 1,
+        change: 'add-auth',
+        createdAt: '2026-08-29T06:00:00.000Z',
+        sessions: [{
+          startedAt: '2026-08-29T06:00:00.000Z',
+          endedAt: '2026-08-29T07:00:00.000Z',
+          durationMs: 3600000,
+          role: 'Implementer',
+          phase: 'apply',
+          runtime: 'local',
+          platform: 'cursor',
+          model: 'cursor-grok-4.6',
+          inputTokens: 1000,
+          outputTokens: 40,
+          totalTokens: 1040,
+          spendSource: 'adapter',
+        }],
+        pending: null,
+      }, null, 2)}\n`,
+    );
+    mkdirSync(join(dir, '.agents/spend'), { recursive: true });
+    writeFileSync(
+      join(dir, '.agents/spend/cursor-usage.jsonl'),
+      `${JSON.stringify({
+        id: 'archive-hook-1',
+        event: 'stop',
+        model: 'cursor-grok-4.6',
+        inputTokens: 80,
+        outputTokens: 12,
+        at: '2026-08-30T12:00:00.000Z',
+      })}\n`,
+    );
+    installOpenspecStub(dir);
+    const result = cliSpawn(dir, ['archive', 'add-auth', '--sync'], { CURSOR_AGENT: '1' });
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const archiveRoot = join(dir, 'openspec/changes/archive');
+    const entry = readdirSync(archiveRoot).find((d) => d.endsWith('-add-auth'));
+    const metrics = JSON.parse(readFileSync(join(archiveRoot, entry, 'metrics.json'), 'utf-8'));
+    const archiver = metrics.sessions.find((session) => session.role === 'Archiver');
+    assert.ok(archiver);
+    assert.equal(archiver.platform, 'cursor');
+    assert.ok(archiver.sources.some((src) => src.id === 'archive-hook-1'));
+    assert.equal(archiver.totalTokens, 92);
+    assert.equal(metrics.phases.archive.totalTokens, 92);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('archive ignores leftover apply ## Metrics that would double-count', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-archive-stale-metrics-'));
+  try {
+    runInit(dir, '--profile generic --name ArchiveStale --lang en');
+    const changeDir = makeArchiveFixture(dir, 'add-auth');
+    writeFileSync(
+      join(changeDir, 'handoff.md'),
+      handoffWithMetrics({
+        platform: 'cursor',
+        model: 'cursor-grok-4.6',
+        input_tokens: '1000',
+        output_tokens: '40',
+        cost_usd: 'unknown',
+        amp_credits: 'unknown',
+        spend_source: 'self-report',
+      }),
+    );
+    writeFileSync(
+      join(changeDir, 'metrics.json'),
+      `${JSON.stringify({
+        version: 1,
+        change: 'add-auth',
+        createdAt: '2026-08-29T06:00:00.000Z',
+        sessions: [{
+          startedAt: '2026-08-29T06:00:00.000Z',
+          endedAt: '2026-08-29T07:00:00.000Z',
+          durationMs: 3600000,
+          role: 'Implementer',
+          phase: 'apply',
+          runtime: 'local',
+          platform: 'cursor',
+          model: 'cursor-grok-4.6',
+          inputTokens: 1000,
+          outputTokens: 40,
+          totalTokens: 1040,
+          spendSource: 'self-report',
+        }],
+        pending: null,
+      }, null, 2)}\n`,
+    );
+    mkdirSync(join(dir, '.agents/spend'), { recursive: true });
+    writeFileSync(
+      join(dir, '.agents/spend/cursor-usage.jsonl'),
+      `${JSON.stringify({
+        id: 'archive-hook-stale',
+        event: 'stop',
+        model: 'cursor-grok-4.6',
+        inputTokens: 50,
+        outputTokens: 5,
+        at: '2026-08-30T12:00:00.000Z',
+      })}\n`,
+    );
+    installOpenspecStub(dir);
+    const result = cliSpawn(dir, ['archive', 'add-auth', '--sync'], { CURSOR_AGENT: '1' });
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const archiveRoot = join(dir, 'openspec/changes/archive');
+    const entry = readdirSync(archiveRoot).find((d) => d.endsWith('-add-auth'));
+    const metrics = JSON.parse(readFileSync(join(archiveRoot, entry, 'metrics.json'), 'utf-8'));
+    const archiver = metrics.sessions.find((session) => session.role === 'Archiver');
+    assert.ok(archiver);
+    assert.notEqual(archiver.inputTokens, 1000);
+    assert.ok(archiver.sources.some((src) => src.id === 'archive-hook-stale'));
+    assert.equal(archiver.totalTokens, 55);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('archive unique ## Metrics still fills Archiver self-report', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-archive-self-report-'));
+  try {
+    runInit(dir, '--profile generic --name ArchiveSelf --lang en');
+    const changeDir = makeArchiveFixture(dir, 'add-auth');
+    writeFileSync(
+      join(changeDir, 'handoff.md'),
+      handoffWithMetrics({
+        platform: 'amp',
+        model: 'claude-fable-5',
+        input_tokens: '4000',
+        output_tokens: '10',
+        cost_usd: 'unknown',
+        amp_credits: 'unknown',
+        spend_source: 'self-report',
+      }),
+    );
+    installOpenspecStub(dir);
+    const result = cliSpawn(dir, ['archive', 'add-auth', '--sync']);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const archiveRoot = join(dir, 'openspec/changes/archive');
+    const entry = readdirSync(archiveRoot).find((d) => d.endsWith('-add-auth'));
+    const metrics = JSON.parse(readFileSync(join(archiveRoot, entry, 'metrics.json'), 'utf-8'));
+    const archiver = metrics.sessions.find((session) => session.role === 'Archiver');
+    assert.equal(archiver.platform, 'amp');
+    assert.equal(archiver.model, 'claude-fable-5');
+    assert.equal(archiver.inputTokens, 4000);
+    assert.equal(archiver.spendSource, 'self-report');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -139,7 +139,7 @@ Kit SHALL писати `openspec/changes/<name>/metrics.json` (після archiv
 
 ### Requirement: Три read-only адаптери без мережі і без нових npm-залежностей
 
-Collect запускається лише за явним `--collect` (на `handoff <name>`, `archive`) або командою `metrics --collect`; у цьому разі він MUST викликати всі три адаптери в одному проході. Модуль SHALL жити в `bin/spend-collect.js` і бути імпортованим з `bin/agent-orchestrator.js`. Адаптери MUST бути read-only і offline: без API-ключів, без HTTP, без Cursor SDK, без Amp billing API, без парсера Claude `/cost` як залежності. Нових npm-залежностей (`better-sqlite3`, `sql.js`, `ccusage`) MUST NOT з'являтись. Тести MUST підміняти `HOME` / `AMP_DATA_DIR` / `XDG_CONFIG_HOME` на tmp і MUST NOT читати реальний `~/.claude` розробника в CI.
+Collect усіх трьох адаптерів в одному проході запускається за явним `--collect` (на `handoff <name>`, `archive`) або командою `metrics --collect`. Persist і archive без `--collect` SHALL збирати лише locked/resolved клієнта (див. «Restore фіксує клієнта сесії» та «Archive завжди фіналізує metrics.json»). Модуль SHALL жити в `bin/spend-collect.js` і бути імпортованим з `bin/agent-orchestrator.js`. Адаптери MUST бути read-only і offline: без API-ключів, без HTTP, без Cursor SDK, без Amp billing API, без парсера Claude `/cost` як залежності. Нових npm-залежностей (`better-sqlite3`, `sql.js`, `ccusage`) MUST NOT з'являтись. Тести MUST підміняти `HOME` / `AMP_DATA_DIR` / `XDG_CONFIG_HOME` на tmp і MUST NOT читати реальний `~/.claude` розробника в CI.
 
 Адаптер **claude** SHALL читати `~/.claude/projects/<cwd-encoded>/*.jsonl`, де cwd-encoded будується з аргумента `collectSpend({ cwd })` (якщо `cwd` опущено — `process.cwd()`) заміною кожного `/` і кожного `.` на `-`. Парсити assistant-рядки з `message.usage` і `message.model`, рахувати `cache_*` у `inputTokens`, якщо поля є, брати `costUsd` лише з `total_cost_usd` (або аналога) на записі, інакше `null`, фільтрувати вікно за полем рядка `timestamp`, фільтрувати проєкт за полем рядка `cwd` === цей `cwd`, і ставити `source: "claude-jsonl"`. Pricing table MUST NOT постачатись.
 
@@ -336,7 +336,7 @@ CLI SHALL надавати `npx agent-orchestrator-kit metrics [name] [--json]`.
 
 ### Requirement: --no-metrics пропускає запис сесії і collect
 
-Прапорець `--no-metrics` на `handoff --restore` MUST NOT створювати й MUST NOT оновлювати `pending`. На `handoff <name>` MUST NOT додавати сесію, MUST NOT читати секцію `## Metrics` як джерело сесії і MUST NOT запускати collect. Команда `archive` MUST все одно фіналізувати `metrics.json` після успішного move; collect на archive запускається лише за явним `--collect` — незалежно від `--no-metrics`. Прапорця `--no-collect` більше не існує, тому `--no-metrics` MUST NOT посилатись на нього. `--no-metrics` MUST NOT змінювати exit code persist і MUST NOT перетворювати відсутній самозвіт на помилку.
+Прапорець `--no-metrics` на `handoff --restore` MUST NOT створювати й MUST NOT оновлювати `pending`. На `handoff <name>` MUST NOT додавати сесію, MUST NOT читати секцію `## Metrics` як джерело сесії і MUST NOT запускати collect. Команда `archive` MUST все одно фіналізувати `metrics.json` після успішного move і SHALL зібрати spend locked/resolved клієнта (або всі адаптери з `--collect`) — незалежно від `--no-metrics`. Прапорця `--no-collect` більше не існує, тому `--no-metrics` MUST NOT посилатись на нього. `--no-metrics` MUST NOT змінювати exit code persist і MUST NOT перетворювати відсутній самозвіт на помилку.
 
 #### Scenario: Persist --no-metrics не створює файл
 
@@ -358,9 +358,10 @@ CLI SHALL надавати `npx agent-orchestrator-kit metrics [name] [--json]`.
 - **THEN** `metrics.json` не створюється і сесія не дописується
 - **AND** exit code 0
 
-#### Scenario: Archive фіналізує без адаптерів попри --no-metrics
+#### Scenario: Archive фіналізує без чужих адаптерів, якщо клієнт невідомий
 
 - **GIVEN** change з валідним sync-рішенням і tmp-фікстурою Claude JSONL у вікні Archiver
+- **AND** немає `--platform`, `AOK_PLATFORM` і host env Cursor/Amp/Claude
 - **WHEN** виконується `archive <name>` без `--collect`
 - **THEN** архівний `metrics.json` існує з сесією `Archiver`
 - **AND** `sources` цієї сесії є `[]`
@@ -368,7 +369,7 @@ CLI SHALL надавати `npx agent-orchestrator-kit metrics [name] [--json]`.
 
 ### Requirement: Archive завжди фіналізує metrics.json після успішного move
 
-Після успішного переміщення change команда `archive <name>` MUST створити `metrics.json` у архівній папці, якщо файлу не було, виставити `archivedAt`, очистити `pending`, перерахувати агрегати і додати сесію `role: Archiver`, `phase: archive`, `durationMs: null`. Значення `model`, `platform`, токенів, `costUsd`, `ampCredits` і `spendSource` цієї сесії SHALL резолвитись тим самим ланцюжком, що й у persist: прапорці `archive` → `## Metrics` з `handoff.md` у **архівній** папці (файл уже переміщено) → env → host env → `sources` при `--collect` → `null`. Collect MUST запускатись лише з `--collect`, з вікном Archiver (`last session.endedAt || createdAt` → зараз). Невалідний `--platform` MUST відхилятись до move. Якщо після finalize `spend.costUsd` є `null` — warning у stderr через `console.error`. Exit code MUST NOT змінюватись через відсутній файл, порожній spend, відсутній самозвіт або `null` модель.
+Після успішного переміщення change команда `archive <name>` MUST створити `metrics.json` у архівній папці, якщо файлу не було, виставити `archivedAt`, очистити `pending`, перерахувати агрегати і додати сесію `role: Archiver`, `phase: archive`, `durationMs: null`. Клієнт Archiver SHALL резолвитись так само, як persist: `--platform` / `AOK_PLATFORM` → `## Metrics` (після відкидання stale-копії попередньої сесії) → `resolveRestoreClient` / host env. Коли резолвлений клієнт є `amp` / `cursor` / `claude`, archive SHALL зібрати spend лише цього клієнта навіть без `--collect`, з вікном Archiver (`last session.endedAt || createdAt` → зараз). Amp-флоу: `amp threads export` + `amp threads usage --details` (fail-open) плюс локальні threads. Cursor-флоу: hook-файл. Claude-флоу: `~/.claude/projects`. `--collect` SHALL запускати всі три адаптери. Значення `model`, токенів, `costUsd`, `ampCredits` і `spendSource` SHALL резолвитись: прапорці `archive` → унікальний (не stale) `## Metrics` → зібрані `sources` → `null`. Якщо `## Metrics` повторює `inputTokens`/`outputTokens`/`model`/`platform` останньої не-Archiver сесії, ці поля MUST ігноруватись, щоб не подвоїти apply-spend. Невалідний `--platform` MUST відхилятись до move. Якщо після finalize `spend.costUsd` є `null` — warning у stderr через `console.error`. Exit code MUST NOT змінюватись через відсутній файл, порожній spend, відсутній самозвіт або `null` модель.
 
 #### Scenario: Archive без файлу створює metrics.json з Archiver
 
@@ -380,9 +381,28 @@ CLI SHALL надавати `npx agent-orchestrator-kit metrics [name] [--json]`.
 #### Scenario: Archiver бере значення з самозвіту
 
 - **GIVEN** `handoff.md` change-у містить `## Metrics` з `platform: amp`, `model: claude-fable-5`, `input_tokens: 4000`
+- **AND** жодна попередня сесія не має тих самих `inputTokens`/`model`/`platform`
 - **WHEN** виконується `archive <name>` без прапорців моделі й платформи
 - **THEN** сесія `Archiver` має `platform: amp`, `model: claude-fable-5`, `inputTokens: 4000`
 - **AND** `spendSource` цієї сесії є `self-report`
+
+#### Scenario: Archive з locked Cursor збирає hook у фазу archive
+
+- **GIVEN** остання сесія має `endedAt` раніше за рядок у `.agents/spend/cursor-usage.jsonl`
+- **AND** host env має `CURSOR_AGENT=1`
+- **WHEN** виконується `archive <name>` без `--collect`
+- **THEN** сесія `Archiver` має `platform: cursor`
+- **AND** `sources` містить цей hook-рядок
+- **AND** `phases.archive.totalTokens` не є `null`
+
+#### Scenario: Stale ## Metrics з apply не подвоюється на Archiver
+
+- **GIVEN** остання сесія `Implementer` має `inputTokens: 1000`, `platform: cursor`, `model: cursor-grok-4.6`
+- **AND** архівований `handoff.md` `## Metrics` повторює ці самі числа
+- **AND** у вікні Archiver є новий hook-рядок на 50 токенів
+- **WHEN** виконується `archive <name>` з `CURSOR_AGENT=1` без `--collect`
+- **THEN** `Archiver.inputTokens` не дорівнює `1000`
+- **AND** `sources` Archiver містить новий hook-рядок
 
 #### Scenario: Порожній spend на archive — warning і exit 0
 
@@ -479,7 +499,7 @@ CLI SHALL записувати секцію в `handoff.md` при кожном�
 
 ### Requirement: Джерело spend — прапорці, потім самозвіт, потім опційні адаптери
 
-Session-level spend SHALL резолвитись пополе, перше не-null значення виграє: явний прапорець (`--input-tokens` / `--output-tokens` / `--total-tokens` / `--cost-usd`) → відповідний ключ `## Metrics` → зібрані `sources` (лише коли передано `--collect`) → `null`. Дефолтний persist і дефолтний archive MUST NOT викликати `collectSpend` і MUST NOT читати `~/.claude`, `~/.local/share/amp` чи `.agents/spend/cursor-usage.jsonl`.
+Session-level spend SHALL резолвитись пополе, перше не-null значення виграє: явний прапорець (`--input-tokens` / `--output-tokens` / `--total-tokens` / `--cost-usd`) → відповідний ключ `## Metrics` (для archive — після drop stale-копії попередньої сесії) → зібрані `sources` (locked client або `--collect`) → `null`. Дефолтний persist і archive MUST NOT читати адаптери інших платформ, ніж резолвлений клієнт, якщо немає `--collect`.
 
 `session.ampCredits` SHALL зберігатись окремим полем сесії з ключа `amp_credits` і MUST NOT входити в `costUsd` чи в будь-яку суму USD. Відсутнє число MUST лишатись `null`, ніколи штучним `0`. CLI MUST NOT обчислювати USD з токенів і MUST NOT конвертувати Amp credits у USD.
 
@@ -581,7 +601,7 @@ CLI MUST дописати в `handoff.md` скелет `## Metrics` зі зна�
 
 ### Requirement: Прапорець `--collect` вмикає локальні адаптери
 
-`handoff <name>` і `archive` SHALL приймати опційний `--collect`, який вмикає повний прохід `collectSpend` (три адаптери, вікно, dedup) додатково до самозвіту. Без `--collect` адаптери MUST NOT запускатись, `session.sources` MUST бути `[]`, а `spendByPlatform.*.source` MUST лишатись `none` для платформ без зібраних записів.
+`handoff <name>` і `archive` SHALL приймати опційний `--collect`, який вмикає повний прохід `collectSpend` (три адаптери, вікно, dedup) додатково до locked-клієнта. Без `--collect` і без резолвленого клієнта `amp`/`cursor`/`claude` адаптери MUST NOT запускатись, `session.sources` MUST бути `[]`. Коли клієнт резолвлений, archive і persist SHALL читати адаптер цього клієнта навіть без `--collect`.
 
 Прапорець `--no-collect` SHALL бути видалений. **BREAKING**: скрипти, що передавали `--no-collect`, MUST перейти на дефолтну поведінку без прапорця.
 
@@ -601,9 +621,10 @@ CLI MUST дописати в `handoff.md` скелет `## Metrics` зі зна�
 - **THEN** `sessions[0].sources` є `[]`
 - **AND** exit code 0
 
-#### Scenario: Дефолтний archive не читає адаптери
+#### Scenario: Дефолтний archive без клієнта не читає чужі адаптери
 
 - **GIVEN** tmp-фікстура Claude JSONL з валідною подією у вікні Archiver
+- **AND** клієнт сесії не резолвлений
 - **WHEN** виконується `archive <name>` з валідним sync-рішенням і без `--collect`
 - **THEN** архівний `metrics.json` містить сесію `Archiver` із `sources` рівними `[]`
 - **AND** exit code 0
@@ -684,3 +705,37 @@ Kit SHALL і надалі постачати `templates/scripts/cursor-spend-hoo
 - **WHEN** виконується `metrics <name> --collect`
 - **THEN** `sessions.length` лишається `1`
 - **AND** `sessions[0].sources` містить цей запис
+
+### Requirement: Часові мітки metrics.json — Europe/Kyiv
+
+Усі поля часу в `metrics.json` (`createdAt`, `updatedAt`, `archivedAt`, `pending.startedAt`, `session.startedAt` / `endedAt`, `source.at`) SHALL записуватись як ISO-8601 з офсетом `Europe/Kyiv` (літо `+03:00`, зима `+02:00`), наприклад `2026-08-31T10:08:17.563+03:00`. Кореневий ключ `timezone` SHALL бути `"Europe/Kyiv"`. Парсер MUST приймати легасі UTC (`…Z`), мікросекунди і зламані Amp-штампи `YYYY-MM-DDTHH:mm:ss.ssssss.000Z`. Команда `metrics` SHALL друкувати дати як `DD.MM.YYYY HH:mm:ss (Київ ±HH:MM)`. Порівняння вікон collect MUST іти через epoch ms, не через рядкове порівняння ISO.
+
+#### Scenario: Зламаний Amp timestamp нормалізується в Київ
+
+- **GIVEN** вхід `2026-08-31T07:08:17.563464.000Z`
+- **WHEN** записується `metrics.json`
+- **THEN** поле часу дорівнює `2026-08-31T10:08:17.563+03:00`
+
+### Requirement: Amp CLI віддає mode і billed USD
+
+Коли locked client є `amp` (або `--collect`), адаптер `amp-cli` SHALL після `amp threads export <id>` викликати `amp threads usage <id> --details` (бінар `AOK_AMP_BIN` або `amp`, fail-open, без сирого HTTP). З export SHALL братися `usage.model`, токени і `agentMode` (`low` / `medium` / `high` / `ultra` з `thread.agentMode` або `thread.meta.agentMode`). З usage SHALL братися рядок `Cost: $N` у `session.costUsd` / `spendByPlatform.amp.costUsd` і таблиця Models у `session.usageModels`. `agentMode` SHALL писатись у `session.agentMode` і MUST NOT ставати `session.model`. Плейсхолдер `amp-default` трактується як відсутня модель, тож primary id з sources перемагає. Amp credits MUST NOT конвертуватись у USD.
+
+#### Scenario: Amp usage inject заповнює costUsd і agentMode
+
+- **GIVEN** `exportAmpThread` повертає thread з `agentMode: "low"` і usage GLM
+- **AND** `usageAmpThread` повертає `{ costUsd: 1.3 }`
+- **WHEN** виконується collect Amp CLI
+- **THEN** `sources[0].agentMode` є `"low"`
+- **AND** `ampThreads[0].costUsd` є `1.3`
+
+### Requirement: Cursor estimate не змішується з billed USD
+
+Адаптер cursor MAY оцінювати USD з токенів лише для моделей `grok-4.6` / `grok-4.5` (включно з префіксом `cursor-` і суфіксом `-fast`) за опублікованими xAI API-ставками, з подвоєнням для `-fast` і long-context cliff при `inputTokens >= 200000`. Результат SHALL писатись у `costUsdEstimated` з `costSource: "api-estimate"`, `costUsd` лишається `null`. `spend.costUsd` MUST містити лише billed / self-report / Amp usage. Human summary MAY друкувати `$X billed + ~$Y est.`. Відсутній cache-split MUST рахувати весь input як fresh (оцінка зверху). MUST NOT видавати оцінку за Cursor invoice.
+
+#### Scenario: Cursor hook з grok-4.6-fast пише estimate, не costUsd
+
+- **GIVEN** `cursor-usage.jsonl` з `model: cursor-grok-4.6-high-fast`, `inputTokens: 400`, `outputTokens: 40`
+- **WHEN** виконується collect cursor
+- **THEN** `sources[0].costUsd` є `null`
+- **AND** `sources[0].costUsdEstimated` є числом
+- **AND** `sources[0].costSource` є `"api-estimate"`

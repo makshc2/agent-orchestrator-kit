@@ -141,6 +141,7 @@ test('collectSpend Amp CLI export is used when injected', () => {
       ampThreadId: 'T-cli',
       exportAmpThread: (id) => ({
         id,
+        agentMode: 'low',
         env: { initial: { trees: [{ uri: `file://${cwd}` }] } },
         messages: [{
           messageId: 'm1',
@@ -152,12 +153,19 @@ test('collectSpend Amp CLI export is used when injected', () => {
           },
         }],
       }),
+      usageAmpThread: () => ({
+        costUsd: 1.3,
+        models: [{ model: 'GLM-5.2', costUsd: 0.67, inputTokens: 100, outputTokens: 9 }],
+      }),
     });
     assert.equal(result.sources.length, 1);
     assert.equal(result.sources[0].id, 'T-cli:m1');
     assert.equal(result.sources[0].via, 'amp-cli');
     assert.equal(result.sources[0].model, 'accounts/fireworks/models/glm-5p2');
+    assert.equal(result.sources[0].agentMode, 'low');
     assert.equal(result.byPlatform.amp.source, 'amp-cli');
+    assert.equal(result.ampThreads[0].agentMode, 'low');
+    assert.equal(result.ampThreads[0].costUsd, 1.3);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

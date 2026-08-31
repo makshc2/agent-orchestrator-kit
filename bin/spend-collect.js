@@ -3,6 +3,9 @@ import { join, basename } from 'path';
 import { homedir as osHomedir } from 'os';
 import { execFileSync } from 'child_process';
 import { listRecentAmpThreadIds } from './session-client.js';
+import { formatKyivIso, parseFlexibleIso } from './metrics-time.js';
+import { estimateCursorCostUsd } from './cursor-cost-estimate.js';
+import { ampAgentMode, matchAmpUsageModel, parseAmpUsageDetails } from './amp-usage.js';
 
 const PLATFORMS = ['cursor', 'claude', 'amp'];
 
@@ -24,6 +27,7 @@ function emptyPlatform(source = 'none') {
     totalTokens: null,
     costUsd: null,
     ampCredits: null,
+    costUsdEstimated: null,
     source,
   };
 }
@@ -59,11 +63,7 @@ function pathsEqual(a, b) {
 }
 
 function parseTime(value) {
-  if (value == null || value === '') return NaN;
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value < 1e12 ? value * 1000 : value;
-  }
-  return Date.parse(String(value));
+  return parseFlexibleIso(value);
 }
 
 function inWindow(timestamp, windowStart, windowEnd) {
@@ -80,12 +80,25 @@ function inWindow(timestamp, windowStart, windowEnd) {
   return true;
 }
 
-function sourceRecord({ id, platform, model, inputTokens, outputTokens, costUsd, ampCredits, at }) {
+function sourceRecord({
+  id,
+  platform,
+  model,
+  inputTokens,
+  outputTokens,
+  costUsd,
+  ampCredits,
+  at,
+  cacheReadTokens,
+  costUsdEstimated,
+  costSource,
+  agentMode,
+}) {
   const input = numOrNull(inputTokens);
   const output = numOrNull(outputTokens);
   let total = null;
   if (input != null || output != null) total = (input ?? 0) + (output ?? 0);
-  return {
+  const record = {
     id: String(id),
     platform,
     model: model == null || model === '' ? null : String(model),
@@ -94,8 +107,15 @@ function sourceRecord({ id, platform, model, inputTokens, outputTokens, costUsd,
     totalTokens: total,
     costUsd: numOrNull(costUsd),
     ampCredits: numOrNull(ampCredits),
-    at: at == null ? null : String(at),
+    at: at == null || at === '' ? null : (formatKyivIso(at) || String(at)),
   };
+  const cache = numOrNull(cacheReadTokens);
+  if (cache != null) record.cacheReadTokens = cache;
+  const estimated = numOrNull(costUsdEstimated);
+  if (estimated != null) record.costUsdEstimated = estimated;
+  if (costSource) record.costSource = String(costSource);
+  if (agentMode) record.agentMode = String(agentMode);
+  return record;
 }
 
 function claudeInputTokens(usage) {
@@ -334,6 +354,7 @@ export function sourcesFromAmpThread(thread, ctx, fileName = '', via = null) {
       costUsd: null,
       ampCredits: null,
       at: usage.timestamp,
+      agentMode: ampAgentMode(thread),
     });
     if (via) record.via = via;
     sources.push(record);
@@ -395,6 +416,39 @@ export function exportAmpThread(threadId, options = {}) {
   }
 }
 
+export function fetchAmpThreadUsage(threadId, options = {}) {
+  const id = threadId == null ? '' : String(threadId).trim();
+  if (!id) return null;
+  if (typeof options.usageAmpThread === 'function') {
+    try {
+      const injected = options.usageAmpThread(id);
+      if (injected == null) return null;
+      if (typeof injected === 'string') return parseAmpUsageDetails(injected);
+      if (typeof injected === 'object') {
+        if (injected.text && injected.costUsd == null) return { ...parseAmpUsageDetails(injected.text), ...injected };
+        return injected;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+  if (typeof options.exportAmpThread === 'function') return null;
+  const bin = options.ampBin || (options.env && options.env.AOK_AMP_BIN) || 'amp';
+  if (bin !== 'amp' && !existsSync(bin)) return null;
+  try {
+    const out = execFileSync(bin, ['threads', 'usage', id, '--details'], {
+      encoding: 'utf-8',
+      timeout: options.timeoutMs != null ? Number(options.timeoutMs) : 25000,
+      env: options.env || process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return parseAmpUsageDetails(out);
+  } catch {
+    return null;
+  }
+}
+
 function collectAmpCli(ctx) {
   const { env, notes, ampThreadId } = ctx;
   const ids = [];
@@ -408,17 +462,41 @@ function collectAmpCli(ctx) {
     for (const id of listRecentAmpThreadIds(ctx)) push(id);
   }
   const sources = [];
+  const threads = [];
   for (const id of ids) {
     const thread = exportAmpThread(id, ctx);
     if (!thread) {
       notes.push(`amp: export failed for ${id}`);
       continue;
     }
+    const agentMode = ampAgentMode(thread);
     const extracted = sourcesFromAmpThread(thread, ctx, `${id}.json`, 'amp-cli');
     if (!extracted.length) notes.push(`amp: export ${id} had no matching usage`);
     sources.push(...extracted);
+    const usage = fetchAmpThreadUsage(id, ctx);
+    if (!usage) notes.push(`amp: usage failed for ${id}`);
+    const sourceModels = extracted.map((src) => src.model).filter(Boolean);
+    const usageModels = (usage && Array.isArray(usage.models) ? usage.models : []).map((row) => ({
+      ...row,
+      model: matchAmpUsageModel(row.model, sourceModels),
+    }));
+    if (usage && usage.costUsd != null) {
+      for (const src of extracted) {
+        src.costSource = 'amp-usage';
+      }
+    }
+    threads.push({
+      id,
+      agentMode,
+      costUsd: usage ? numOrNull(usage.costUsd) : null,
+      inputTokens: usage ? numOrNull(usage.inputTokens) : null,
+      outputTokens: usage ? numOrNull(usage.outputTokens) : null,
+      totalTokens: usage ? numOrNull(usage.totalTokens) : null,
+      cacheReadTokens: usage ? numOrNull(usage.cacheReadTokens) : null,
+      models: usageModels,
+    });
   }
-  return sources;
+  return { sources, threads };
 }
 
 export const CURSOR_USAGE_FILE_REL = join('.agents', 'spend', 'cursor-usage.jsonl');
@@ -455,15 +533,26 @@ function collectCursor({ cwd, windowStart, windowEnd, existing, notes }) {
     const inputTokens = numOrNull(row.inputTokens);
     const outputTokens = numOrNull(row.outputTokens);
     if (inputTokens == null && outputTokens == null) continue;
+    const model = row.model || row.modelId;
+    const cacheReadTokens = numOrNull(row.cacheReadTokens);
+    const estimated = estimateCursorCostUsd({
+      model,
+      inputTokens,
+      outputTokens,
+      cacheReadTokens,
+    });
     const record = sourceRecord({
       id,
       platform: 'cursor',
-      model: row.model || row.modelId,
+      model,
       inputTokens,
       outputTokens,
       costUsd: null,
       ampCredits: null,
       at: row.at,
+      cacheReadTokens,
+      costUsdEstimated: estimated,
+      costSource: estimated != null ? 'api-estimate' : null,
     });
     const previous = bestById.get(id);
     if (!previous || (record.totalTokens ?? 0) >= (previous.totalTokens ?? 0)) {
@@ -485,6 +574,7 @@ function aggregate(sources) {
       bucket.totalTokens = addNullable(bucket.totalTokens, src.totalTokens);
       bucket.costUsd = addNullable(bucket.costUsd, src.costUsd);
       bucket.ampCredits = addNullable(bucket.ampCredits, src.ampCredits);
+      bucket.costUsdEstimated = addNullable(bucket.costUsdEstimated, src.costUsdEstimated);
       if (platform === 'claude') bucket.source = 'claude-jsonl';
       else if (platform === 'amp') bucket.source = src.via === 'amp-cli' ? 'amp-cli' : 'amp-thread';
       else bucket.source = 'cursor-hook';
@@ -500,12 +590,14 @@ function aggregate(sources) {
         totalTokens: null,
         costUsd: null,
         ampCredits: null,
+        costUsdEstimated: null,
       };
       row.inputTokens = addNullable(row.inputTokens, src.inputTokens);
       row.outputTokens = addNullable(row.outputTokens, src.outputTokens);
       row.totalTokens = addNullable(row.totalTokens, src.totalTokens);
       row.costUsd = addNullable(row.costUsd, src.costUsd);
       row.ampCredits = addNullable(row.ampCredits, src.ampCredits);
+      row.costUsdEstimated = addNullable(row.costUsdEstimated, src.costUsdEstimated);
       byModel.set(key, row);
     }
   }
@@ -541,10 +633,12 @@ export function collectSpend(options = {}) {
     ampThreadId: options.ampThreadId,
     exportAmpThread: options.exportAmpThread,
     listAmpThreads: options.listAmpThreads,
+    usageAmpThread: options.usageAmpThread,
     ampBin: options.ampBin,
     timeoutMs: options.timeoutMs,
   };
   let sources = [];
+  const ampThreads = [];
   if (run('claude')) {
     try {
       sources = sources.concat(collectClaude(ctx));
@@ -555,7 +649,9 @@ export function collectSpend(options = {}) {
   if (run('amp')) {
     if (options.ampCli === true || typeof options.exportAmpThread === 'function') {
       try {
-        sources = sources.concat(collectAmpCli(ctx));
+        const cli = collectAmpCli(ctx);
+        sources = sources.concat(cli.sources || []);
+        if (Array.isArray(cli.threads)) ampThreads.push(...cli.threads);
       } catch {
         notes.push('amp: cli export failed');
       }
@@ -574,5 +670,22 @@ export function collectSpend(options = {}) {
     }
   }
   const { byPlatform, byModel } = aggregate(sources);
-  return { sources, byPlatform, byModel, notes };
+  applyAmpThreadSpend(byPlatform, byModel, ampThreads);
+  return { sources, byPlatform, byModel, notes, ampThreads };
+}
+
+function applyAmpThreadSpend(byPlatform, byModel, threads) {
+  if (!threads || !threads.length) return;
+  let cost = null;
+  for (const thread of threads) {
+    cost = addNullable(cost, numOrNull(thread.costUsd));
+    for (const row of thread.models || []) {
+      if (!row.model) continue;
+      const key = `${row.model}::amp`;
+      const existing = byModel.find((item) => `${item.model}::${item.platform || ''}` === key)
+        || byModel.find((item) => item.platform === 'amp' && item.model === row.model);
+      if (existing && row.costUsd != null) existing.costUsd = addNullable(existing.costUsd, row.costUsd);
+    }
+  }
+  if (cost != null) byPlatform.amp.costUsd = addNullable(byPlatform.amp.costUsd, cost);
 }

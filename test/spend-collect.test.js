@@ -374,6 +374,8 @@ test('cursor hook jsonl: window, dedup, max record per repeated id, no-token row
   assert.equal(cursorSources[0].totalTokens, 440);
   assert.equal(cursorSources[0].model, 'cursor-grok-4.6-high-fast');
   assert.equal(cursorSources[0].costUsd, null);
+  assert.equal(cursorSources[0].costUsdEstimated, 0.0021);
+  assert.equal(cursorSources[0].costSource, 'api-estimate');
   assert.equal(result.byPlatform.cursor.source, 'cursor-hook');
   rmSync(root, { recursive: true, force: true });
 });
