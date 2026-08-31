@@ -74,7 +74,7 @@ npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-veri
 
 See [Installation](#installation) for profile/CI options.
 
-**🔄 Already have the kit installed? Upgrade to latest (UTC timestamps + Amp stamp parse, Amp billed `$`, Cursor API estimate, archive auto-collect in v0.9.0; locked Amp/Cursor client in v0.8.0; `## Metrics` self-report + opt-in `--collect` in v0.7.0 — **BREAKING:** `--no-collect` is gone; change metrics in v0.5.0+, factory phases 1–3 in v0.4.0+, lean pipeline / archive CLI in v0.3.0+, handoff CLI in v0.1.14+, Figma PAT in v0.1.11+):**
+**🔄 Already have the kit installed? Upgrade to latest (Cursor fallback estimate + first-class `costUsdEstimated` in v0.10.0; UTC timestamps + Amp stamp parse, Amp billed `$`, Cursor API estimate, archive auto-collect in v0.9.0; locked Amp/Cursor client in v0.8.0; `## Metrics` self-report + opt-in `--collect` in v0.7.0 — **BREAKING:** `--no-collect` is gone; change metrics in v0.5.0+, factory phases 1–3 in v0.4.0+, lean pipeline / archive CLI in v0.3.0+, handoff CLI in v0.1.14+, Figma PAT in v0.1.11+):**
 
 ```bash
 npx agent-orchestrator-kit@latest update
@@ -1003,7 +1003,7 @@ Phase bounds and non-goals: [`openspec/specs/agentic-factory-roadmap/spec.md`](o
 
 ## Changelog
 
-### Unreleased
+### 0.10.0
 - `costUsdEstimated` is first-class on `metrics.json`; Cursor writes a labeled estimate whenever tokens exist — grok via xAI API (`costSource: api-estimate`), other models via versioned fallback $3/1M in + $15/1M out (or $3.50/1M when only `totalTokens`, `costSource: api-estimate-fallback`). The estimate is **not** an invoice and is never mixed into billed `costUsd`. Amp without a `Cost:` line leaves `costUsd: null`; self-report `cost_usd` stays billed.
 
 ### 0.9.0

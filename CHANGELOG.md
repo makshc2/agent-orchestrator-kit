@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-31
+
 ### Added
 - **`costUsdEstimated` first-class** in `metrics.json` (`spend`, platforms, models, sessions, sources). Cursor writes a labeled estimate whenever tokens exist: grok-4.5/4.6 keep xAI API rates (`costSource: "api-estimate"`); other models use a versioned fallback of $3/1M input + $15/1M output (or $3.50/1M when only `totalTokens` is present, `costSource: "api-estimate-fallback"`). This is **not** a Cursor invoice and is never mixed into billed `costUsd`. Self-report `cost_usd` stays billed and is not copied into `costUsdEstimated`. Amp without a `Cost:` line leaves `costUsd: null` (tokens are not converted to USD; credits stay separate). Archived `metrics.json` files are not backfilled.
 
@@ -255,6 +257,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Initial release: 5-role orchestration pipeline, `/opsx:*` commands, IDE sync
 
+[0.10.0]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.6.0...v0.7.0
