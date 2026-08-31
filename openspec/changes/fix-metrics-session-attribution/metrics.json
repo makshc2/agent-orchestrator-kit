@@ -2,23 +2,23 @@
   "version": 1,
   "change": "fix-metrics-session-attribution",
   "createdAt": "2026-08-31T17:01:43.390Z",
-  "updatedAt": "2026-08-31T17:44:55.532Z",
+  "updatedAt": "2026-08-31T20:19:07.039Z",
   "archivedAt": null,
   "spend": {
-    "inputTokens": 5772915,
-    "outputTokens": 53336,
-    "totalTokens": 5826251,
+    "inputTokens": 6506174,
+    "outputTokens": 58835,
+    "totalTokens": 6565009,
     "costUsd": null,
-    "costUsdEstimated": 16.148500000000002
+    "costUsdEstimated": 18.660600000000002
   },
   "spendByPlatform": {
     "cursor": {
-      "inputTokens": 5772915,
-      "outputTokens": 53336,
-      "totalTokens": 5826251,
+      "inputTokens": 6506174,
+      "outputTokens": 58835,
+      "totalTokens": 6565009,
       "costUsd": null,
       "ampCredits": null,
-      "costUsdEstimated": 16.148500000000002,
+      "costUsdEstimated": 18.660600000000002,
       "source": "cursor-hook"
     },
     "claude": {
@@ -44,12 +44,12 @@
     {
       "model": "cursor-grok-4.6-xhigh-fast",
       "platform": "cursor",
-      "inputTokens": 5772915,
-      "outputTokens": 53336,
-      "totalTokens": 5826251,
+      "inputTokens": 6506174,
+      "outputTokens": 58835,
+      "totalTokens": 6565009,
       "costUsd": null,
       "ampCredits": null,
-      "costUsdEstimated": 16.148500000000002
+      "costUsdEstimated": 18.660600000000002
     },
     {
       "model": "cursor-grok-4.6",
@@ -63,9 +63,9 @@
     }
   ],
   "totals": {
-    "sessions": 5,
-    "durationMs": 1850100,
-    "leadTimeMs": 2550178,
+    "sessions": 6,
+    "durationMs": 1912052,
+    "leadTimeMs": 11801685,
     "cloudSessions": 0
   },
   "phases": {
@@ -104,13 +104,28 @@
     "apply": {
       "sessions": 1,
       "durationMs": 996239,
+      "inputTokens": 733259,
+      "outputTokens": 5499,
+      "totalTokens": 738758,
+      "costUsd": null,
+      "costUsdEstimated": 2.5121,
+      "agents": [
+        "Implementer"
+      ],
+      "models": [
+        "cursor-grok-4.6"
+      ]
+    },
+    "archive": {
+      "sessions": 1,
+      "durationMs": 61952,
       "inputTokens": null,
       "outputTokens": null,
       "totalTokens": null,
       "costUsd": null,
       "costUsdEstimated": null,
       "agents": [
-        "Implementer"
+        "Archiver"
       ],
       "models": [
         "cursor-grok-4.6"
@@ -273,6 +288,42 @@
       "model": "cursor-grok-4.6",
       "platform": "cursor",
       "threadId": null,
+      "tasks": "19/19",
+      "sources": [
+        {
+          "id": "6e630e8f-3944-4c7a-93f1-1cf04ccde94f",
+          "platform": "cursor",
+          "model": "cursor-grok-4.6-xhigh-fast",
+          "inputTokens": 733259,
+          "outputTokens": 5499,
+          "totalTokens": 738758,
+          "costUsd": null,
+          "ampCredits": null,
+          "at": "2026-08-31T17:45:12.922Z",
+          "cacheReadTokens": 580992,
+          "costUsdEstimated": 2.5121,
+          "costSource": "api-estimate"
+        }
+      ],
+      "inputTokens": 733259,
+      "outputTokens": 5499,
+      "totalTokens": 738758,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": 2.5121,
+      "spendSource": "adapter"
+    },
+    {
+      "startedAt": "2026-08-31T20:18:05.087Z",
+      "endedAt": "2026-08-31T20:19:07.039Z",
+      "durationMs": 61952,
+      "role": "Archiver",
+      "phase": "archive",
+      "runtime": "local",
+      "agentId": "none",
+      "model": "cursor-grok-4.6",
+      "platform": "cursor",
+      "threadId": "3a192de0-5e89-4f4d-b010-a31907868c50",
       "tasks": "19/19",
       "sources": [],
       "inputTokens": null,

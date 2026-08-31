@@ -1,30 +1,27 @@
 # Session Handoff
 
 ## Closed role
-Implementer — 19/19 tasks complete, ready for tests + PR then Archiver
+Archiver — gate blocked; did not run archive CLI
 
 ## Change
 - name: fix-metrics-session-attribution
 - status: in-progress
 - tasks: 19/19
 - review: APPROVE
-- last_role: Implementer
+- last_role: Archiver
 
 ## Done
-Announced Implementer (conductor). `npx agent-orchestrator-kit status`: one active change, tasks 0/19, review APPROVE. `handoff --restore` exit 0; briefing from `handoff.md` + `decisions.md`. Memory JSON empty/missing; Memory MCP tools unavailable. Restore complete — did not spawn `session-handoff`.
+Announced Archiver (conductor). `npx agent-orchestrator-kit status`: tasks 19/19, review APPROVE, ready-to-archive flag. `handoff --restore` exit 0; briefing from `handoff.md` + `decisions.md`. Memory JSON empty/missing; Memory MCP tools unavailable. Restore complete — did not spawn `session-handoff`.
 
-Spawned [code-writer](0ba3f08c-8992-4480-ad6b-de0c6fdb85c8) for tasks 1.1–9.1. Conductor verified production code against Done-when (did not implement in the parent). Marked 1.1–9.1 `[x]`.
+Did not spawn `spec-archiver`. Did not run `npx agent-orchestrator-kit archive … --sync`. Constraints require tests pass, PR merged, and CI green first.
 
-Spawned [test-writer](7f822ece-e359-4dec-9d18-6fb451481e79) for 10.1–10.3 and [code-writer](4f1c7f48-f4cb-4db3-bf72-32da365bed94) for 11.1–11.2 in parallel. Follow-up on test-writer inverted leftover `Archiver.durationMs === null` assertions in existing archive `--sync` / no-metrics tests. Conductor verified reports only. Did not run `npm test` / `node --test` (user policy).
-
-Production: persist window `[pending.startedAt, endedAt]`; leftover helper separate from `metrics --collect` (`[last.startedAt, now]`); leftoverEnd = `pending.startedAt` (exclusive) else `endedAt+120s` (inclusive), never `now`; placeholder `unknown` + `spend_source: self-report` does not freeze; source product id wins; maps/phase spend from sources; Cursor `conversationId` filter; `canonicalRole` + `phaseForRole` architect-before-review; archive pending+leftover before move; Archiver `durationMs` delta; `sessionEnd` reads newest `archive/*-<name>/`. `scripts/cursor-spend-collect.cjs` and templates byte-sync.
+Verified: HEAD `29c1c57` on `main` tracking `origin/main` includes production code; working tree besides this change’s `metrics.json` also has dirty archived consumer `metrics.json` (must not backfill). User policy forbids agent `npm test`. No PR. CI not confirmed green.
 
 ## Decisions
-- apply-implemented-attribution: leftover helper is separate from `metrics --collect`; persist leftoverEnd = `pending.startedAt` (exclusive) else `endedAt+120s` (inclusive), never `now`; Archiver collect `[pending.startedAt, now]` with numeric `durationMs`; `sessionEnd` leftover reads newest `openspec/changes/archive/*-<name>/metrics.json`.
-- apply-tests-docs: steal tests inverted (late hook stays on previous persist / Implementer, not next persist / Archiver); Session Exit docs no longer treat `unknown` self-report as primary spend; `--model` is product id; README/CHANGELOG Unreleased document leftover, product id, and conversationId.
+- archive-blocked-until-merge: do not archive until local tests pass, a PR is merged, and CI is green; archive remains `npx agent-orchestrator-kit archive fix-metrics-session-attribution --sync` (no `spec-archiver` unless that CLI fails).
 
 ## Blocked
-none (test suite not executed — user forbids agent test runs; run locally before PR)
+tests not executed (user forbids agent test runs); no PR; not merged; CI not green. Suggested after permission: `node --test test/smoke.test.js test/spend-collect.test.js test/session-client.test.js`. Do not treat dirty `openspec/changes/archive/*/metrics.json` as this change.
 
 ## Next command
 `/opsx:archive fix-metrics-session-attribution`
@@ -107,25 +104,22 @@ Do not mix phases. Do not start the following role in this chat until this phase
 7. Only then spawn the phase specialist. Free-form "continue" / "next" with one active change means `Handoff.next_command`.
 
 ## Full previous-session context (self-contained — do not rely on Memory alone)
-- Closed role: Implementer — 19/19 tasks complete, ready for tests + PR then Archiver
+- Closed role: Archiver — gate blocked; did not run archive CLI
 - Change: - name: fix-metrics-session-attribution
 - status: in-progress
 - tasks: 19/19
 - review: APPROVE
-- last_role: Implementer
+- last_role: Archiver
 - Done:
-Announced Implementer (conductor). `npx agent-orchestrator-kit status`: one active change, tasks 0/19, review APPROVE. `handoff --restore` exit 0; briefing from `handoff.md` + `decisions.md`. Memory JSON empty/missing; Memory MCP tools unavailable. Restore complete — did not spawn `session-handoff`.
+Announced Archiver (conductor). `npx agent-orchestrator-kit status`: tasks 19/19, review APPROVE, ready-to-archive flag. `handoff --restore` exit 0; briefing from `handoff.md` + `decisions.md`. Memory JSON empty/missing; Memory MCP tools unavailable. Restore complete — did not spawn `session-handoff`.
 
-Spawned [code-writer](0ba3f08c-8992-4480-ad6b-de0c6fdb85c8) for tasks 1.1–9.1. Conductor verified production code against Done-when (did not implement in the parent). Marked 1.1–9.1 `[x]`.
+Did not spawn `spec-archiver`. Did not run `npx agent-orchestrator-kit archive … --sync`. Constraints require tests pass, PR merged, and CI green first.
 
-Spawned [test-writer](7f822ece-e359-4dec-9d18-6fb451481e79) for 10.1–10.3 and [code-writer](4f1c7f48-f4cb-4db3-bf72-32da365bed94) for 11.1–11.2 in parallel. Follow-up on test-writer inverted leftover `Archiver.durationMs === null` assertions in existing archive `--sync` / no-metrics tests. Conductor verified reports only. Did not run `npm test` / `node --test` (user policy).
-
-Production: persist window `[pending.startedAt, endedAt]`; leftover helper separate from `metrics --collect` (`[last.startedAt, now]`); leftoverEnd = `pending.startedAt` (exclusive) else `endedAt+120s` (inclusive), never `now`; placeholder `unknown` + `spend_source: self-report` does not freeze; source product id wins; maps/phase spend from sources; Cursor `conversationId` filter; `canonicalRole` + `phaseForRole` architect-before-review; archive pending+leftover before move; Archiver `durationMs` delta; `sessionEnd` reads newest `archive/*-<name>/`. `scripts/cursor-spend-collect.cjs` and templates byte-sync.
+Verified: HEAD `29c1c57` on `main` tracking `origin/main` includes production code; working tree besides this change’s `metrics.json` also has dirty archived consumer `metrics.json` (must not backfill). User policy forbids agent `npm test`. No PR. CI not confirmed green.
 - Decisions:
-- apply-implemented-attribution: leftover helper is separate from `metrics --collect`; persist leftoverEnd = `pending.startedAt` (exclusive) else `endedAt+120s` (inclusive), never `now`; Archiver collect `[pending.startedAt, now]` with numeric `durationMs`; `sessionEnd` leftover reads newest `openspec/changes/archive/*-<name>/metrics.json`.
-- apply-tests-docs: steal tests inverted (late hook stays on previous persist / Implementer, not next persist / Archiver); Session Exit docs no longer treat `unknown` self-report as primary spend; `--model` is product id; README/CHANGELOG Unreleased document leftover, product id, and conversationId.
+- archive-blocked-until-merge: do not archive until local tests pass, a PR is merged, and CI is green; archive remains `npx agent-orchestrator-kit archive fix-metrics-session-attribution --sync` (no `spec-archiver` unless that CLI fails).
 - Blocked:
-none (test suite not executed — user forbids agent test runs; run locally before PR)
+tests not executed (user forbids agent test runs); no PR; not merged; CI not green. Suggested after permission: `node --test test/smoke.test.js test/spend-collect.test.js test/session-client.test.js`. Do not treat dirty `openspec/changes/archive/*/metrics.json` as this change.
 - Attach:
 - `openspec/changes/fix-metrics-session-attribution/apply-notes.md`
 - `openspec/changes/fix-metrics-session-attribution/review.md`

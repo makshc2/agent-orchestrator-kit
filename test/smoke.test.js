@@ -4005,6 +4005,8 @@ test('persist resolve chains: flags beat self-report; self-report beats env; emp
     assert.match(skeleton, /## Metrics/);
     assert.match(skeleton, /input_tokens: unknown/);
 
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+    cliExec(dir, 'handoff add-thing --restore');
     writeClaudeJsonl(join(dir, '.aok-home'), dir, [
       {
         type: 'assistant',
@@ -4018,11 +4020,18 @@ test('persist resolve chains: flags beat self-report; self-report beats env; emp
         },
       },
     ]);
-    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
     cliExec(dir, 'handoff add-thing');
     const skipped = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions.at(-1);
     assert.deepEqual(skipped.sources, []);
 
+    writeFileSync(join(changeDir, 'handoff.md'), handoffWithMetrics({
+      platform: 'claude',
+      model: 'claude-opus-5',
+      input_tokens: '1000',
+      output_tokens: '0',
+      spend_source: 'self-report',
+    }));
+    cliExec(dir, 'handoff add-thing --restore');
     writeClaudeJsonl(join(dir, '.aok-home'), dir, [
       {
         type: 'assistant',
@@ -4036,18 +4045,11 @@ test('persist resolve chains: flags beat self-report; self-report beats env; emp
         },
       },
     ]);
-    writeFileSync(join(changeDir, 'handoff.md'), handoffWithMetrics({
-      platform: 'claude',
-      model: 'claude-opus-5',
-      input_tokens: '1000',
-      output_tokens: '0',
-      spend_source: 'self-report',
-    }));
     cliExec(dir, 'handoff add-thing --collect --model cursor-grok-4.6');
     const collected = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions.at(-1);
     assert.ok(collected.sources.length >= 1);
     assert.equal(collected.inputTokens, 1000);
-    assert.equal(collected.model, 'cursor-grok-4.6');
+    assert.equal(collected.model, 'claude-opus-4-7');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
