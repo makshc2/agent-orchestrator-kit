@@ -15,13 +15,13 @@ Announced Archiver (conductor). `npx agent-orchestrator-kit status`: tasks 19/19
 
 Did not spawn `spec-archiver`. Did not run `npx agent-orchestrator-kit archive … --sync`. Constraints require tests pass, PR merged, and CI green first.
 
-Verified: HEAD `29c1c57` on `main` tracking `origin/main` includes production code; working tree besides this change’s `metrics.json` also has dirty archived consumer `metrics.json` (must not backfill). User policy forbids agent `npm test`. No PR. CI not confirmed green.
+Re-verified this session: HEAD `a889d98` (`agent factory metric`) on `main` tracking `origin/main`. Working tree dirty: `.agents/rules/ask-before-heavy-ops.mdc`, `openspec/changes/fix-metrics-session-attribution/handoff.md`, `metrics.json`. No open PR (`gh` unavailable / no PR). User policy forbids agent `npm test`. CI not confirmed green.
 
 ## Decisions
 - archive-blocked-until-merge: do not archive until local tests pass, a PR is merged, and CI is green; archive remains `npx agent-orchestrator-kit archive fix-metrics-session-attribution --sync` (no `spec-archiver` unless that CLI fails).
 
 ## Blocked
-tests not executed (user forbids agent test runs); no PR; not merged; CI not green. Suggested after permission: `node --test test/smoke.test.js test/spend-collect.test.js test/session-client.test.js`. Do not treat dirty `openspec/changes/archive/*/metrics.json` as this change.
+tests not executed (user forbids agent test runs); no PR; not merged; CI not green. Suggested after permission: `node --test test/smoke.test.js test/spend-collect.test.js test/session-client.test.js`. Do not backfill archived consumer `metrics.json`.
 
 ## Next command
 `/opsx:archive fix-metrics-session-attribution`
@@ -115,11 +115,11 @@ Announced Archiver (conductor). `npx agent-orchestrator-kit status`: tasks 19/19
 
 Did not spawn `spec-archiver`. Did not run `npx agent-orchestrator-kit archive … --sync`. Constraints require tests pass, PR merged, and CI green first.
 
-Verified: HEAD `29c1c57` on `main` tracking `origin/main` includes production code; working tree besides this change’s `metrics.json` also has dirty archived consumer `metrics.json` (must not backfill). User policy forbids agent `npm test`. No PR. CI not confirmed green.
+Re-verified this session: HEAD `a889d98` (`agent factory metric`) on `main` tracking `origin/main`. Working tree dirty: `.agents/rules/ask-before-heavy-ops.mdc`, `openspec/changes/fix-metrics-session-attribution/handoff.md`, `metrics.json`. No open PR (`gh` unavailable / no PR). User policy forbids agent `npm test`. CI not confirmed green.
 - Decisions:
 - archive-blocked-until-merge: do not archive until local tests pass, a PR is merged, and CI is green; archive remains `npx agent-orchestrator-kit archive fix-metrics-session-attribution --sync` (no `spec-archiver` unless that CLI fails).
 - Blocked:
-tests not executed (user forbids agent test runs); no PR; not merged; CI not green. Suggested after permission: `node --test test/smoke.test.js test/spend-collect.test.js test/session-client.test.js`. Do not treat dirty `openspec/changes/archive/*/metrics.json` as this change.
+tests not executed (user forbids agent test runs); no PR; not merged; CI not green. Suggested after permission: `node --test test/smoke.test.js test/spend-collect.test.js test/session-client.test.js`. Do not backfill archived consumer `metrics.json`.
 - Attach:
 - `openspec/changes/fix-metrics-session-attribution/apply-notes.md`
 - `openspec/changes/fix-metrics-session-attribution/review.md`
