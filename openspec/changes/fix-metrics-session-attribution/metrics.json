@@ -1,0 +1,288 @@
+{
+  "version": 1,
+  "change": "fix-metrics-session-attribution",
+  "createdAt": "2026-08-31T17:01:43.390Z",
+  "updatedAt": "2026-08-31T17:44:55.532Z",
+  "archivedAt": null,
+  "spend": {
+    "inputTokens": 5772915,
+    "outputTokens": 53336,
+    "totalTokens": 5826251,
+    "costUsd": null,
+    "costUsdEstimated": 16.148500000000002
+  },
+  "spendByPlatform": {
+    "cursor": {
+      "inputTokens": 5772915,
+      "outputTokens": 53336,
+      "totalTokens": 5826251,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": 16.148500000000002,
+      "source": "cursor-hook"
+    },
+    "claude": {
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null,
+      "source": "none"
+    },
+    "amp": {
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null,
+      "source": "none"
+    }
+  },
+  "spendByModel": [
+    {
+      "model": "cursor-grok-4.6-xhigh-fast",
+      "platform": "cursor",
+      "inputTokens": 5772915,
+      "outputTokens": 53336,
+      "totalTokens": 5826251,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": 16.148500000000002
+    },
+    {
+      "model": "cursor-grok-4.6",
+      "platform": "cursor",
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null
+    }
+  ],
+  "totals": {
+    "sessions": 5,
+    "durationMs": 1850100,
+    "leadTimeMs": 2550178,
+    "cloudSessions": 0
+  },
+  "phases": {
+    "spec": {
+      "sessions": 1,
+      "durationMs": null,
+      "inputTokens": 2628262,
+      "outputTokens": 14843,
+      "totalTokens": 2643105,
+      "costUsd": null,
+      "costUsdEstimated": 5.9793,
+      "agents": [
+        "Architect — propose complete, artifacts validated"
+      ],
+      "models": [
+        "cursor-grok-4.6"
+      ]
+    },
+    "review": {
+      "sessions": 3,
+      "durationMs": 853861,
+      "inputTokens": 3144653,
+      "outputTokens": 38493,
+      "totalTokens": 3183146,
+      "costUsd": null,
+      "costUsdEstimated": 10.1692,
+      "agents": [
+        "Spec Reviewer — REQUEST CHANGES",
+        "Architect — propose complete, ready for Spec Reviewer",
+        "Spec Reviewer — APPROVE, ready for Implementer"
+      ],
+      "models": [
+        "cursor-grok-4.6"
+      ]
+    },
+    "apply": {
+      "sessions": 1,
+      "durationMs": 996239,
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "costUsdEstimated": null,
+      "agents": [
+        "Implementer"
+      ],
+      "models": [
+        "cursor-grok-4.6"
+      ]
+    }
+  },
+  "sessions": [
+    {
+      "startedAt": null,
+      "endedAt": "2026-08-31T17:01:43.390Z",
+      "durationMs": null,
+      "role": "Architect — propose complete, artifacts validated",
+      "phase": "spec",
+      "runtime": "local",
+      "agentId": "none",
+      "model": "cursor-grok-4.6",
+      "platform": "cursor",
+      "threadId": null,
+      "tasks": "0/19",
+      "sources": [
+        {
+          "id": "6cab4b69-5f21-497c-8c27-3b635394d1e7",
+          "platform": "cursor",
+          "model": "cursor-grok-4.6-xhigh-fast",
+          "inputTokens": 2628262,
+          "outputTokens": 14843,
+          "totalTokens": 2643105,
+          "costUsd": null,
+          "ampCredits": null,
+          "at": "2026-08-31T17:02:02.000Z",
+          "cacheReadTokens": 2567168,
+          "costUsdEstimated": 5.9793,
+          "costSource": "api-estimate"
+        }
+      ],
+      "inputTokens": 2628262,
+      "outputTokens": 14843,
+      "totalTokens": 2643105,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": 5.9793,
+      "spendSource": "adapter"
+    },
+    {
+      "startedAt": "2026-08-31T17:02:25.354Z",
+      "endedAt": "2026-08-31T17:07:55.307Z",
+      "durationMs": 329953,
+      "role": "Spec Reviewer — REQUEST CHANGES",
+      "phase": "review",
+      "runtime": "local",
+      "agentId": "none",
+      "model": "cursor-grok-4.6",
+      "platform": "cursor",
+      "threadId": null,
+      "tasks": "0/19",
+      "sources": [
+        {
+          "id": "dac4dbf4-d975-4a5e-aa7a-bcfa57bd961b",
+          "platform": "cursor",
+          "model": "cursor-grok-4.6-xhigh-fast",
+          "inputTokens": 1142713,
+          "outputTokens": 12433,
+          "totalTokens": 1155146,
+          "costUsd": null,
+          "ampCredits": null,
+          "at": "2026-08-31T17:08:10.478Z",
+          "cacheReadTokens": 931712,
+          "costUsdEstimated": 3.8498,
+          "costSource": "api-estimate"
+        }
+      ],
+      "inputTokens": 1142713,
+      "outputTokens": 12433,
+      "totalTokens": 1155146,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": 3.8498,
+      "spendSource": "adapter"
+    },
+    {
+      "startedAt": "2026-08-31T17:09:06.856Z",
+      "endedAt": "2026-08-31T17:13:18.992Z",
+      "durationMs": 252136,
+      "role": "Architect — propose complete, ready for Spec Reviewer",
+      "phase": "review",
+      "runtime": "local",
+      "agentId": "none",
+      "model": "cursor-grok-4.6",
+      "platform": "cursor",
+      "threadId": null,
+      "tasks": "0/19",
+      "sources": [
+        {
+          "id": "2c99645f-aa6f-4cc3-848d-f7812432947b",
+          "platform": "cursor",
+          "model": "cursor-grok-4.6-xhigh-fast",
+          "inputTokens": 1347761,
+          "outputTokens": 15213,
+          "totalTokens": 1362974,
+          "costUsd": null,
+          "ampCredits": null,
+          "at": "2026-08-31T17:13:39.615Z",
+          "cacheReadTokens": 1260736,
+          "costUsdEstimated": 3.5828,
+          "costSource": "api-estimate"
+        }
+      ],
+      "inputTokens": 1347761,
+      "outputTokens": 15213,
+      "totalTokens": 1362974,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": 3.5828,
+      "spendSource": "adapter"
+    },
+    {
+      "startedAt": "2026-08-31T17:22:44.625Z",
+      "endedAt": "2026-08-31T17:27:16.397Z",
+      "durationMs": 271772,
+      "role": "Spec Reviewer — APPROVE, ready for Implementer",
+      "phase": "review",
+      "runtime": "local",
+      "agentId": "none",
+      "model": "cursor-grok-4.6",
+      "platform": "cursor",
+      "threadId": null,
+      "tasks": "0/19",
+      "sources": [
+        {
+          "id": "3978afa3-853c-4b1e-b713-c9726b66d51d",
+          "platform": "cursor",
+          "model": "cursor-grok-4.6-xhigh-fast",
+          "inputTokens": 654179,
+          "outputTokens": 10847,
+          "totalTokens": 665026,
+          "costUsd": null,
+          "ampCredits": null,
+          "at": "2026-08-31T17:27:36.476Z",
+          "cacheReadTokens": 459520,
+          "costUsdEstimated": 2.7366,
+          "costSource": "api-estimate"
+        }
+      ],
+      "inputTokens": 654179,
+      "outputTokens": 10847,
+      "totalTokens": 665026,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": 2.7366,
+      "spendSource": "adapter"
+    },
+    {
+      "startedAt": "2026-08-31T17:28:19.293Z",
+      "endedAt": "2026-08-31T17:44:55.532Z",
+      "durationMs": 996239,
+      "role": "Implementer",
+      "phase": "apply",
+      "runtime": "local",
+      "agentId": "none",
+      "model": "cursor-grok-4.6",
+      "platform": "cursor",
+      "threadId": null,
+      "tasks": "19/19",
+      "sources": [],
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null,
+      "spendSource": "unreported"
+    }
+  ],
+  "pending": null
+}

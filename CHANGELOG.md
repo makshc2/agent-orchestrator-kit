@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **Session metrics attribution.** Persist collect is `[pending.startedAt, endedAt]`; a late hook goes to leftover of that session, not the next persist. Archive collect is `[pending.startedAt, now]` plus leftover of the previous session; `sessionEnd` reads the newest `openspec/changes/archive/*-<name>/metrics.json`. Source product id wins when sources have a model; `--model` / `## Metrics` / `AOK_MODEL` apply only when sources have none. Cursor collect filters by `conversationId` when a filter id is present. Canonical Closed role token is stored in `session.role`. Placeholder `unknown` plus `spend_source: self-report` does not freeze leftover totals.
+
+### Fixed
+- **Cursor `sessionEnd` collect writes `costUsdEstimated`.** `scripts/cursor-spend-collect.cjs` no longer copies tokens without an estimate: leftover hook rows keep `cacheReadTokens`, grok uses the xAI table (`costSource: api-estimate`, including `-fast` and the 200k cliff), other models use the `$3/$15` fallback, and aggregates (`spend`, platforms, models, phases) keep `costUsdEstimated`. Leftover rows after `pending.startedAt` stay off the last closed session. Persist / restore / `metrics --collect` also backfill estimates onto legacy cursor sources that already had tokens but `costUsdEstimated: null`. Amp credits stay self-report only; Amp billed USD still comes only from `amp threads usage` `Cost: $N`.
+- **Cursor `stop` + `afterAgentResponse` no longer double-count a turn.** When Cursor omits `generation_id`, the spend hook used `Date.now()` and wrote two ids for the same tokens. The hook now uses a stable fallback id; persist and `sessionEnd` collect also collapse rows that share model + input/output/cache, prefer `stop`, skip leftover after `endedAt + 120s` when no session is pending, and resync adapter session totals from the remaining sources.
+
 ## [0.10.0] - 2026-08-31
 
 ### Added

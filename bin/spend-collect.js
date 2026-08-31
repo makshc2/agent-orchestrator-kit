@@ -20,6 +20,53 @@ function addNullable(a, b) {
   return (a ?? 0) + (b ?? 0);
 }
 
+export function cursorSpendFingerprint(row) {
+  if (!row || typeof row !== 'object') return null;
+  const input = numOrNull(row.inputTokens);
+  const output = numOrNull(row.outputTokens);
+  if (input == null && output == null) return null;
+  const model = String(row.model || row.modelId || '');
+  const cache = numOrNull(row.cacheReadTokens) ?? 0;
+  return `${model}|${input ?? 0}|${output ?? 0}|${cache}`;
+}
+
+function preferCursorSource(previous, next) {
+  if (!previous) return next;
+  if (!next) return previous;
+  if (next.event === 'stop' && previous.event !== 'stop') return next;
+  if (previous.event === 'stop' && next.event !== 'stop') return previous;
+  const prevAt = Date.parse(previous.at);
+  const nextAt = Date.parse(next.at);
+  if (Number.isFinite(nextAt) && Number.isFinite(prevAt) && nextAt !== prevAt) {
+    return nextAt > prevAt ? next : previous;
+  }
+  return (next.totalTokens ?? 0) >= (previous.totalTokens ?? 0) ? next : previous;
+}
+
+function stripCursorCollectMeta(record) {
+  if (!record || typeof record !== 'object') return record;
+  const { event, ...rest } = record;
+  return rest;
+}
+
+export function dedupeCursorSources(sources) {
+  const best = new Map();
+  const rest = [];
+  for (const src of sources || []) {
+    if (!src || src.platform !== 'cursor') {
+      rest.push(src);
+      continue;
+    }
+    const fp = cursorSpendFingerprint(src);
+    if (!fp) {
+      rest.push(src);
+      continue;
+    }
+    best.set(fp, preferCursorSource(best.get(fp), src));
+  }
+  return [...rest, ...[...best.values()].map(stripCursorCollectMeta)];
+}
+
 function emptyPlatform(source = 'none') {
   return {
     inputTokens: null,
@@ -501,7 +548,130 @@ function collectAmpCli(ctx) {
 
 export const CURSOR_USAGE_FILE_REL = join('.agents', 'spend', 'cursor-usage.jsonl');
 
-function collectCursor({ cwd, windowStart, windowEnd, existing, notes }) {
+function loadCursorUsageById(cwd) {
+  const filePath = join(cwd, CURSOR_USAGE_FILE_REL);
+  const bestById = new Map();
+  if (!existsSync(filePath)) return bestById;
+  let text;
+  try {
+    text = readFileSync(filePath, 'utf-8');
+  } catch {
+    return bestById;
+  }
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    let row;
+    try {
+      row = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!row || typeof row !== 'object') continue;
+    const id = row.id == null || row.id === '' ? null : String(row.id);
+    if (!id) continue;
+    const inputTokens = numOrNull(row.inputTokens);
+    const outputTokens = numOrNull(row.outputTokens);
+    if (inputTokens == null && outputTokens == null) continue;
+    const totalTokens = (inputTokens ?? 0) + (outputTokens ?? 0);
+    const previous = bestById.get(id);
+    const previousTotal = previous
+      ? (numOrNull(previous.inputTokens) ?? 0) + (numOrNull(previous.outputTokens) ?? 0)
+      : -1;
+    if (!previous || totalTokens >= previousTotal) bestById.set(id, row);
+  }
+  return bestById;
+}
+
+export function attachCursorEstimates(sources, cwd) {
+  const byId = loadCursorUsageById(cwd);
+  let changed = false;
+  for (const src of sources || []) {
+    if (!src || src.platform !== 'cursor') continue;
+    const row = src.id ? byId.get(String(src.id)) : null;
+    if (row) {
+      const cache = numOrNull(row.cacheReadTokens);
+      if (src.cacheReadTokens == null && cache != null) {
+        src.cacheReadTokens = cache;
+        changed = true;
+      }
+      if (!src.model && (row.model || row.modelId)) {
+        src.model = row.model || row.modelId;
+        changed = true;
+      }
+    }
+    const described = describeCursorCostEstimate({
+      model: src.model,
+      inputTokens: src.inputTokens,
+      outputTokens: src.outputTokens,
+      cacheReadTokens: src.cacheReadTokens,
+      totalTokens: src.totalTokens,
+    });
+    if (!described) continue;
+    if (src.costUsdEstimated !== described.usd) {
+      src.costUsdEstimated = described.usd;
+      changed = true;
+    }
+    if (src.costSource !== described.costSource) {
+      src.costSource = described.costSource;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+export function enrichMetricsCursorEstimates(metrics, cwd) {
+  let changed = false;
+  for (const session of metrics.sessions || []) {
+    const deduped = dedupeCursorSources(session.sources || []);
+    if (deduped.length !== (session.sources || []).length) {
+      session.sources = deduped;
+      changed = true;
+    } else {
+      session.sources = deduped;
+    }
+    if (attachCursorEstimates(session.sources || [], cwd)) changed = true;
+    let estimated = null;
+    for (const src of session.sources || []) {
+      estimated = addNullable(estimated, numOrNull(src.costUsdEstimated));
+    }
+    if (estimated != null && session.costUsdEstimated !== estimated) {
+      session.costUsdEstimated = estimated;
+      changed = true;
+    }
+    if (!session.spendSource || session.spendSource === 'adapter' || session.spendSource === 'unreported') {
+      let inputTokens = null;
+      let outputTokens = null;
+      let totalTokens = null;
+      for (const src of session.sources || []) {
+        inputTokens = addNullable(inputTokens, numOrNull(src.inputTokens));
+        outputTokens = addNullable(outputTokens, numOrNull(src.outputTokens));
+        totalTokens = addNullable(totalTokens, numOrNull(src.totalTokens));
+      }
+      if (session.inputTokens !== inputTokens) {
+        session.inputTokens = inputTokens;
+        changed = true;
+      }
+      if (session.outputTokens !== outputTokens) {
+        session.outputTokens = outputTokens;
+        changed = true;
+      }
+      if (session.totalTokens !== totalTokens) {
+        session.totalTokens = totalTokens;
+        changed = true;
+      }
+    }
+    if (
+      session.spendSource === 'unreported'
+      && (session.inputTokens != null || session.totalTokens != null || (session.sources || []).length)
+    ) {
+      session.spendSource = 'adapter';
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function collectCursor({ cwd, windowStart, windowEnd, existing, existingSources, notes, env, cursorConversationId }) {
   const filePath = join(cwd, CURSOR_USAGE_FILE_REL);
   if (!existsSync(filePath)) {
     notes.push('cursor: usage file missing (spend hook not installed or no turns recorded yet)');
@@ -514,8 +684,16 @@ function collectCursor({ cwd, windowStart, windowEnd, existing, notes }) {
     notes.push('cursor: cannot read usage file');
     return [];
   }
+  const filterId = String((env && env.CURSOR_CONVERSATION_ID) || cursorConversationId || '').trim();
+  const existingFingerprints = new Set();
+  for (const src of existingSources || []) {
+    const fp = cursorSpendFingerprint(src);
+    if (fp) existingFingerprints.add(fp);
+  }
   // stop / afterAgentResponse / loop follow-ups may write the same generation_id
   // several times with cumulative turn totals; keep the largest record per id.
+  // Cursor sometimes omits generation_id, so stop + afterAgentResponse get two
+  // ids for one turn — collapse those by token fingerprint.
   const bestById = new Map();
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
@@ -529,10 +707,18 @@ function collectCursor({ cwd, windowStart, windowEnd, existing, notes }) {
     const id = row.id == null || row.id === '' ? null : String(row.id);
     if (!id) continue;
     if (existing.has(id)) continue;
+    if (filterId) {
+      const rowConversationId = row.conversationId == null || row.conversationId === ''
+        ? ''
+        : String(row.conversationId).trim();
+      if (rowConversationId !== filterId) continue;
+    }
     if (!inWindow(row.at, windowStart, windowEnd)) continue;
     const inputTokens = numOrNull(row.inputTokens);
     const outputTokens = numOrNull(row.outputTokens);
     if (inputTokens == null && outputTokens == null) continue;
+    const fp = cursorSpendFingerprint(row);
+    if (fp && existingFingerprints.has(fp)) continue;
     const model = row.model || row.modelId;
     const cacheReadTokens = numOrNull(row.cacheReadTokens);
     const described = describeCursorCostEstimate({
@@ -554,12 +740,18 @@ function collectCursor({ cwd, windowStart, windowEnd, existing, notes }) {
       costUsdEstimated: described?.usd ?? null,
       costSource: described?.costSource ?? null,
     });
+    record.event = row.event || null;
     const previous = bestById.get(id);
     if (!previous || (record.totalTokens ?? 0) >= (previous.totalTokens ?? 0)) {
       bestById.set(id, record);
     }
   }
-  return [...bestById.values()];
+  const bestByFingerprint = new Map();
+  for (const record of bestById.values()) {
+    const fp = cursorSpendFingerprint(record) || record.id;
+    bestByFingerprint.set(fp, preferCursorSource(bestByFingerprint.get(fp), record));
+  }
+  return [...bestByFingerprint.values()].map(stripCursorCollectMeta);
 }
 
 function aggregate(sources) {
@@ -622,15 +814,18 @@ export function collectSpend(options = {}) {
     ? options.platforms.filter((name) => PLATFORMS.includes(name))
     : PLATFORMS;
   const run = (name) => !wanted.length || wanted.includes(name);
+  const existingSources = Array.isArray(options.existingSources) ? options.existingSources : [];
   const ctx = {
     cwd,
     windowStart,
     windowEnd,
     existing,
+    existingSources,
     env,
     homedir,
     notes,
     ampThreadId: options.ampThreadId,
+    cursorConversationId: options.cursorConversationId,
     exportAmpThread: options.exportAmpThread,
     listAmpThreads: options.listAmpThreads,
     usageAmpThread: options.usageAmpThread,

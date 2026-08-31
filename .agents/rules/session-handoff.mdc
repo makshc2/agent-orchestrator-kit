@@ -19,8 +19,8 @@ A `/opsx:*` session is incomplete without persist + the fenced next-thread promp
 
 ## Exit (order)
 1. Spawn `session-handoff` persist (Amp isolated). If spawn fails, persist in the parent — never skip.
-2. Write `handoff.md`: Closed role, Change, Done, Decisions, Blocked, Next command, Next role, Attach, Subagents to spawn, Constraints.
-3. `npx agent-orchestrator-kit handoff <name>` — require exit 0 (upserts absolute-path Memory JSON, prints the prompt).
+2. Write `handoff.md`: Closed role, Change, Done, Decisions, Blocked, Next command, Next role, Attach, Subagents to spawn, Constraints, Metrics. Fill `## Metrics` (`platform`, `model`, `input_tokens`, `output_tokens`, `cost_usd`, `amp_credits`, `spend_source`) before persist. Use `unknown` for unknown numbers — never invent `0`. Do not set `spend_source: self-report` when tokens are `unknown`. `--model` / `model` is the LLM product id (example `cursor-grok-4.6-xhigh-fast`); family `cursor-grok-4.6` is only a fallback; the CLI takes the product id from hook sources when they exist; Closed role MAY have a sentence after `—`; metrics stores the canonical token.
+3. `npx agent-orchestrator-kit handoff <name> --model <llm-product-id>` — require exit 0 (upserts absolute-path Memory JSON, prints the prompt).
 4. Update Memory entities when tools work.
 5. Paste CLI stdout as one fenced block. First line `/opsx:…`. Body uses `project.agent_language`. Self-contained (Done/Decisions/Blocked/spawn/HARD STOP). No banner.
 6. Stop. Next role = new chat.

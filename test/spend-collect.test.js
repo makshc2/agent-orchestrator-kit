@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'nod
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
-import { collectSpend } from '../bin/spend-collect.js';
+import { collectSpend, attachCursorEstimates, enrichMetricsCursorEstimates } from '../bin/spend-collect.js';
 
 function encodeClaudeProject(cwd) {
   return String(cwd).replace(/[/.]/g, '-');
@@ -380,6 +380,114 @@ test('cursor hook jsonl: window, dedup, max record per repeated id, no-token row
   rmSync(root, { recursive: true, force: true });
 });
 
+test('cursor hook jsonl: CURSOR_CONVERSATION_ID filters rows; without env both in-window rows stay', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aok-collect-cursor-convid-'));
+  const cwd = join(root, 'work');
+  const spendDir = join(cwd, '.agents', 'spend');
+  mkdirSync(spendDir, { recursive: true });
+  const rows = [
+    { id: 'conv-x', event: 'stop', conversationId: 'X', model: 'cursor-grok-4.6', inputTokens: 10, outputTokens: 1, at: '2026-08-29T12:00:00.000Z' },
+    { id: 'conv-y', event: 'stop', conversationId: 'Y', model: 'cursor-grok-4.6', inputTokens: 20, outputTokens: 2, at: '2026-08-29T12:05:00.000Z' },
+  ];
+  writeFileSync(join(spendDir, 'cursor-usage.jsonl'), `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`);
+  const base = {
+    cwd,
+    env: { HOME: join(root, 'home'), AMP_DATA_DIR: join(root, 'amp'), XDG_CONFIG_HOME: join(root, 'xdg') },
+    homedir: join(root, 'home'),
+    windowStart: '2026-08-29T11:00:00.000Z',
+    windowEnd: '2026-08-29T13:00:00.000Z',
+  };
+  const filtered = collectSpend({
+    ...base,
+    env: { ...base.env, CURSOR_CONVERSATION_ID: 'Y' },
+  });
+  const filteredCursor = filtered.sources.filter((src) => src.platform === 'cursor');
+  assert.equal(filteredCursor.length, 1);
+  assert.equal(filteredCursor[0].id, 'conv-y');
+
+  const unfiltered = collectSpend(base);
+  const unfilteredIds = unfiltered.sources.filter((src) => src.platform === 'cursor').map((src) => src.id).sort();
+  assert.deepEqual(unfilteredIds, ['conv-x', 'conv-y']);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('cursor hook jsonl: stop and afterAgentResponse with different ids collapse to one turn', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aok-collect-cursor-pair-'));
+  const cwd = join(root, 'work');
+  const spendDir = join(cwd, '.agents', 'spend');
+  mkdirSync(spendDir, { recursive: true });
+  writeFileSync(join(spendDir, 'cursor-usage.jsonl'), `${[
+    {
+      id: '198c3bea-d10b-483c-81d4-26c7e761a38e',
+      event: 'afterAgentResponse',
+      conversationId: 'e5938d8e-dfd8-41ca-a9b3-e3642988d99a',
+      model: 'cursor-grok-4.6-xhigh-fast',
+      inputTokens: 3388022,
+      outputTokens: 14932,
+      cacheReadTokens: 3113472,
+      at: '2026-08-31T14:02:30.217Z',
+    },
+    {
+      id: '2e0e5c14-c1f7-4f6d-8fba-dc433e2f6070',
+      event: 'stop',
+      conversationId: 'e5938d8e-dfd8-41ca-a9b3-e3642988d99a',
+      model: 'cursor-grok-4.6-xhigh-fast',
+      inputTokens: 3388022,
+      outputTokens: 14932,
+      cacheReadTokens: 3113472,
+      at: '2026-08-31T14:02:30.304Z',
+    },
+  ].map((row) => JSON.stringify(row)).join('\n')}\n`);
+  const result = collectSpend({
+    cwd,
+    env: { HOME: join(root, 'home'), AMP_DATA_DIR: join(root, 'amp'), XDG_CONFIG_HOME: join(root, 'xdg') },
+    homedir: join(root, 'home'),
+    windowStart: '2026-08-31T13:59:47.000Z',
+    windowEnd: '2026-08-31T14:03:08.400Z',
+  });
+  const cursorSources = result.sources.filter((src) => src.platform === 'cursor');
+  assert.equal(cursorSources.length, 1);
+  assert.equal(cursorSources[0].id, '2e0e5c14-c1f7-4f6d-8fba-dc433e2f6070');
+  assert.equal(cursorSources[0].inputTokens, 3388022);
+  assert.equal(cursorSources[0].costUsdEstimated, 8.7817);
+  assert.equal(cursorSources[0].event, undefined);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('cursor hook jsonl: existing source fingerprint skips the paired stop row', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aok-collect-cursor-fp-skip-'));
+  const cwd = join(root, 'work');
+  const spendDir = join(cwd, '.agents', 'spend');
+  mkdirSync(spendDir, { recursive: true });
+  writeFileSync(join(spendDir, 'cursor-usage.jsonl'), `${JSON.stringify({
+    id: 'stop-pair',
+    event: 'stop',
+    model: 'cursor-grok-4.6-xhigh-fast',
+    inputTokens: 3388022,
+    outputTokens: 14932,
+    cacheReadTokens: 3113472,
+    at: '2026-08-31T14:02:30.304Z',
+  })}\n`);
+  const result = collectSpend({
+    cwd,
+    env: { HOME: join(root, 'home'), AMP_DATA_DIR: join(root, 'amp'), XDG_CONFIG_HOME: join(root, 'xdg') },
+    homedir: join(root, 'home'),
+    windowStart: '2026-08-31T13:59:47.000Z',
+    windowEnd: '2026-08-31T14:03:08.400Z',
+    existingSourceIds: ['after-pair'],
+    existingSources: [{
+      id: 'after-pair',
+      platform: 'cursor',
+      model: 'cursor-grok-4.6-xhigh-fast',
+      inputTokens: 3388022,
+      outputTokens: 14932,
+      cacheReadTokens: 3113472,
+    }],
+  });
+  assert.equal(result.sources.filter((src) => src.platform === 'cursor').length, 0);
+  rmSync(root, { recursive: true, force: true });
+});
+
 test('cursor hook jsonl: non-grok model writes fallback estimate', () => {
   const root = mkdtempSync(join(tmpdir(), 'aok-collect-cursor-fallback-'));
   const cwd = join(root, 'work');
@@ -406,6 +514,50 @@ test('cursor hook jsonl: non-grok model writes fallback estimate', () => {
   assert.equal(cursorSources[0].costUsdEstimated, 18);
   assert.equal(cursorSources[0].costSource, 'api-estimate-fallback');
   assert.equal(cursorSources[0].platform, 'cursor');
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('attachCursorEstimates backfills cache and grok long-fast estimate onto legacy sources', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aok-enrich-cursor-'));
+  const cwd = join(root, 'work');
+  mkdirSync(join(cwd, '.agents', 'spend'), { recursive: true });
+  writeFileSync(join(cwd, '.agents', 'spend', 'cursor-usage.jsonl'), `${JSON.stringify({
+    id: '5642f1f3-db39-4b87-9749-f41bd0871d53',
+    event: 'stop',
+    model: 'cursor-grok-4.6-xhigh-fast',
+    inputTokens: 648131,
+    outputTokens: 7891,
+    cacheReadTokens: 631424,
+    at: '2026-08-31T13:41:18.378Z',
+  })}\n`);
+  const sources = [{
+    id: '5642f1f3-db39-4b87-9749-f41bd0871d53',
+    platform: 'cursor',
+    model: 'cursor-grok-4.6-xhigh-fast',
+    inputTokens: 648131,
+    outputTokens: 7891,
+    totalTokens: 656022,
+    costUsd: null,
+    ampCredits: null,
+    at: '2026-08-31T13:41:18.378Z',
+  }];
+  assert.equal(attachCursorEstimates(sources, cwd), true);
+  assert.equal(sources[0].cacheReadTokens, 631424);
+  assert.equal(sources[0].costUsdEstimated, 1.5859);
+  assert.equal(sources[0].costSource, 'api-estimate');
+  const metrics = {
+    sessions: [{
+      sources,
+      inputTokens: 648131,
+      outputTokens: 7891,
+      totalTokens: 656022,
+      costUsdEstimated: null,
+      spendSource: 'unreported',
+    }],
+  };
+  assert.equal(enrichMetricsCursorEstimates(metrics, cwd), true);
+  assert.equal(metrics.sessions[0].costUsdEstimated, 1.5859);
+  assert.equal(metrics.sessions[0].spendSource, 'adapter');
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -438,5 +590,24 @@ test('cursor spend hook script records usage and stays silent without token fiel
   assert.equal(record.inputTokens, 1000);
   assert.equal(record.outputTokens, 50);
   assert.equal(record.model, 'cursor-grok-4.6-high-fast');
+  run(JSON.stringify({
+    hook_event_name: 'afterAgentResponse',
+    conversation_id: 'c-stable',
+    model: 'cursor-grok-4.6-xhigh-fast',
+    input_tokens: 10,
+    output_tokens: 2,
+    cache_read_tokens: 4,
+  }));
+  run(JSON.stringify({
+    hook_event_name: 'stop',
+    conversation_id: 'c-stable',
+    model: 'cursor-grok-4.6-xhigh-fast',
+    input_tokens: 10,
+    output_tokens: 2,
+    cache_read_tokens: 4,
+  }));
+  const all = readFileSync(usageFile, 'utf-8').split('\n').filter((line) => line.trim()).map((line) => JSON.parse(line));
+  assert.equal(all[1].id, 'c-stable:10:2:4');
+  assert.equal(all[2].id, all[1].id);
   rmSync(root, { recursive: true, force: true });
 });

@@ -1512,8 +1512,13 @@ test('next persist collects hook rows written after the previous persist', () =>
     const metrics = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
     assert.equal(metrics.sessions.length, 2);
     assert.ok(
+      metrics.sessions[0].sources.some((src) => src.id === 'late-after-persist'),
+      'late hook row at previous endedAt leftover-attaches to the first session',
+    );
+    assert.equal(
       metrics.sessions[1].sources.some((src) => src.id === 'late-after-persist'),
-      'late hook row after previous endedAt must land on the next session',
+      false,
+      'late hook row at previous endedAt must not land on the next session',
     );
     assert.equal(metrics.spendByPlatform.cursor.source, 'cursor-hook');
     assert.equal(metrics.spendByPlatform.cursor.totalTokens, 840);
@@ -1654,7 +1659,122 @@ test('sessionEnd collect script merges leftover hook rows into the last session'
     assert.equal(metrics.sessions.length, 1);
     assert.ok(metrics.sessions[0].sources.some((src) => src.id === 'session-end-1'));
     assert.equal(metrics.sessions[0].totalTokens, 128);
+    assert.equal(metrics.sessions[0].costUsdEstimated, 0.0003);
+    assert.equal(metrics.sessions[0].spendSource, 'adapter');
+    assert.equal(metrics.sessions[0].sources[0].costSource, 'api-estimate');
+    assert.equal(metrics.spend.costUsdEstimated, 0.0003);
     assert.equal(metrics.spendByPlatform.cursor.source, 'cursor-hook');
+    assert.equal(metrics.spendByPlatform.cursor.costUsdEstimated, 0.0003);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('sessionEnd collect collapses duplicate stop/afterAgentResponse sources on the last session', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-spend-session-end-dedupe-'));
+  try {
+    runInit(dir, '--profile generic --name SpendSessionEndDedupe --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+    cliExec(dir, 'handoff add-thing --model cursor-grok-4.6');
+
+    const metricsPath = join(changeDir, 'metrics.json');
+    const metricsBefore = JSON.parse(readFileSync(metricsPath, 'utf-8'));
+    const session = metricsBefore.sessions[0];
+    session.sources = [
+      {
+        id: 'after-1',
+        platform: 'cursor',
+        model: 'cursor-grok-4.6-xhigh-fast',
+        inputTokens: 1000,
+        outputTokens: 10,
+        totalTokens: 1010,
+        cacheReadTokens: 800,
+        costUsd: null,
+        ampCredits: null,
+        at: session.endedAt,
+        costUsdEstimated: 0.0018,
+        costSource: 'api-estimate',
+      },
+      {
+        id: 'stop-1',
+        platform: 'cursor',
+        model: 'cursor-grok-4.6-xhigh-fast',
+        inputTokens: 1000,
+        outputTokens: 10,
+        totalTokens: 1010,
+        cacheReadTokens: 800,
+        costUsd: null,
+        ampCredits: null,
+        at: session.endedAt,
+        costUsdEstimated: 0.0018,
+        costSource: 'api-estimate',
+      },
+    ];
+    session.inputTokens = 2000;
+    session.outputTokens = 20;
+    session.totalTokens = 2020;
+    session.costUsdEstimated = 0.0036;
+    session.spendSource = 'adapter';
+    writeFileSync(metricsPath, `${JSON.stringify(metricsBefore, null, 2)}\n`);
+
+    execSync(`node "${join(dir, 'scripts/cursor-spend-collect.cjs')}"`, {
+      cwd: dir,
+      input: '{}\n',
+      encoding: 'utf-8',
+      env: isolatedEnv(dir),
+    });
+
+    const metrics = JSON.parse(readFileSync(metricsPath, 'utf-8'));
+    assert.equal(metrics.sessions[0].sources.length, 1);
+    assert.equal(metrics.sessions[0].inputTokens, 1000);
+    assert.equal(metrics.sessions[0].costUsdEstimated, metrics.sessions[0].sources[0].costUsdEstimated);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('sessionEnd collect does not attach current pending session turns to the last closed session', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-spend-pending-window-'));
+  try {
+    runInit(dir, '--profile generic --name SpendPendingWindow --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+    cliExec(dir, 'handoff add-thing --model cursor-grok-4.6');
+    cliExec(dir, 'handoff add-thing --restore');
+
+    const metricsBefore = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
+    const pendingStart = metricsBefore.pending.startedAt;
+    const afterPending = new Date(Date.parse(pendingStart) + 2000).toISOString();
+    mkdirSync(join(dir, '.agents/spend'), { recursive: true });
+    writeFileSync(
+      join(dir, '.agents/spend', 'cursor-usage.jsonl'),
+      `${JSON.stringify({
+        id: 'current-session-turn',
+        event: 'stop',
+        model: 'cursor-grok-4.6',
+        inputTokens: 900,
+        outputTokens: 20,
+        at: afterPending,
+      })}\n`,
+    );
+
+    execSync(`node "${join(dir, 'scripts/cursor-spend-collect.cjs')}"`, {
+      cwd: dir,
+      input: '{}\n',
+      encoding: 'utf-8',
+      env: isolatedEnv(dir),
+    });
+
+    const metrics = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
+    assert.equal(metrics.sessions.length, 1);
+    assert.equal(
+      metrics.sessions[0].sources.some((src) => src.id === 'current-session-turn'),
+      false,
+      'turns after pending.startedAt belong to the open session, not the last closed one',
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -2150,7 +2270,6 @@ test('archive --sync merges ADDED/MODIFIED/REMOVED and moves the change', () => 
     const archivedMetrics = JSON.parse(readFileSync(join(archiveRoot, entry, 'metrics.json'), 'utf-8'));
     assert.ok(archivedMetrics.archivedAt, 'archive sets archivedAt in metrics.json');
     assert.equal(archivedMetrics.pending, null, 'archive clears the pending marker');
-    assert.equal(archivedMetrics.totals.durationMs, 3600000, 'aggregates recomputed from sessions');
     assert.deepEqual(archivedMetrics.phases.apply.agents, ['Implementer']);
     const implementer = archivedMetrics.sessions.find((session) => session.role === 'Implementer');
     const archiver = archivedMetrics.sessions.find((session) => session.role === 'Archiver');
@@ -2158,7 +2277,14 @@ test('archive --sync merges ADDED/MODIFIED/REMOVED and moves the change', () => 
     assert.equal(implementer.phase, 'apply');
     assert.ok(archiver, 'archive appends an Archiver session');
     assert.equal(archiver.phase, 'archive');
-    assert.equal(archiver.durationMs, null);
+    assert.equal(typeof archiver.durationMs, 'number');
+    assert.notEqual(archiver.durationMs, null);
+    assert.ok(archiver.durationMs > 0, 'Archiver duration is endedAt minus pending.startedAt');
+    assert.equal(
+      archivedMetrics.totals.durationMs,
+      3600000 + archiver.durationMs,
+      'aggregates include Implementer plus Archiver duration',
+    );
 
     const mainSpec = readFileSync(join(dir, 'openspec/specs/auth/spec.md'), 'utf-8');
     assert.match(mainSpec, /New Req/, 'ADDED requirement appended');
@@ -2190,7 +2316,8 @@ test('archive without metrics.json creates Archiver session and warns on null US
     const archiver = metrics.sessions.find((session) => session.role === 'Archiver');
     assert.ok(archiver);
     assert.equal(archiver.phase, 'archive');
-    assert.equal(archiver.durationMs, null);
+    assert.equal(typeof archiver.durationMs, 'number');
+    assert.notEqual(archiver.durationMs, null);
     assert.equal(archiver.costUsd, null);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -2427,12 +2554,91 @@ test('archive collects Cursor hook into the Archiver session without --collect',
     const archiveRoot = join(dir, 'openspec/changes/archive');
     const entry = readdirSync(archiveRoot).find((d) => d.endsWith('-add-auth'));
     const metrics = JSON.parse(readFileSync(join(archiveRoot, entry, 'metrics.json'), 'utf-8'));
+    const implementer = metrics.sessions.find((session) => session.role === 'Implementer');
     const archiver = metrics.sessions.find((session) => session.role === 'Archiver');
+    assert.ok(implementer);
     assert.ok(archiver);
     assert.equal(archiver.platform, 'cursor');
-    assert.ok(archiver.sources.some((src) => src.id === 'archive-hook-1'));
-    assert.equal(archiver.totalTokens, 92);
-    assert.equal(metrics.phases.archive.totalTokens, 92);
+    assert.ok(
+      implementer.sources.some((src) => src.id === 'archive-hook-1'),
+      'hook between Implementer endedAt and archive start leftover-attaches to Implementer',
+    );
+    assert.equal(
+      archiver.sources.some((src) => src.id === 'archive-hook-1'),
+      false,
+      'hook before archive start must not land on Archiver',
+    );
+    assert.equal(typeof archiver.durationMs, 'number');
+    assert.notEqual(archiver.durationMs, null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('archive collects Cursor hook written after archive start into the Archiver session', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-archive-cursor-after-'));
+  try {
+    runInit(dir, '--profile generic --name ArchiveCursorAfter --lang en');
+    const changeDir = makeArchiveFixture(dir, 'add-auth');
+    writeFileSync(
+      join(changeDir, 'metrics.json'),
+      `${JSON.stringify({
+        version: 1,
+        change: 'add-auth',
+        createdAt: '2026-08-29T06:00:00.000Z',
+        sessions: [{
+          startedAt: '2026-08-29T06:00:00.000Z',
+          endedAt: '2026-08-29T07:00:00.000Z',
+          durationMs: 3600000,
+          role: 'Implementer',
+          phase: 'apply',
+          runtime: 'local',
+          platform: 'cursor',
+          model: 'cursor-grok-4.6',
+          inputTokens: 1000,
+          outputTokens: 40,
+          totalTokens: 1040,
+          spendSource: 'adapter',
+        }],
+        pending: {
+          startedAt: '2026-08-29T08:00:00.000Z',
+          role: 'Archiver',
+          platform: 'cursor',
+        },
+      }, null, 2)}\n`,
+    );
+    mkdirSync(join(dir, '.agents/spend'), { recursive: true });
+    writeFileSync(
+      join(dir, '.agents/spend/cursor-usage.jsonl'),
+      `${JSON.stringify({
+        id: 'archive-hook-after-start',
+        event: 'stop',
+        model: 'cursor-grok-4.6',
+        inputTokens: 80,
+        outputTokens: 12,
+        at: new Date().toISOString(),
+      })}\n`,
+    );
+    installOpenspecStub(dir);
+    const result = cliSpawn(dir, ['archive', 'add-auth', '--sync'], { CURSOR_AGENT: '1' });
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const archiveRoot = join(dir, 'openspec/changes/archive');
+    const entry = readdirSync(archiveRoot).find((d) => d.endsWith('-add-auth'));
+    const metrics = JSON.parse(readFileSync(join(archiveRoot, entry, 'metrics.json'), 'utf-8'));
+    const implementer = metrics.sessions.find((session) => session.role === 'Implementer');
+    const archiver = metrics.sessions.find((session) => session.role === 'Archiver');
+    assert.ok(implementer);
+    assert.ok(archiver);
+    assert.ok(
+      archiver.sources.some((src) => src.id === 'archive-hook-after-start'),
+      'hook after archive pending.startedAt must land on Archiver',
+    );
+    assert.equal(
+      (implementer.sources || []).some((src) => src.id === 'archive-hook-after-start'),
+      false,
+    );
+    assert.equal(typeof archiver.durationMs, 'number');
+    assert.notEqual(archiver.durationMs, null);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -2496,11 +2702,205 @@ test('archive ignores leftover apply ## Metrics that would double-count', () => 
     const archiveRoot = join(dir, 'openspec/changes/archive');
     const entry = readdirSync(archiveRoot).find((d) => d.endsWith('-add-auth'));
     const metrics = JSON.parse(readFileSync(join(archiveRoot, entry, 'metrics.json'), 'utf-8'));
+    const implementer = metrics.sessions.find((session) => session.role === 'Implementer');
     const archiver = metrics.sessions.find((session) => session.role === 'Archiver');
+    assert.ok(implementer);
     assert.ok(archiver);
     assert.notEqual(archiver.inputTokens, 1000);
-    assert.ok(archiver.sources.some((src) => src.id === 'archive-hook-stale'));
-    assert.equal(archiver.totalTokens, 55);
+    assert.ok(
+      implementer.sources.some((src) => src.id === 'archive-hook-stale'),
+      'stale apply hook leftover-attaches to Implementer',
+    );
+    assert.equal(
+      archiver.sources.some((src) => src.id === 'archive-hook-stale'),
+      false,
+      'Archiver must not steal leftover apply hook tokens',
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('persist canonicalizes Closed role sentence to Architect spec phase', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-role-canonical-'));
+  try {
+    runInit(dir, '--profile generic --name RoleCanonical --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(
+      join(changeDir, 'handoff.md'),
+      METRICS_HANDOFF.replace(
+        '## Closed role\nArchitect\n',
+        '## Closed role\nArchitect — propose complete, ready for Spec Reviewer\n',
+      ),
+    );
+    cliExec(dir, 'handoff add-thing --model cursor-grok-4.6');
+    const metrics = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
+    const session = metrics.sessions[metrics.sessions.length - 1];
+    assert.equal(session.role, 'Architect');
+    assert.equal(session.phase, 'spec');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('persist prefers hook product id over --model family in session and spendByModel', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-model-product-'));
+  try {
+    runInit(dir, '--profile generic --name ModelProduct --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+    mkdirSync(join(dir, '.agents/spend'), { recursive: true });
+    writeFileSync(
+      join(dir, '.agents/spend/cursor-usage.jsonl'),
+      `${JSON.stringify({
+        id: 'product-id-1',
+        event: 'stop',
+        model: 'cursor-grok-4.6-low',
+        inputTokens: 10,
+        outputTokens: 2,
+        at: '2026-08-29T12:00:00.000Z',
+      })}\n`,
+    );
+    cliExec(dir, 'handoff add-thing --model cursor-grok-4.6 --collect');
+    const metrics = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
+    const session = metrics.sessions[0];
+    assert.equal(session.model, 'cursor-grok-4.6-low');
+    assert.ok((metrics.spendByModel || []).some((row) => row.model === 'cursor-grok-4.6-low'));
+    assert.equal(
+      (metrics.spendByModel || []).some((row) => row.model === 'cursor-grok-4.6'),
+      false,
+      'spendByModel must not add the --model family when sources have a product id',
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('leftover sources resync placeholder self-report totals to adapter', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-leftover-resync-'));
+  try {
+    runInit(dir, '--profile generic --name LeftoverResync --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(
+      join(changeDir, 'handoff.md'),
+      handoffWithMetrics({ spend_source: 'self-report' }),
+    );
+    cliExec(dir, 'handoff add-thing --model cursor-grok-4.6');
+    const before = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
+    const at = before.sessions[0].endedAt;
+    mkdirSync(join(dir, '.agents/spend'), { recursive: true });
+    writeFileSync(
+      join(dir, '.agents/spend/cursor-usage.jsonl'),
+      `${[
+        { id: 'leftover-a', event: 'stop', model: 'cursor-grok-4.6', inputTokens: 954984, outputTokens: 0, at },
+        { id: 'leftover-b', event: 'stop', model: 'cursor-grok-4.6', inputTokens: 508064, outputTokens: 0, at },
+      ].map((row) => JSON.stringify(row)).join('\n')}\n`,
+    );
+    execSync(`node "${join(dir, 'scripts/cursor-spend-collect.cjs')}"`, {
+      cwd: dir,
+      input: '{}\n',
+      encoding: 'utf-8',
+      env: isolatedEnv(dir),
+    });
+    const metrics = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
+    const session = metrics.sessions[0];
+    assert.ok(session.sources.some((src) => src.id === 'leftover-a'));
+    assert.ok(session.sources.some((src) => src.id === 'leftover-b'));
+    assert.equal(session.inputTokens, 1463048);
+    assert.equal(session.totalTokens, 1463048);
+    assert.equal(session.spendSource, 'adapter');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('sessionEnd leftover after archive attaches hook to archived metrics.json', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-archive-session-end-'));
+  try {
+    runInit(dir, '--profile generic --name ArchiveSessionEnd --lang en');
+    makeArchiveFixture(dir, 'add-auth');
+    installOpenspecStub(dir);
+    const archived = cliSpawn(dir, ['archive', 'add-auth', '--sync'], { CURSOR_AGENT: '1' });
+    assert.equal(archived.status, 0, `${archived.stdout}\n${archived.stderr}`);
+    assert.ok(!existsSync(join(dir, 'openspec/changes/add-auth')));
+    const archiveRoot = join(dir, 'openspec/changes/archive');
+    const entry = readdirSync(archiveRoot).find((d) => d.endsWith('-add-auth'));
+    const metricsPath = join(archiveRoot, entry, 'metrics.json');
+    const before = JSON.parse(readFileSync(metricsPath, 'utf-8'));
+    const last = before.sessions[before.sessions.length - 1];
+    const at = new Date(Date.parse(last.endedAt) + 5000).toISOString();
+    mkdirSync(join(dir, '.agents/spend'), { recursive: true });
+    writeFileSync(
+      join(dir, '.agents/spend/cursor-usage.jsonl'),
+      `${JSON.stringify({
+        id: 'archive-session-end-plus5',
+        event: 'stop',
+        model: 'cursor-grok-4.6',
+        inputTokens: 21,
+        outputTokens: 3,
+        at,
+      })}\n`,
+    );
+    execSync(`node "${join(KIT_ROOT, 'scripts/cursor-spend-collect.cjs')}"`, {
+      cwd: dir,
+      input: '{}\n',
+      encoding: 'utf-8',
+      env: isolatedEnv(dir),
+    });
+    const metrics = JSON.parse(readFileSync(metricsPath, 'utf-8'));
+    const lastAfter = metrics.sessions[metrics.sessions.length - 1];
+    assert.ok(
+      (lastAfter.sources || []).some((src) => src.id === 'archive-session-end-plus5'),
+      'sessionEnd leftover must attach +5s hook to archived metrics.json',
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('persist without pending uses earliest source.at as startedAt and keeps two sessions', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-earliest-start-'));
+  try {
+    runInit(dir, '--profile generic --name EarliestStart --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    const t1 = '2026-08-29T10:00:00.000Z';
+    const t2 = '2026-08-29T11:00:00.000Z';
+    const t3 = '2026-08-29T12:00:00.000Z';
+    const t4 = '2026-08-29T13:00:00.000Z';
+    mkdirSync(join(dir, '.agents/spend'), { recursive: true });
+    writeFileSync(
+      join(dir, '.agents/spend/cursor-usage.jsonl'),
+      `${[
+        { id: 'ac6-a', event: 'stop', model: 'cursor-grok-4.6', inputTokens: 10, outputTokens: 1, at: t1 },
+        { id: 'ac6-b', event: 'stop', model: 'cursor-grok-4.6', inputTokens: 20, outputTokens: 2, at: t2 },
+      ].map((row) => JSON.stringify(row)).join('\n')}\n`,
+    );
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+    cliExec(dir, 'handoff add-thing --collect');
+    const first = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
+    assert.equal(first.pending, null);
+    assert.equal(first.sessions[0].startedAt, t1);
+    assert.equal(first.sessions[0].durationMs, Date.parse(first.sessions[0].endedAt) - Date.parse(t1));
+
+    writeFileSync(
+      join(dir, '.agents/spend/cursor-usage.jsonl'),
+      `${[
+        { id: 'ac6-a', event: 'stop', model: 'cursor-grok-4.6', inputTokens: 10, outputTokens: 1, at: t1 },
+        { id: 'ac6-b', event: 'stop', model: 'cursor-grok-4.6', inputTokens: 20, outputTokens: 2, at: t2 },
+        { id: 'ac6-c', event: 'stop', model: 'cursor-grok-4.6', inputTokens: 30, outputTokens: 3, at: t3 },
+        { id: 'ac6-d', event: 'stop', model: 'cursor-grok-4.6', inputTokens: 40, outputTokens: 4, at: t4 },
+      ].map((row) => JSON.stringify(row)).join('\n')}\n`,
+    );
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+    cliExec(dir, 'handoff add-thing --collect');
+    const metrics = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
+    assert.equal(metrics.sessions.length, 2);
+    assert.equal(metrics.sessions[0].startedAt, t1);
+    assert.equal(metrics.sessions[0].durationMs, Date.parse(metrics.sessions[0].endedAt) - Date.parse(t1));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

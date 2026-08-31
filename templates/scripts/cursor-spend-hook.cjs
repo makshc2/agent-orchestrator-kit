@@ -41,7 +41,13 @@ function main(raw) {
 
   const generationId = payload.generation_id ? String(payload.generation_id) : '';
   const conversationId = payload.conversation_id ? String(payload.conversation_id) : '';
-  const id = generationId || (conversationId ? `${conversationId}:${Date.now()}` : `cursor:${Date.now()}`);
+  const cacheReadTokens = numOrNull(payload.cache_read_tokens);
+  const id = generationId || [
+    conversationId || 'none',
+    inputTokens ?? 0,
+    outputTokens ?? 0,
+    cacheReadTokens ?? 0,
+  ].join(':');
 
   const record = {
     id,
@@ -51,7 +57,7 @@ function main(raw) {
     modelId: payload.model_id ? String(payload.model_id) : null,
     inputTokens,
     outputTokens,
-    cacheReadTokens: numOrNull(payload.cache_read_tokens),
+    cacheReadTokens,
     cacheWriteTokens: numOrNull(payload.cache_write_tokens),
     at: new Date().toISOString(),
   };

@@ -20,6 +20,7 @@ test('detectSessionClient: Cursor env when Amp env is empty', () => {
   });
   assert.equal(client.platform, 'cursor');
   assert.equal(client.source, 'cursor-env');
+  assert.equal(client.threadId, 'c-1');
 });
 
 test('detectSessionClient: parent amp + session.json tty', () => {

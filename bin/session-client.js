@@ -146,7 +146,7 @@ export function detectSessionClient(options = {}) {
   }
 
   if (envFlagOn(env.CURSOR_AGENT) || trim(env.CURSOR_CONVERSATION_ID)) {
-    return { platform: 'cursor', threadId: null, source: 'cursor-env' };
+    return { platform: 'cursor', threadId: trim(env.CURSOR_CONVERSATION_ID) || null, source: 'cursor-env' };
   }
   if (envFlagOn(env.CLAUDECODE) || envFlagOn(env.CLAUDE_CODE) || trim(env.CLAUDE_CODE_ENTRYPOINT)) {
     return { platform: 'claude', threadId: null, source: 'claude-env' };
