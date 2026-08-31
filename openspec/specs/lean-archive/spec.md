@@ -48,7 +48,7 @@ lean-archive — requirements merged from change lean-pipeline-v2.
 
 Невалідне значення `--platform` (не `cursor` / `claude` / `amp`) MUST відхилятись **до** переміщення change: команда завершується non-zero і не рухає файли.
 
-Семантика самої фіналізації `metrics.json` на archive — створення файлу, `archivedAt`, `pending: null`, сесія `Archiver` / `archive` з `durationMs: null`, ланцюжки резолву `model` / `platform` / spend, opt-in `--collect`, warning про `null` `spend.costUsd` і зводка в stdout — належить capability `change-metrics` (див. «Archive завжди фіналізує metrics.json після успішного move»). `lean-archive` MUST NOT дублювати ці правила.
+Семантика самої фіналізації `metrics.json` на archive — створення файлу, `archivedAt`, `pending: null`, сесія `Archiver` / `archive` з `startedAt` з pending start і `durationMs` = дельта (не штучний `null`), leftover попередньої сесії до вікна Archiver, ланцюжки резолву `model` / `platform` / spend, opt-in `--collect`, warning про `null` `spend.costUsd` і зводка в stdout — належить capability `change-metrics` (див. «Archive завжди фіналізує metrics.json після успішного move»). `lean-archive` MUST NOT дублювати ці правила.
 
 #### Scenario: Metrics не є archive-гейтом
 
@@ -71,3 +71,4 @@ lean-archive — requirements merged from change lean-pipeline-v2.
 - **WHEN** виконується `archive <name> --platform foo` з валідним sync-рішенням
 - **THEN** exit code ≠ 0
 - **AND** change лишається в `openspec/changes/<name>/` (move не виконується)
+
