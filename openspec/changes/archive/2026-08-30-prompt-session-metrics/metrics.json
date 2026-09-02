@@ -2,14 +2,14 @@
   "version": 1,
   "change": "prompt-session-metrics",
   "createdAt": "2026-08-29T20:44:56.564Z",
-  "updatedAt": "2026-08-31T20:17:52.584Z",
+  "updatedAt": "2026-09-02T19:19:20.216Z",
   "archivedAt": "2026-08-30T06:56:48.230Z",
   "spend": {
     "inputTokens": 22772647,
     "outputTokens": 234692,
     "totalTokens": 23007339,
     "costUsd": null,
-    "costUsdEstimated": 62.019499999999994
+    "costUsdEstimated": 62.0195
   },
   "spendByPlatform": {
     "cursor": {
@@ -18,7 +18,7 @@
       "totalTokens": 23007339,
       "costUsd": null,
       "ampCredits": null,
-      "costUsdEstimated": 62.01949999999999,
+      "costUsdEstimated": 62.0195,
       "source": "cursor-hook"
     },
     "claude": {
@@ -82,6 +82,9 @@
     "spec": {
       "sessions": 3,
       "durationMs": 1063934,
+      "startedAt": "2026-08-30T05:25:18.873Z",
+      "endedAt": "2026-08-30T05:55:25.811Z",
+      "leadTimeMs": 1806938,
       "inputTokens": 6521316,
       "outputTokens": 93824,
       "totalTokens": 6615140,
@@ -97,11 +100,14 @@
     "review": {
       "sessions": 3,
       "durationMs": 866742,
+      "startedAt": "2026-08-30T05:17:52.533Z",
+      "endedAt": "2026-08-30T06:09:59.946Z",
+      "leadTimeMs": 3127413,
       "inputTokens": 3297176,
       "outputTokens": 48886,
       "totalTokens": 3346062,
       "costUsd": null,
-      "costUsdEstimated": 10.649799999999999,
+      "costUsdEstimated": 10.6498,
       "agents": [
         "Spec Reviewer (Tier 1 blocked — Tier 2 not spawned)",
         "Spec Reviewer"
@@ -114,11 +120,14 @@
     "apply": {
       "sessions": 1,
       "durationMs": 1161936,
+      "startedAt": "2026-08-30T06:22:15.886Z",
+      "endedAt": "2026-08-30T06:41:37.822Z",
+      "leadTimeMs": 1161936,
       "inputTokens": 11613202,
       "outputTokens": 76801,
       "totalTokens": 11690003,
       "costUsd": null,
-      "costUsdEstimated": 26.631999999999998,
+      "costUsdEstimated": 26.632,
       "agents": [
         "Implementer"
       ],
@@ -129,6 +138,9 @@
     "archive": {
       "sessions": 1,
       "durationMs": null,
+      "startedAt": "2026-08-30T06:56:48.230Z",
+      "endedAt": "2026-08-30T06:56:48.230Z",
+      "leadTimeMs": 0,
       "inputTokens": 1340953,
       "outputTokens": 15181,
       "totalTokens": 1356134,
@@ -436,7 +448,7 @@
       "costUsd": null,
       "ampCredits": null,
       "spendSource": "adapter",
-      "costUsdEstimated": 26.631999999999998
+      "costUsdEstimated": 26.632
     },
     {
       "startedAt": "2026-08-30T06:56:48.230Z",

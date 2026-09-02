@@ -5,7 +5,7 @@
 // must never block the agent loop, so every failure path exits 0 with no output.
 'use strict';
 
-const { existsSync, mkdirSync, appendFileSync } = require('fs');
+const { mkdirSync, appendFileSync } = require('fs');
 const { join } = require('path');
 
 function numOrNull(value) {
@@ -14,14 +14,24 @@ function numOrNull(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+function loadCollect() {
+  return require('./cursor-spend-collect.cjs');
+}
+
 function resolveBaseDir(payload) {
-  const cwd = process.cwd();
-  if (existsSync(join(cwd, '.agents'))) return cwd;
-  const roots = Array.isArray(payload.workspace_roots) ? payload.workspace_roots : [];
-  for (const root of roots) {
-    if (root && existsSync(join(String(root), '.agents'))) return String(root);
-  }
-  return cwd;
+  try {
+    const collect = loadCollect();
+    if (typeof collect.resolveBaseDir === 'function') return collect.resolveBaseDir(payload);
+  } catch {}
+  return process.cwd();
+}
+
+function runLeftover(payload) {
+  try {
+    const collect = loadCollect();
+    const fn = collect.backfillLeftover || collect.main;
+    if (typeof fn === 'function') fn(payload);
+  } catch {}
 }
 
 function main(raw) {
@@ -65,6 +75,11 @@ function main(raw) {
   const spendDir = join(resolveBaseDir(payload), '.agents', 'spend');
   mkdirSync(spendDir, { recursive: true });
   appendFileSync(join(spendDir, 'cursor-usage.jsonl'), `${JSON.stringify(record)}\n`);
+
+  const event = payload.hook_event_name ? String(payload.hook_event_name) : '';
+  if (event === 'stop' || event === 'afterAgentResponse') {
+    runLeftover(payload);
+  }
 }
 
 let input = '';

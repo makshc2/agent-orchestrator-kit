@@ -2861,6 +2861,129 @@ test('sessionEnd leftover after archive attaches hook to archived metrics.json',
   }
 });
 
+test('sessionEnd leftover after empty archive attaches late +35s hook', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-archive-late-35s-'));
+  try {
+    runInit(dir, '--profile generic --name ArchiveLate35 --lang en');
+    makeArchiveFixture(dir, 'add-auth');
+    installOpenspecStub(dir);
+    const archived = cliSpawn(dir, ['archive', 'add-auth', '--sync'], { CURSOR_AGENT: '1' });
+    assert.equal(archived.status, 0, `${archived.stdout}\n${archived.stderr}`);
+    const archiveRoot = join(dir, 'openspec/changes/archive');
+    const entry = readdirSync(archiveRoot).find((d) => d.endsWith('-add-auth'));
+    const metricsPath = join(archiveRoot, entry, 'metrics.json');
+    const before = JSON.parse(readFileSync(metricsPath, 'utf-8'));
+    const archiver = before.sessions.find((session) => session.role === 'Archiver');
+    const atMs = Date.parse(archiver.endedAt) + 35000;
+    assert.ok(atMs <= Date.parse(archiver.endedAt) + 120000);
+    const at = new Date(atMs).toISOString();
+    const row = {
+      id: 'archive-late-35s',
+      event: 'stop',
+      model: 'cursor-grok-4.6',
+      inputTokens: 33,
+      outputTokens: 4,
+      at,
+    };
+    if (archiver.threadId) row.conversationId = archiver.threadId;
+    mkdirSync(join(dir, '.agents/spend'), { recursive: true });
+    writeFileSync(join(dir, '.agents/spend/cursor-usage.jsonl'), `${JSON.stringify(row)}\n`);
+    execSync(`node "${join(KIT_ROOT, 'scripts/cursor-spend-collect.cjs')}"`, {
+      cwd: dir,
+      input: '{}\n',
+      encoding: 'utf-8',
+      env: isolatedEnv(dir),
+    });
+    const metrics = JSON.parse(readFileSync(metricsPath, 'utf-8'));
+    const last = metrics.sessions.find((session) => session.role === 'Archiver');
+    assert.ok((last.sources || []).some((src) => src.id === 'archive-late-35s'));
+    assert.equal(last.spendSource, 'adapter');
+    const inputSum = (last.sources || []).reduce((sum, src) => sum + (src.inputTokens ?? 0), 0);
+    assert.equal(last.inputTokens, inputSum);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('phase aggregates keep own clock and do not clone totals.leadTimeMs', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-phase-clock-'));
+  try {
+    runInit(dir, '--profile generic --name PhaseClock --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    const specStart = '2026-09-02T16:00:00.000Z';
+    const specEnd = '2026-09-02T16:05:00.000Z';
+    const reviewStart = '2026-09-02T16:15:00.000Z';
+    const reviewEnd = '2026-09-02T16:17:00.000Z';
+    writeFileSync(join(changeDir, 'metrics.json'), `${JSON.stringify({
+      version: 1,
+      change: 'add-thing',
+      sessions: [
+        {
+          startedAt: specStart,
+          endedAt: specEnd,
+          durationMs: 300000,
+          role: 'Architect',
+          phase: 'spec',
+          platform: 'cursor',
+          threadId: null,
+          sources: [{ id: 'phase-clock-dummy', platform: 'cursor' }],
+          inputTokens: null,
+          outputTokens: null,
+          totalTokens: null,
+          costUsd: null,
+          costUsdEstimated: null,
+          spendSource: 'unreported',
+        },
+        {
+          startedAt: reviewStart,
+          endedAt: reviewEnd,
+          durationMs: 120000,
+          role: 'Spec Reviewer',
+          phase: 'review',
+          platform: 'cursor',
+          threadId: null,
+          sources: [],
+          inputTokens: null,
+          outputTokens: null,
+          totalTokens: null,
+          costUsd: null,
+          costUsdEstimated: null,
+          spendSource: 'unreported',
+        },
+      ],
+      pending: null,
+    }, null, 2)}\n`);
+    execSync(`node "${join(KIT_ROOT, 'scripts/cursor-spend-collect.cjs')}"`, {
+      cwd: dir,
+      input: '{}\n',
+      encoding: 'utf-8',
+      env: isolatedEnv(dir),
+    });
+    const metrics = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
+    assert.equal(metrics.phases.spec.startedAt, specStart);
+    assert.equal(metrics.phases.spec.endedAt, specEnd);
+    assert.equal(metrics.phases.spec.durationMs, 300000);
+    assert.equal(metrics.phases.spec.leadTimeMs, Date.parse(specEnd) - Date.parse(specStart));
+    assert.equal(metrics.phases.review.startedAt, reviewStart);
+    assert.equal(metrics.phases.review.endedAt, reviewEnd);
+    assert.equal(metrics.phases.review.durationMs, 120000);
+    assert.equal(metrics.phases.review.leadTimeMs, Date.parse(reviewEnd) - Date.parse(reviewStart));
+    assert.notEqual(metrics.phases.review.startedAt, metrics.phases.spec.startedAt);
+    assert.notEqual(metrics.phases.review.endedAt, metrics.phases.spec.endedAt);
+    assert.notEqual(metrics.phases.review.durationMs, metrics.phases.spec.durationMs);
+    assert.equal(metrics.totals.leadTimeMs, Date.parse(reviewEnd) - Date.parse(specStart));
+    assert.notEqual(metrics.phases.spec.durationMs, metrics.totals.leadTimeMs);
+    assert.notEqual(metrics.phases.review.durationMs, metrics.totals.leadTimeMs);
+    assert.notEqual(metrics.phases.spec.leadTimeMs, metrics.totals.leadTimeMs);
+    const printed = cliExec(dir, 'metrics add-thing');
+    assert.match(printed, /spec\s+1\s+5m\b/);
+    assert.match(printed, /review\s+1\s+2m\b/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('persist without pending uses earliest source.at as startedAt and keeps two sessions', () => {
   const dir = mkdtempSync(join(tmpdir(), 'aok-earliest-start-'));
   try {

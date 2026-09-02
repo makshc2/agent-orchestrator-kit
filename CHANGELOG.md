@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Cursor leftover race, multi-root, 4-decimal estimates, and per-phase clock.** `stop` / `afterAgentResponse` run leftover immediately after a successful jsonl append (fail-open, no stdout); `sessionEnd` leftover stays and stays idempotent. Leftover filters `last.threadId` when it is non-empty and stays time-only when it is `null` or `''`. Hook and collect resolve the consumer in a multi-root window (not the first cwd with `.agents` or `openspec`); leftover walks every candidate that has `openspec/changes`. Written `costUsdEstimated` aggregates are rounded to 4 decimals after sums (`2.3911 + 2.8153 + 1.355 === 6.5614`). Each `phases.<phase>` now stores `startedAt` / `endedAt` / `leadTimeMs` from that phase’s sessions (epoch ms); `durationMs` remains the work-time sum and does not clone `totals.leadTimeMs`.
+
 ## [0.11.0] - 2026-09-02
 
 ### Changed

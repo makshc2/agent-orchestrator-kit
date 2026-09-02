@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
@@ -610,4 +610,218 @@ test('cursor spend hook script records usage and stays silent without token fiel
   assert.equal(all[1].id, 'c-stable:10:2:4');
   assert.equal(all[2].id, all[1].id);
   rmSync(root, { recursive: true, force: true });
+});
+
+test('cursor spend hook leftover attaches after stop without a separate collect', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aok-hook-leftover-'));
+  try {
+    const endedAt = new Date(Date.now() - 5000).toISOString();
+    const threadId = 'thread-hook-leftover';
+    mkdirSync(join(root, 'openspec/changes/add-thing'), { recursive: true });
+    writeFileSync(join(root, 'openspec/changes/add-thing/metrics.json'), `${JSON.stringify({
+      sessions: [{
+        startedAt: new Date(Date.parse(endedAt) - 60000).toISOString(),
+        endedAt,
+        durationMs: 60000,
+        role: 'Implementer',
+        phase: 'apply',
+        platform: 'cursor',
+        threadId,
+        sources: [],
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: null,
+        costUsd: null,
+        costUsdEstimated: null,
+        spendSource: 'unreported',
+      }],
+      pending: null,
+    }, null, 2)}\n`);
+    mkdirSync(join(root, '.agents'), { recursive: true });
+    const hookPath = new URL('../scripts/cursor-spend-hook.cjs', import.meta.url).pathname;
+    const stdout = execFileSync('node', [hookPath], {
+      cwd: root,
+      input: JSON.stringify({
+        hook_event_name: 'stop',
+        conversation_id: threadId,
+        generation_id: 'hook-leftover-stop',
+        model: 'cursor-grok-4.6',
+        input_tokens: 40,
+        output_tokens: 2,
+      }),
+      encoding: 'utf-8',
+    });
+    assert.equal(stdout, '');
+    const jsonl = readFileSync(join(root, '.agents/spend/cursor-usage.jsonl'), 'utf-8');
+    assert.match(jsonl, /hook-leftover-stop/);
+    const metrics = JSON.parse(readFileSync(join(root, 'openspec/changes/add-thing/metrics.json'), 'utf-8'));
+    const last = metrics.sessions[metrics.sessions.length - 1];
+    assert.equal((last.sources || []).filter((src) => src.id === 'hook-leftover-stop').length, 1);
+    const collectPath = new URL('../scripts/cursor-spend-collect.cjs', import.meta.url).pathname;
+    execFileSync('node', [collectPath], {
+      cwd: root,
+      input: '{}\n',
+      encoding: 'utf-8',
+    });
+    const again = JSON.parse(readFileSync(join(root, 'openspec/changes/add-thing/metrics.json'), 'utf-8'));
+    assert.equal(again.sessions.at(-1).sources.filter((src) => src.id === 'hook-leftover-stop').length, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('sessionEnd leftover attaches only last.threadId conversation rows', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aok-leftover-convid-'));
+  try {
+    const endedAt = '2026-09-02T16:20:21.000Z';
+    const at = '2026-09-02T16:20:40.000Z';
+    mkdirSync(join(root, 'openspec/changes/archive/2026-09-02-add-auth'), { recursive: true });
+    writeFileSync(join(root, 'openspec/changes/archive/2026-09-02-add-auth/metrics.json'), `${JSON.stringify({
+      sessions: [{
+        startedAt: '2026-09-02T16:19:00.000Z',
+        endedAt,
+        durationMs: 81000,
+        role: 'Archiver',
+        phase: 'archive',
+        platform: 'cursor',
+        threadId: 'A',
+        sources: [],
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: null,
+        costUsd: null,
+        costUsdEstimated: null,
+        spendSource: 'unreported',
+      }],
+      pending: null,
+    }, null, 2)}\n`);
+    mkdirSync(join(root, '.agents/spend'), { recursive: true });
+    writeFileSync(join(root, '.agents/spend/cursor-usage.jsonl'), `${[
+      { id: 'archiver-a', event: 'stop', conversationId: 'A', model: 'cursor-grok-4.6', inputTokens: 11, outputTokens: 1, at },
+      { id: 'hotfix-b', event: 'stop', conversationId: 'B', model: 'cursor-grok-4.6', inputTokens: 99, outputTokens: 9, at },
+    ].map((row) => JSON.stringify(row)).join('\n')}\n`);
+    const collectPath = new URL('../scripts/cursor-spend-collect.cjs', import.meta.url).pathname;
+    execFileSync('node', [collectPath], {
+      cwd: root,
+      input: '{}\n',
+      encoding: 'utf-8',
+    });
+    const metrics = JSON.parse(readFileSync(join(root, 'openspec/changes/archive/2026-09-02-add-auth/metrics.json'), 'utf-8'));
+    const ids = (metrics.sessions.at(-1).sources || []).map((src) => src.id);
+    assert.ok(ids.includes('archiver-a'));
+    assert.ok(!ids.includes('hotfix-b'));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('hook writes consumer jsonl in multi-root; collect from kit updates consumer archive', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'aok-multiroot-'));
+  const kit = join(tmp, 'kit');
+  const consumer = join(tmp, 'consumer');
+  try {
+    const conversationId = 'consumer-thread';
+    const endedAt = new Date(Date.now() - 8000).toISOString();
+    mkdirSync(join(kit, '.agents'), { recursive: true });
+    mkdirSync(join(kit, 'openspec/changes/kit-change'), { recursive: true });
+    writeFileSync(join(kit, 'openspec/changes/kit-change/metrics.json'), `${JSON.stringify({
+      sessions: [],
+      pending: null,
+    }, null, 2)}\n`);
+    mkdirSync(join(consumer, 'openspec/changes/archive/2026-09-02-add-auth'), { recursive: true });
+    writeFileSync(join(consumer, 'openspec/changes/archive/2026-09-02-add-auth/metrics.json'), `${JSON.stringify({
+      sessions: [{
+        startedAt: new Date(Date.parse(endedAt) - 30000).toISOString(),
+        endedAt,
+        durationMs: 30000,
+        role: 'Archiver',
+        phase: 'archive',
+        platform: 'cursor',
+        threadId: conversationId,
+        sources: [],
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: null,
+        costUsd: null,
+        costUsdEstimated: null,
+        spendSource: 'unreported',
+      }],
+      pending: null,
+    }, null, 2)}\n`);
+    mkdirSync(join(consumer, '.agents'), { recursive: true });
+    const hookPath = new URL('../scripts/cursor-spend-hook.cjs', import.meta.url).pathname;
+    execFileSync('node', [hookPath], {
+      cwd: kit,
+      input: JSON.stringify({
+        hook_event_name: 'stop',
+        conversation_id: conversationId,
+        generation_id: 'multi-root-g1',
+        model: 'cursor-grok-4.6',
+        input_tokens: 15,
+        output_tokens: 1,
+        workspace_roots: [kit, consumer],
+      }),
+      encoding: 'utf-8',
+    });
+    const consumerJsonl = join(consumer, '.agents/spend/cursor-usage.jsonl');
+    const kitJsonl = join(kit, '.agents/spend/cursor-usage.jsonl');
+    assert.ok(existsSync(consumerJsonl));
+    assert.match(readFileSync(consumerJsonl, 'utf-8'), /multi-root-g1/);
+    if (existsSync(kitJsonl)) {
+      assert.doesNotMatch(readFileSync(kitJsonl, 'utf-8'), /multi-root-g1/);
+    }
+    const collectPath = new URL('../scripts/cursor-spend-collect.cjs', import.meta.url).pathname;
+    execFileSync('node', [collectPath], {
+      cwd: kit,
+      input: `${JSON.stringify({ workspace_roots: [kit, consumer], conversation_id: conversationId })}\n`,
+      encoding: 'utf-8',
+    });
+    const archived = JSON.parse(readFileSync(join(consumer, 'openspec/changes/archive/2026-09-02-add-auth/metrics.json'), 'utf-8'));
+    assert.ok((archived.sessions.at(-1).sources || []).some((src) => src.id === 'multi-root-g1'));
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('leftover recompute rounds costUsdEstimated sum to four decimals', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aok-round-usd4-'));
+  try {
+    mkdirSync(join(root, 'openspec/changes/add-thing'), { recursive: true });
+    writeFileSync(join(root, 'openspec/changes/add-thing/metrics.json'), `${JSON.stringify({
+      sessions: [{
+        startedAt: '2026-09-02T16:00:00.000Z',
+        endedAt: '2026-09-02T16:01:00.000Z',
+        durationMs: 60000,
+        role: 'Implementer',
+        phase: 'apply',
+        platform: 'cursor',
+        threadId: null,
+        sources: [
+          { id: 'e1', platform: 'cursor', costUsdEstimated: 2.3911 },
+          { id: 'e2', platform: 'cursor', costUsdEstimated: 2.8153 },
+          { id: 'e3', platform: 'cursor', costUsdEstimated: 1.355 },
+        ],
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: null,
+        costUsd: null,
+        costUsdEstimated: null,
+        spendSource: 'unreported',
+      }],
+      pending: null,
+    }, null, 2)}\n`);
+    const collectPath = new URL('../scripts/cursor-spend-collect.cjs', import.meta.url).pathname;
+    execFileSync('node', [collectPath], {
+      cwd: root,
+      input: '{}\n',
+      encoding: 'utf-8',
+    });
+    const metrics = JSON.parse(readFileSync(join(root, 'openspec/changes/add-thing/metrics.json'), 'utf-8'));
+    assert.equal(metrics.spend.costUsdEstimated, 6.5614);
+    assert.notEqual(metrics.spend.costUsdEstimated, 6.561400000000001);
+    assert.equal(metrics.spendByPlatform.cursor.costUsdEstimated, 6.5614);
+    assert.equal(metrics.phases.apply.costUsdEstimated, 6.5614);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

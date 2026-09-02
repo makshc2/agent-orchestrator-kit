@@ -2,23 +2,23 @@
   "version": 1,
   "change": "fix-metrics-session-attribution",
   "createdAt": "2026-08-31T17:01:43.390Z",
-  "updatedAt": "2026-08-31T20:46:27.221Z",
+  "updatedAt": "2026-09-02T19:19:20.217Z",
   "archivedAt": "2026-08-31T20:46:27.221Z",
   "spend": {
-    "inputTokens": 7108177,
-    "outputTokens": 67729,
-    "totalTokens": 7175906,
+    "inputTokens": 7212832,
+    "outputTokens": 68591,
+    "totalTokens": 7281423,
     "costUsd": null,
-    "costUsdEstimated": 19.615000000000002
+    "costUsdEstimated": 19.7233
   },
   "spendByPlatform": {
     "cursor": {
-      "inputTokens": 7108177,
-      "outputTokens": 67729,
-      "totalTokens": 7175906,
+      "inputTokens": 7212832,
+      "outputTokens": 68591,
+      "totalTokens": 7281423,
       "costUsd": null,
       "ampCredits": null,
-      "costUsdEstimated": 19.615000000000002,
+      "costUsdEstimated": 19.7233,
       "source": "cursor-hook"
     },
     "claude": {
@@ -49,27 +49,17 @@
       "totalTokens": 6565009,
       "costUsd": null,
       "ampCredits": null,
-      "costUsdEstimated": 18.660600000000002
-    },
-    {
-      "model": "cursor-grok-4.6",
-      "platform": "cursor",
-      "inputTokens": null,
-      "outputTokens": null,
-      "totalTokens": null,
-      "costUsd": null,
-      "ampCredits": null,
-      "costUsdEstimated": null
+      "costUsdEstimated": 18.6606
     },
     {
       "model": "cursor-grok-4.6-low",
       "platform": "cursor",
-      "inputTokens": 602003,
-      "outputTokens": 8894,
-      "totalTokens": 610897,
+      "inputTokens": 706658,
+      "outputTokens": 9756,
+      "totalTokens": 716414,
       "costUsd": null,
       "ampCredits": null,
-      "costUsdEstimated": 0.9544
+      "costUsdEstimated": 1.0627
     }
   ],
   "totals": {
@@ -82,6 +72,9 @@
     "spec": {
       "sessions": 1,
       "durationMs": null,
+      "startedAt": null,
+      "endedAt": "2026-08-31T17:01:43.390Z",
+      "leadTimeMs": null,
       "inputTokens": 2628262,
       "outputTokens": 14843,
       "totalTokens": 2643105,
@@ -97,6 +90,9 @@
     "review": {
       "sessions": 3,
       "durationMs": 853861,
+      "startedAt": "2026-08-31T17:02:25.354Z",
+      "endedAt": "2026-08-31T17:27:16.397Z",
+      "leadTimeMs": 1491043,
       "inputTokens": 3144653,
       "outputTokens": 38493,
       "totalTokens": 3183146,
@@ -114,6 +110,9 @@
     "apply": {
       "sessions": 1,
       "durationMs": 996239,
+      "startedAt": "2026-08-31T17:28:19.293Z",
+      "endedAt": "2026-08-31T17:44:55.532Z",
+      "leadTimeMs": 996239,
       "inputTokens": 733259,
       "outputTokens": 5499,
       "totalTokens": 738758,
@@ -129,11 +128,14 @@
     "archive": {
       "sessions": 4,
       "durationMs": 151002,
-      "inputTokens": 602003,
-      "outputTokens": 8894,
-      "totalTokens": 610897,
+      "startedAt": "2026-08-31T20:18:05.087Z",
+      "endedAt": "2026-08-31T20:46:27.221Z",
+      "leadTimeMs": 1702134,
+      "inputTokens": 706658,
+      "outputTokens": 9756,
+      "totalTokens": 716414,
       "costUsd": null,
-      "costUsdEstimated": 0.9543999999999999,
+      "costUsdEstimated": 1.0627,
       "agents": [
         "Archiver"
       ],
@@ -427,7 +429,7 @@
       "totalTokens": 324472,
       "costUsd": null,
       "ampCredits": null,
-      "costUsdEstimated": 0.48669999999999997,
+      "costUsdEstimated": 0.4867,
       "spendSource": "adapter"
     },
     {
@@ -442,14 +444,29 @@
       "platform": "cursor",
       "threadId": "96092f39-2853-46d2-9e3a-eb4a3e9bceed",
       "tasks": "19/19",
-      "sources": [],
-      "inputTokens": null,
-      "outputTokens": null,
-      "totalTokens": null,
+      "sources": [
+        {
+          "id": "84743a83-7bb5-4855-a518-4904e29c91d8",
+          "platform": "cursor",
+          "model": "cursor-grok-4.6-low",
+          "inputTokens": 104655,
+          "outputTokens": 862,
+          "totalTokens": 105517,
+          "costUsd": null,
+          "ampCredits": null,
+          "at": "2026-08-31T20:46:32.498Z",
+          "cacheReadTokens": 70784,
+          "costUsdEstimated": 0.1083,
+          "costSource": "api-estimate"
+        }
+      ],
+      "inputTokens": 104655,
+      "outputTokens": 862,
+      "totalTokens": 105517,
       "costUsd": null,
       "ampCredits": null,
-      "costUsdEstimated": null,
-      "spendSource": "unreported"
+      "costUsdEstimated": 0.1083,
+      "spendSource": "adapter"
     }
   ],
   "pending": null

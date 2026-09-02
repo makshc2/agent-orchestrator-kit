@@ -5,7 +5,7 @@
 'use strict';
 
 const { existsSync, readdirSync, readFileSync, writeFileSync, statSync } = require('fs');
-const { join } = require('path');
+const { join, resolve } = require('path');
 
 function numOrNull(value) {
   if (value == null || value === '') return null;
@@ -16,6 +16,17 @@ function numOrNull(value) {
 function addNullable(a, b) {
   if (a == null && b == null) return null;
   return (a ?? 0) + (b ?? 0);
+}
+
+function roundUsd4(x) {
+  if (x == null) return null;
+  return Math.round(Number(x) * 10000) / 10000;
+}
+
+function timestampMs(value) {
+  if (value == null || value === '') return NaN;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : NaN;
 }
 
 const GROK_46 = {
@@ -85,14 +96,161 @@ function describeCursorCostEstimate(args) {
   };
 }
 
-function resolveBaseDir(payload) {
-  const cwd = process.cwd();
-  if (existsSync(join(cwd, 'openspec', 'changes'))) return cwd;
-  const roots = Array.isArray(payload.workspace_roots) ? payload.workspace_roots : [];
-  for (const root of roots) {
-    if (root && existsSync(join(String(root), 'openspec', 'changes'))) return String(root);
+function uniqueExistingAbsPaths(payload) {
+  const seen = new Set();
+  const out = [];
+  const add = (value) => {
+    if (value == null || value === '') return;
+    let abs;
+    try {
+      abs = resolve(String(value));
+    } catch {
+      return;
+    }
+    if (seen.has(abs)) return;
+    try {
+      if (!existsSync(abs)) return;
+    } catch {
+      return;
+    }
+    seen.add(abs);
+    out.push(abs);
+  };
+  add(process.cwd());
+  const roots = payload && Array.isArray(payload.workspace_roots) ? payload.workspace_roots : [];
+  for (const root of roots) add(root);
+  return out;
+}
+
+function leftoverCandidateRoots(payload) {
+  return uniqueExistingAbsPaths(payload).filter((root) => existsSync(join(root, 'openspec', 'changes')));
+}
+
+function readJsonSafe(filePath) {
+  try {
+    return JSON.parse(readFileSync(filePath, 'utf-8'));
+  } catch {
+    return null;
   }
-  return cwd;
+}
+
+function metricsHasConversationThread(metrics, conversationId) {
+  if (!metrics || typeof metrics !== 'object' || !conversationId) return false;
+  const pendingId = metrics.pending && metrics.pending.threadId != null && metrics.pending.threadId !== ''
+    ? String(metrics.pending.threadId).trim()
+    : '';
+  if (pendingId && pendingId === conversationId) return true;
+  const sessions = Array.isArray(metrics.sessions) ? metrics.sessions : [];
+  const last = sessions[sessions.length - 1];
+  const lastId = last && last.threadId != null && last.threadId !== ''
+    ? String(last.threadId).trim()
+    : '';
+  return Boolean(lastId && lastId === conversationId);
+}
+
+function activeChangeNames(changesDir) {
+  const names = [];
+  let entries;
+  try {
+    entries = readdirSync(changesDir);
+  } catch {
+    return names;
+  }
+  for (const name of entries) {
+    if (name === 'archive') continue;
+    const full = join(changesDir, name);
+    try {
+      if (statSync(full).isDirectory()) names.push(name);
+    } catch {
+      continue;
+    }
+  }
+  return names;
+}
+
+function rootHasMatchingThread(root, conversationId) {
+  const changesDir = join(root, 'openspec', 'changes');
+  if (!existsSync(changesDir)) return false;
+  for (const name of activeChangeNames(changesDir)) {
+    if (metricsHasConversationThread(readJsonSafe(join(changesDir, name, 'metrics.json')), conversationId)) {
+      return true;
+    }
+  }
+  const archiveDir = join(changesDir, 'archive');
+  if (!existsSync(archiveDir)) return false;
+  const seen = new Set();
+  let entries;
+  try {
+    entries = readdirSync(archiveDir);
+  } catch {
+    return false;
+  }
+  for (const entry of entries) {
+    const changeName = archivedChangeName(entry);
+    if (!changeName || seen.has(changeName)) continue;
+    seen.add(changeName);
+    const dir = newestArchiveDirForName(archiveDir, changeName);
+    if (!dir) continue;
+    if (metricsHasConversationThread(readJsonSafe(join(dir, 'metrics.json')), conversationId)) return true;
+  }
+  return false;
+}
+
+function rootHasActiveChange(root) {
+  return activeChangeNames(join(root, 'openspec', 'changes')).length > 0;
+}
+
+function jsonlHasConversationId(root, conversationId) {
+  if (!conversationId) return false;
+  const filePath = join(root, '.agents', 'spend', 'cursor-usage.jsonl');
+  if (!existsSync(filePath)) return false;
+  let text;
+  try {
+    text = readFileSync(filePath, 'utf-8');
+  } catch {
+    return false;
+  }
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    let row;
+    try {
+      row = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const id = row && row.conversationId != null && row.conversationId !== ''
+      ? String(row.conversationId).trim()
+      : '';
+    if (id && id === conversationId) return true;
+  }
+  return false;
+}
+
+function resolveBaseDir(payload) {
+  const candidates = uniqueExistingAbsPaths(payload && typeof payload === 'object' ? payload : {});
+  const conversationId = String((payload && payload.conversation_id) || '').trim();
+  if (conversationId) {
+    for (const root of candidates) {
+      if (rootHasMatchingThread(root, conversationId)) return root;
+    }
+  }
+  for (const root of candidates) {
+    if (rootHasActiveChange(root)) return root;
+  }
+  if (conversationId) {
+    for (const root of candidates) {
+      if (jsonlHasConversationId(root, conversationId)) return root;
+    }
+  }
+  const cwd = resolve(process.cwd());
+  if (
+    candidates.includes(cwd)
+    && (existsSync(join(cwd, 'openspec', 'changes')) || existsSync(join(cwd, '.agents')))
+  ) {
+    return cwd;
+  }
+  if (!candidates.length) return cwd;
+  return [...candidates].sort()[0];
 }
 
 const CURSOR_LEFTOVER_GRACE_MS = 120000;
@@ -255,7 +413,7 @@ function sourceTotals(sources) {
     if (src.costUsd != null) costUsd = addNullable(costUsd, numOrNull(src.costUsd));
     costUsdEstimated = addNullable(costUsdEstimated, numOrNull(src.costUsdEstimated));
   }
-  return { inputTokens, outputTokens, totalTokens, costUsd, costUsdEstimated };
+  return { inputTokens, outputTokens, totalTokens, costUsd, costUsdEstimated: roundUsd4(costUsdEstimated) };
 }
 
 function looksOverridden(session) {
@@ -298,13 +456,22 @@ function recompute(metrics) {
     totals.sessions += 1;
     if (session.runtime === 'cloud') totals.cloudSessions += 1;
     totals.durationMs = addNullable(totals.durationMs, numOrNull(session.durationMs));
-    if (session.startedAt && (firstStart == null || session.startedAt < firstStart)) firstStart = session.startedAt;
-    if (session.endedAt && (lastEnd == null || session.endedAt > lastEnd)) lastEnd = session.endedAt;
+    const sessionStartMs = timestampMs(session.startedAt);
+    if (Number.isFinite(sessionStartMs) && (firstStart == null || sessionStartMs < timestampMs(firstStart))) {
+      firstStart = session.startedAt;
+    }
+    const sessionEndMs = timestampMs(session.endedAt);
+    if (Number.isFinite(sessionEndMs) && (lastEnd == null || sessionEndMs > timestampMs(lastEnd))) {
+      lastEnd = session.endedAt;
+    }
 
     const key = session.phase || 'other';
     const phase = phases[key] || {
       sessions: 0,
       durationMs: null,
+      startedAt: null,
+      endedAt: null,
+      leadTimeMs: null,
       inputTokens: null,
       outputTokens: null,
       totalTokens: null,
@@ -315,6 +482,12 @@ function recompute(metrics) {
     };
     phase.sessions += 1;
     phase.durationMs = addNullable(phase.durationMs, numOrNull(session.durationMs));
+    if (Number.isFinite(sessionStartMs) && (phase.startedAt == null || sessionStartMs < timestampMs(phase.startedAt))) {
+      phase.startedAt = session.startedAt;
+    }
+    if (Number.isFinite(sessionEndMs) && (phase.endedAt == null || sessionEndMs > timestampMs(phase.endedAt))) {
+      phase.endedAt = session.endedAt;
+    }
     for (const spendKey of ['inputTokens', 'outputTokens', 'totalTokens', 'costUsd', 'costUsdEstimated']) {
       const fromSession = numOrNull(session[spendKey]);
       let value = fromSession;
@@ -375,6 +548,21 @@ function recompute(metrics) {
   if (firstStart && lastEnd) {
     totals.leadTimeMs = Math.max(0, Date.parse(lastEnd) - Date.parse(firstStart));
   }
+  for (const phase of Object.values(phases)) {
+    const startMs = timestampMs(phase.startedAt);
+    const endMs = timestampMs(phase.endedAt);
+    phase.leadTimeMs = Number.isFinite(startMs) && Number.isFinite(endMs)
+      ? Math.max(0, endMs - startMs)
+      : null;
+    phase.costUsdEstimated = roundUsd4(phase.costUsdEstimated);
+  }
+  spend.costUsdEstimated = roundUsd4(spend.costUsdEstimated);
+  for (const bucket of Object.values(byPlatform)) {
+    bucket.costUsdEstimated = roundUsd4(bucket.costUsdEstimated);
+  }
+  for (const row of byModel.values()) {
+    row.costUsdEstimated = roundUsd4(row.costUsdEstimated);
+  }
   metrics.phases = phases;
   metrics.totals = totals;
   metrics.spend = spend;
@@ -382,12 +570,19 @@ function recompute(metrics) {
   metrics.spendByModel = [...byModel.values()];
 }
 
-function incomingCursorSources(cwd, existing, fingerprints, windowStart, windowEnd, byId, exclusiveEnd) {
+function incomingCursorSources(cwd, existing, fingerprints, windowStart, windowEnd, byId, exclusiveEnd, filterConversationId) {
   const startMs = windowStart ? Date.parse(windowStart) : NaN;
   const endMs = windowEnd ? Date.parse(windowEnd) : NaN;
+  const filterId = String(filterConversationId || '').trim();
   const bestById = new Map();
   for (const [id, row] of byId) {
     if (existing.has(id)) continue;
+    if (filterId) {
+      const rowConversationId = row.conversationId == null || row.conversationId === ''
+        ? ''
+        : String(row.conversationId).trim();
+      if (rowConversationId !== filterId) continue;
+    }
     const atMs = Date.parse(row.at);
     if (Number.isFinite(startMs) && Number.isFinite(atMs) && atMs < startMs) continue;
     if (Number.isFinite(endMs) && Number.isFinite(atMs)) {
@@ -527,6 +722,7 @@ function backfillMetricsFile(cwd, filePath) {
       leftoverEnd,
       byId,
       leftoverEndExclusive(metrics),
+      last.threadId,
     )
     : [];
   if (incoming.length) {
@@ -602,14 +798,7 @@ function newestArchiveDirForName(archiveDir, changeName) {
   return best;
 }
 
-function main(raw) {
-  let payload = {};
-  try {
-    payload = raw ? JSON.parse(raw) : {};
-  } catch {
-    payload = {};
-  }
-  const cwd = resolveBaseDir(payload && typeof payload === 'object' ? payload : {});
+function backfillRoot(cwd) {
   const changesDir = join(cwd, 'openspec', 'changes');
   if (!existsSync(changesDir)) return;
   const activeNames = new Set();
@@ -645,21 +834,48 @@ function main(raw) {
   }
 }
 
-if (process.stdin.isTTY) {
+function parsePayload(raw) {
+  if (raw && typeof raw === 'object') return raw;
   try {
-    main('');
-  } catch {}
-  process.exit(0);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
 }
 
-let input = '';
-process.stdin.on('data', (chunk) => {
-  input += chunk;
-});
-process.stdin.on('end', () => {
-  try {
-    main(input);
-  } catch {}
-  process.exit(0);
-});
-process.stdin.on('error', () => process.exit(0));
+function main(raw) {
+  const payload = parsePayload(raw);
+  const candidates = leftoverCandidateRoots(payload && typeof payload === 'object' ? payload : {});
+  for (const cwd of candidates) {
+    try {
+      backfillRoot(cwd);
+    } catch {}
+  }
+}
+
+if (require.main === module) {
+  if (process.stdin.isTTY) {
+    try {
+      main('');
+    } catch {}
+    process.exit(0);
+  }
+
+  let input = '';
+  process.stdin.on('data', (chunk) => {
+    input += chunk;
+  });
+  process.stdin.on('end', () => {
+    try {
+      main(input);
+    } catch {}
+    process.exit(0);
+  });
+  process.stdin.on('error', () => process.exit(0));
+}
+
+module.exports = {
+  main,
+  backfillLeftover: main,
+  resolveBaseDir,
+};

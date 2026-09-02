@@ -1615,6 +1615,11 @@ const METRICS_VERSION = 1;
 const METRICS_SPEND_KEYS = ['inputTokens', 'outputTokens', 'totalTokens', 'costUsd', 'costUsdEstimated'];
 const LEFTOVER_GRACE_MS = 120000;
 
+function roundUsd4(x) {
+  if (x == null) return null;
+  return Math.round(Number(x) * 10000) / 10000;
+}
+
 function metricsFilePath(projectDir, changeName) {
   return join(projectDir, 'openspec', 'changes', changeName, 'metrics.json');
 }
@@ -1902,7 +1907,7 @@ function sourceEstimatedUsd(sources) {
   for (const src of sources || []) {
     sum = addNullable(sum, numOrNull(src.costUsdEstimated));
   }
-  return sum;
+  return roundUsd4(sum);
 }
 
 function ampThreadTotals(threads) {
@@ -2202,6 +2207,12 @@ function recomputeSpendMaps(metrics) {
     }
     addModelRow(session.model, session.platform, sessionNums);
   }
+  for (const key of Object.keys(byPlatform)) {
+    byPlatform[key].costUsdEstimated = roundUsd4(byPlatform[key].costUsdEstimated);
+  }
+  for (const row of byModel.values()) {
+    row.costUsdEstimated = roundUsd4(row.costUsdEstimated);
+  }
   metrics.spendByPlatform = byPlatform;
   metrics.spendByModel = [...byModel.values()];
 }
@@ -2214,15 +2225,39 @@ function recomputeMetricsAggregates(metrics) {
   let firstStart = null;
   let lastEnd = null;
   for (const session of metrics.sessions) {
+    session.costUsdEstimated = roundUsd4(session.costUsdEstimated);
     totals.sessions += 1;
     if (session.runtime === 'cloud') totals.cloudSessions += 1;
     totals.durationMs = addNullable(totals.durationMs, numOrNull(session.durationMs));
-    if (session.startedAt) firstStart = firstStart == null ? session.startedAt : earlierTimestamp(firstStart, session.startedAt);
-    if (session.endedAt) lastEnd = lastEnd == null ? session.endedAt : laterTimestamp(lastEnd, session.endedAt);
+    if (Number.isFinite(parseFlexibleIso(session.startedAt))) {
+      firstStart = firstStart == null ? session.startedAt : earlierTimestamp(firstStart, session.startedAt);
+    }
+    if (Number.isFinite(parseFlexibleIso(session.endedAt))) {
+      lastEnd = lastEnd == null ? session.endedAt : laterTimestamp(lastEnd, session.endedAt);
+    }
     const key = session.phase || 'other';
-    const phase = phases[key] || { sessions: 0, durationMs: null, ...emptySpendTotals(), agents: [], models: [] };
+    const phase = phases[key] || {
+      sessions: 0,
+      durationMs: null,
+      startedAt: null,
+      endedAt: null,
+      leadTimeMs: null,
+      ...emptySpendTotals(),
+      agents: [],
+      models: [],
+    };
     phase.sessions += 1;
     phase.durationMs = addNullable(phase.durationMs, numOrNull(session.durationMs));
+    if (Number.isFinite(parseFlexibleIso(session.startedAt))) {
+      phase.startedAt = phase.startedAt == null
+        ? session.startedAt
+        : earlierTimestamp(phase.startedAt, session.startedAt);
+    }
+    if (Number.isFinite(parseFlexibleIso(session.endedAt))) {
+      phase.endedAt = phase.endedAt == null
+        ? session.endedAt
+        : laterTimestamp(phase.endedAt, session.endedAt);
+    }
     for (const spendKey of METRICS_SPEND_KEYS) {
       let value = null;
       if ((session.sources || []).length > 0) {
@@ -2247,6 +2282,15 @@ function recomputeMetricsAggregates(metrics) {
   if (firstStart && lastEnd) {
     totals.leadTimeMs = Math.max(0, parseFlexibleIso(lastEnd) - parseFlexibleIso(firstStart));
   }
+  for (const phase of Object.values(phases)) {
+    const startMs = parseFlexibleIso(phase.startedAt);
+    const endMs = parseFlexibleIso(phase.endedAt);
+    phase.leadTimeMs = Number.isFinite(startMs) && Number.isFinite(endMs)
+      ? Math.max(0, endMs - startMs)
+      : null;
+    phase.costUsdEstimated = roundUsd4(phase.costUsdEstimated);
+  }
+  spend.costUsdEstimated = roundUsd4(spend.costUsdEstimated);
   metrics.phases = phases;
   metrics.totals = totals;
   metrics.spend = spend;
