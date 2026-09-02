@@ -74,7 +74,7 @@ npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-veri
 
 See [Installation](#installation) for profile/CI options.
 
-**🔄 Already have the kit installed? Upgrade to latest (session attribution + Cursor estimate/dedup in v0.11.0; Cursor fallback estimate + first-class `costUsdEstimated` in v0.10.0; UTC timestamps + Amp stamp parse, Amp billed `$`, Cursor API estimate, archive auto-collect in v0.9.0; locked Amp/Cursor client in v0.8.0; `## Metrics` self-report + opt-in `--collect` in v0.7.0 — **BREAKING:** `--no-collect` is gone; change metrics in v0.5.0+, factory phases 1–3 in v0.4.0+, lean pipeline / archive CLI in v0.3.0+, handoff CLI in v0.1.14+, Figma PAT in v0.1.11+):**
+**🔄 Already have the kit installed? Upgrade to latest (Cursor leftover race + multi-root + per-phase clock in v0.12.0; session attribution + Cursor estimate/dedup in v0.11.0; Cursor fallback estimate + first-class `costUsdEstimated` in v0.10.0; UTC timestamps + Amp stamp parse, Amp billed `$`, Cursor API estimate, archive auto-collect in v0.9.0; locked Amp/Cursor client in v0.8.0; `## Metrics` self-report + opt-in `--collect` in v0.7.0 — **BREAKING:** `--no-collect` is gone; change metrics in v0.5.0+, factory phases 1–3 in v0.4.0+, lean pipeline / archive CLI in v0.3.0+, handoff CLI in v0.1.14+, Figma PAT in v0.1.11+):**
 
 ```bash
 npx agent-orchestrator-kit@latest update
@@ -1005,6 +1005,11 @@ The kit moves toward an Agentic Factory in four phases. **One phase = one OpenSp
 Phase bounds and non-goals: [`openspec/specs/agentic-factory-roadmap/spec.md`](openspec/specs/agentic-factory-roadmap/spec.md).
 
 ## Changelog
+
+### 0.12.0
+- Cursor leftover after `stop` / `afterAgentResponse` (fail-open, idempotent `sessionEnd`); leftover filters `last.threadId` when it is set
+- Multi-root hook/collect resolve the consumer window; leftover walks every candidate with `openspec/changes`
+- `costUsdEstimated` aggregates write 4 decimals; `phases.<phase>` stores `startedAt` / `endedAt` / `leadTimeMs` (work-time `durationMs` is not `totals.leadTimeMs`)
 
 ### 0.11.0
 - Session metrics attribution: persist collect is `[pending.startedAt, endedAt]`; a late hook stays leftover of that session; archive is `[pending.startedAt, now]` plus leftover of the previous session

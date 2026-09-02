@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-09-02
+
 ### Fixed
 - **Cursor leftover race, multi-root, 4-decimal estimates, and per-phase clock.** `stop` / `afterAgentResponse` run leftover immediately after a successful jsonl append (fail-open, no stdout); `sessionEnd` leftover stays and stays idempotent. Leftover filters `last.threadId` when it is non-empty and stays time-only when it is `null` or `''`. Hook and collect resolve the consumer in a multi-root window (not the first cwd with `.agents` or `openspec`); leftover walks every candidate that has `openspec/changes`. Written `costUsdEstimated` aggregates are rounded to 4 decimals after sums (`2.3911 + 2.8153 + 1.355 === 6.5614`). Each `phases.<phase>` now stores `startedAt` / `endedAt` / `leadTimeMs` from that phase’s sessions (epoch ms); `durationMs` remains the work-time sum and does not clone `totals.leadTimeMs`.
 
@@ -269,6 +271,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Initial release: 5-role orchestration pipeline, `/opsx:*` commands, IDE sync
 
+[0.12.0]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.8.0...v0.9.0
