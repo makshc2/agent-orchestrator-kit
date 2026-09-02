@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-02
+
 ### Changed
 - **Session metrics attribution.** Persist collect is `[pending.startedAt, endedAt]`; a late hook goes to leftover of that session, not the next persist. Archive collect is `[pending.startedAt, now]` plus leftover of the previous session; `sessionEnd` reads the newest `openspec/changes/archive/*-<name>/metrics.json`. Source product id wins when sources have a model; `--model` / `## Metrics` / `AOK_MODEL` apply only when sources have none. Cursor collect filters by `conversationId` when a filter id is present. Canonical Closed role token is stored in `session.role`. Placeholder `unknown` plus `spend_source: self-report` does not freeze leftover totals.
 
@@ -264,6 +266,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Initial release: 5-role orchestration pipeline, `/opsx:*` commands, IDE sync
 
+[0.11.0]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.7.0...v0.8.0
