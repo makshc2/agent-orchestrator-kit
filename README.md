@@ -74,7 +74,7 @@ npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-veri
 
 See [Installation](#installation) for profile/CI options.
 
-**🔄 Already have the kit installed? Upgrade to latest (Cursor leftover race + multi-root + per-phase clock in v0.12.0; session attribution + Cursor estimate/dedup in v0.11.0; Cursor fallback estimate + first-class `costUsdEstimated` in v0.10.0; UTC timestamps + Amp stamp parse, Amp billed `$`, Cursor API estimate, archive auto-collect in v0.9.0; locked Amp/Cursor client in v0.8.0; `## Metrics` self-report + opt-in `--collect` in v0.7.0 — **BREAKING:** `--no-collect` is gone; change metrics in v0.5.0+, factory phases 1–3 in v0.4.0+, lean pipeline / archive CLI in v0.3.0+, handoff CLI in v0.1.14+, Figma PAT in v0.1.11+):**
+**🔄 Already have the kit installed? Upgrade to latest (Amp Cost-once rollup + `amp-session-last` + leftover thread-scope in v0.13.0; Cursor leftover race + multi-root + per-phase clock in v0.12.0; session attribution + Cursor estimate/dedup in v0.11.0; Cursor fallback estimate + first-class `costUsdEstimated` in v0.10.0; UTC timestamps + Amp stamp parse, Amp billed `$`, Cursor API estimate, archive auto-collect in v0.9.0; locked Amp/Cursor client in v0.8.0; `## Metrics` self-report + opt-in `--collect` in v0.7.0 — **BREAKING:** `--no-collect` is gone; change metrics in v0.5.0+, factory phases 1–3 in v0.4.0+, lean pipeline / archive CLI in v0.3.0+, handoff CLI in v0.1.14+, Figma PAT in v0.1.11+):**
 
 ```bash
 npx agent-orchestrator-kit@latest update
@@ -1006,6 +1006,11 @@ The kit moves toward an Agentic Factory in four phases. **One phase = one OpenSp
 Phase bounds and non-goals: [`openspec/specs/agentic-factory-roadmap/spec.md`](openspec/specs/agentic-factory-roadmap/spec.md).
 
 ## Changelog
+
+### 0.13.0
+- Amp Cost-once rollup: `Cost: $N` once per qualifying session into `spend` / `spendByPlatform.amp` / `phases` (not ×N sources; several sessions accumulate)
+- Restore without Amp parent locks a fresh `session.json` `lastThreadId` as `amp-session-last`
+- Leftover without `--collect` scopes to `last.platform` and Amp thread / `T-…` prefix; leftover after `amp-usage` resyncs tokens and keeps billed Cost
 
 ### 0.12.0
 - Cursor leftover after `stop` / `afterAgentResponse` (fail-open, idempotent `sessionEnd`); leftover filters `last.threadId` when it is set

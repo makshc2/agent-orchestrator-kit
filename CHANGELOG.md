@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-09-04
+
 ### Fixed
 - **Amp Cost-once rollup, restore `amp-session-last`, leftover thread-scope.** After persist/recompute, Amp `Cost: $N` is added once **per qualifying session** into `spend.costUsd`, `spendByPlatform.amp.costUsd`, and `phases.*.costUsd` when that session’s `sources[].costUsd` are all null — never copied onto each source (not ×N); several Amp sessions accumulate. Restore without Amp parent locks a fresh `session.json` `lastThreadId` as `amp-session-last` (Amp parent without tty still uses `amp threads list`). Leftover without `--collect` scopes to `last.platform` and the Amp thread id / `T-…` prefix; an explicit `ampThreadId` does not add the env thread. Leftover after `amp-usage` resyncs tokens from sources and keeps billed Cost; `usageModels` stay unique to that thread; `pending.role` is the canonical token.
 
@@ -274,6 +276,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Initial release: 5-role orchestration pipeline, `/opsx:*` commands, IDE sync
 
+[0.13.0]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/makshc2/agent-orchestrator-kit/compare/v0.9.0...v0.10.0
