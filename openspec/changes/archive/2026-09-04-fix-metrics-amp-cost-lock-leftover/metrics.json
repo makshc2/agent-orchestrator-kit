@@ -2,13 +2,13 @@
   "version": 1,
   "change": "fix-metrics-amp-cost-lock-leftover",
   "createdAt": "2026-09-04T13:25:11.277Z",
-  "updatedAt": "2026-09-04T15:24:31.795Z",
-  "archivedAt": null,
+  "updatedAt": "2026-09-04T15:28:14.031Z",
+  "archivedAt": "2026-09-04T15:28:14.031Z",
   "spend": {
-    "inputTokens": 11409376,
-    "outputTokens": 84797,
-    "totalTokens": 11494173,
-    "costUsd": 31.310000000000002,
+    "inputTokens": 11768587,
+    "outputTokens": 89281,
+    "totalTokens": 11857868,
+    "costUsd": 31.37,
     "costUsdEstimated": 22.3596
   },
   "spendByPlatform": {
@@ -31,13 +31,13 @@
       "source": "none"
     },
     "amp": {
-      "inputTokens": 2928016,
-      "outputTokens": 32415,
-      "totalTokens": 2960431,
-      "costUsd": 31.310000000000002,
+      "inputTokens": 3077472,
+      "outputTokens": 33739,
+      "totalTokens": 3111211,
+      "costUsd": 31.37,
       "ampCredits": null,
       "costUsdEstimated": null,
-      "source": "amp-thread"
+      "source": "amp-cli"
     }
   },
   "spendByModel": [
@@ -60,12 +60,22 @@
       "costUsd": null,
       "ampCredits": null,
       "costUsdEstimated": null
+    },
+    {
+      "model": "accounts/fireworks/models/glm-5p3-flash",
+      "platform": "amp",
+      "inputTokens": 149456,
+      "outputTokens": 1324,
+      "totalTokens": 150780,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null
     }
   ],
   "totals": {
-    "sessions": 5,
-    "durationMs": 4428946,
-    "leadTimeMs": 7133247,
+    "sessions": 6,
+    "durationMs": 4483529,
+    "leadTimeMs": 7382754,
     "cloudSessions": 0
   },
   "phases": {
@@ -93,9 +103,9 @@
       "startedAt": "2026-09-04T13:49:02.692Z",
       "endedAt": "2026-09-04T14:30:09.763Z",
       "leadTimeMs": 2467071,
-      "inputTokens": 2718261,
-      "outputTokens": 29255,
-      "totalTokens": 2747516,
+      "inputTokens": 2928016,
+      "outputTokens": 32415,
+      "totalTokens": 2960431,
       "costUsd": 31.310000000000002,
       "costUsdEstimated": null,
       "agents": [
@@ -126,6 +136,25 @@
       ],
       "models": [
         "cursor-grok-4.6-xhigh-fast"
+      ]
+    },
+    "archive": {
+      "sessions": 1,
+      "durationMs": 54583,
+      "startedAt": "2026-09-04T15:27:19.448Z",
+      "endedAt": "2026-09-04T15:28:14.031Z",
+      "leadTimeMs": 54583,
+      "inputTokens": 149456,
+      "outputTokens": 1324,
+      "totalTokens": 150780,
+      "costUsd": 0.06,
+      "costUsdEstimated": null,
+      "agents": [
+        "Archiver"
+      ],
+      "models": [
+        "accounts/fireworks/models/glm-5p3-flash",
+        "GPT-5.6 Luna"
       ]
     }
   },
@@ -965,6 +994,119 @@
       "ampCredits": null,
       "costUsdEstimated": 14.9654,
       "spendSource": "adapter"
+    },
+    {
+      "startedAt": "2026-09-04T15:27:19.448Z",
+      "endedAt": "2026-09-04T15:28:14.031Z",
+      "durationMs": 54583,
+      "role": "Archiver",
+      "phase": "archive",
+      "runtime": "local",
+      "agentId": "none",
+      "model": "accounts/fireworks/models/glm-5p3-flash",
+      "platform": "amp",
+      "threadId": "T-01a06d07-cfb9-767c-8112-17d4f928590e",
+      "tasks": "16/16",
+      "sources": [
+        {
+          "id": "T-01a06d07-cfb9-767c-8112-17d4f928590e:6",
+          "platform": "amp",
+          "model": "accounts/fireworks/models/glm-5p3-flash",
+          "inputTokens": 28304,
+          "outputTokens": 245,
+          "totalTokens": 28549,
+          "costUsd": null,
+          "ampCredits": null,
+          "at": "2026-09-04T15:27:23.524Z",
+          "agentMode": "low",
+          "via": "amp-cli",
+          "costSource": "amp-usage"
+        },
+        {
+          "id": "T-01a06d07-cfb9-767c-8112-17d4f928590e:8",
+          "platform": "amp",
+          "model": "accounts/fireworks/models/glm-5p3-flash",
+          "inputTokens": 28681,
+          "outputTokens": 179,
+          "totalTokens": 28860,
+          "costUsd": null,
+          "ampCredits": null,
+          "at": "2026-09-04T15:27:28.882Z",
+          "agentMode": "low",
+          "via": "amp-cli",
+          "costSource": "amp-usage"
+        },
+        {
+          "id": "T-01a06d07-cfb9-767c-8112-17d4f928590e:10",
+          "platform": "amp",
+          "model": "accounts/fireworks/models/glm-5p3-flash",
+          "inputTokens": 29398,
+          "outputTokens": 301,
+          "totalTokens": 29699,
+          "costUsd": null,
+          "ampCredits": null,
+          "at": "2026-09-04T15:27:36.133Z",
+          "agentMode": "low",
+          "via": "amp-cli",
+          "costSource": "amp-usage"
+        },
+        {
+          "id": "T-01a06d07-cfb9-767c-8112-17d4f928590e:12",
+          "platform": "amp",
+          "model": "accounts/fireworks/models/glm-5p3-flash",
+          "inputTokens": 31366,
+          "outputTokens": 266,
+          "totalTokens": 31632,
+          "costUsd": null,
+          "ampCredits": null,
+          "at": "2026-09-04T15:27:45.678Z",
+          "agentMode": "low",
+          "via": "amp-cli",
+          "costSource": "amp-usage"
+        },
+        {
+          "id": "T-01a06d07-cfb9-767c-8112-17d4f928590e:14",
+          "platform": "amp",
+          "model": "accounts/fireworks/models/glm-5p3-flash",
+          "inputTokens": 31707,
+          "outputTokens": 333,
+          "totalTokens": 32040,
+          "costUsd": null,
+          "ampCredits": null,
+          "at": "2026-09-04T15:27:59.612Z",
+          "agentMode": "low",
+          "via": "amp-cli",
+          "costSource": "amp-usage"
+        }
+      ],
+      "inputTokens": 149456,
+      "outputTokens": 1324,
+      "totalTokens": 150780,
+      "costUsd": 0.06,
+      "ampCredits": null,
+      "costUsdEstimated": null,
+      "spendSource": "amp-usage",
+      "models": [
+        "accounts/fireworks/models/glm-5p3-flash",
+        "GPT-5.6 Luna"
+      ],
+      "agentMode": "low",
+      "usageModels": [
+        {
+          "model": "accounts/fireworks/models/glm-5p3-flash",
+          "requests": 8,
+          "inputTokens": 235334,
+          "outputTokens": 1794,
+          "costUsd": 0.06
+        },
+        {
+          "model": "GPT-5.6 Luna",
+          "requests": 2,
+          "inputTokens": 3884,
+          "outputTokens": 42,
+          "costUsd": 0.003
+        }
+      ]
     }
   ],
   "pending": null
