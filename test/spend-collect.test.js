@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { collectSpend, attachCursorEstimates, enrichMetricsCursorEstimates } from '../bin/spend-collect.js';
+import { recomputeMetricsAggregates } from '../bin/agent-orchestrator.js';
 
 function encodeClaudeProject(cwd) {
   return String(cwd).replace(/[/.]/g, '-');
@@ -780,6 +781,108 @@ test('hook writes consumer jsonl in multi-root; collect from kit updates consume
     assert.ok((archived.sessions.at(-1).sources || []).some((src) => src.id === 'multi-root-g1'));
   } finally {
     rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('collectSpend Amp CLI keeps Cost on ampThreads and does not copy it onto sources after recompute', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aok-collect-amp-cost-once-'));
+  const cwd = join(root, 'work');
+  mkdirSync(cwd, { recursive: true });
+  try {
+    const result = collectSpend({
+      cwd,
+      env: { HOME: join(root, 'home'), AMP_DATA_DIR: join(root, 'amp'), XDG_CONFIG_HOME: join(root, 'xdg') },
+      homedir: join(root, 'home'),
+      windowStart: '2026-08-30T00:00:00.000Z',
+      windowEnd: '2026-08-30T23:59:59.000Z',
+      platforms: ['amp'],
+      ampThreadId: 'T-apply',
+      exportAmpThread: (id) => ({
+        id,
+        agentMode: 'low',
+        env: { initial: { trees: [{ uri: `file://${cwd}` }] } },
+        messages: ['m1', 'm2', 'm3'].map((messageId) => ({
+          messageId,
+          usage: {
+            model: 'accounts/fireworks/models/glm-5p2',
+            totalInputTokens: 100,
+            outputTokens: 9,
+            timestamp: '2026-08-30T12:00:00.000Z',
+          },
+        })),
+      }),
+      usageAmpThread: () => ({
+        costUsd: 12.69,
+        models: [{ model: 'GLM-5.2', costUsd: 12.69, inputTokens: 300, outputTokens: 27 }],
+      }),
+    });
+    assert.equal(result.ampThreads[0].costUsd, 12.69);
+    assert.equal(result.sources.length, 3);
+    for (const src of result.sources) {
+      assert.notEqual(src.costUsd, 12.69);
+    }
+
+    const metrics = {
+      sessions: [{
+        phase: 'apply',
+        platform: 'amp',
+        costUsd: result.ampThreads[0].costUsd,
+        sources: result.sources,
+      }],
+    };
+    recomputeMetricsAggregates(metrics);
+    assert.equal(metrics.spend.costUsd, 12.69);
+    assert.equal(metrics.spendByPlatform.amp.costUsd, 12.69);
+    assert.notEqual(metrics.spend.costUsd, 38.07);
+    for (const src of metrics.sessions[0].sources) {
+      assert.notEqual(src.costUsd, 12.69);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('collectSpend leftover ampThreadId T-apply does not export env T-archive', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aok-collect-leftover-tid-'));
+  const cwd = join(root, 'work');
+  mkdirSync(cwd, { recursive: true });
+  const exported = [];
+  try {
+    const result = collectSpend({
+      cwd,
+      env: {
+        HOME: join(root, 'home'),
+        AMP_DATA_DIR: join(root, 'amp'),
+        XDG_CONFIG_HOME: join(root, 'xdg'),
+        AMP_CURRENT_THREAD: 'T-archive',
+      },
+      homedir: join(root, 'home'),
+      windowStart: '2026-08-30T00:00:00.000Z',
+      windowEnd: '2026-08-30T23:59:59.000Z',
+      platforms: ['amp'],
+      ampThreadId: 'T-apply',
+      listRecentAmpThreads: false,
+      exportAmpThread: (id) => {
+        exported.push(id);
+        return {
+          id,
+          env: { initial: { trees: [{ uri: `file://${cwd}` }] } },
+          messages: [{
+            messageId: '1',
+            usage: {
+              model: 'accounts/fireworks/models/glm-5p2',
+              totalInputTokens: 8,
+              outputTokens: 1,
+              timestamp: '2026-08-30T12:00:00.000Z',
+            },
+          }],
+        };
+      },
+    });
+    assert.equal(exported.includes('T-archive'), false);
+    assert.ok(!result.sources.some((src) => String(src.id).startsWith('T-archive:')));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
 

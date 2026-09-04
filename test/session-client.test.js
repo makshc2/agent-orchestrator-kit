@@ -97,6 +97,103 @@ test('detectSessionClient: parent amp without tty uses threads list, not lastThr
   }
 });
 
+test('detectSessionClient: no env / no amp parent / no tty uses fresh lastThreadId as amp-session-last', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aok-client-last-'));
+  try {
+    const amp = join(root, 'amp');
+    mkdirSync(amp, { recursive: true });
+    writeFileSync(join(amp, 'session.json'), JSON.stringify({
+      lastThreadId: 'T-lock',
+      updatedAt: Date.now(),
+    }));
+    const client = detectSessionClient({
+      parentComm: 'node',
+      env: { AMP_DATA_DIR: amp },
+      ttyKey: 'tty:/dev/null',
+      now: Date.now(),
+    });
+    assert.equal(client.platform, 'amp');
+    assert.equal(client.threadId, 'T-lock');
+    assert.equal(client.source, 'amp-session-last');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('detectSessionClient: Amp env beats a simultaneous fresh lastThreadId of another id', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aok-client-env-last-'));
+  try {
+    const amp = join(root, 'amp');
+    mkdirSync(amp, { recursive: true });
+    writeFileSync(join(amp, 'session.json'), JSON.stringify({
+      lastThreadId: 'T-other',
+      updatedAt: Date.now(),
+    }));
+    const client = detectSessionClient({
+      parentComm: 'node',
+      env: { AMP_DATA_DIR: amp, AMP_CURRENT_THREAD: 'T-env' },
+      ttyKey: 'tty:/dev/null',
+      now: Date.now(),
+    });
+    assert.equal(client.platform, 'amp');
+    assert.equal(client.threadId, 'T-env');
+    assert.equal(client.source, 'amp-env');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('collectSpend with amp-session-last threadId T-lock does not ingest another thread', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aok-client-tlock-collect-'));
+  try {
+    const amp = join(root, 'amp');
+    const cwd = join(root, 'proj');
+    mkdirSync(amp, { recursive: true });
+    mkdirSync(cwd, { recursive: true });
+    writeFileSync(join(amp, 'session.json'), JSON.stringify({
+      lastThreadId: 'T-lock',
+      updatedAt: Date.now(),
+    }));
+    const client = detectSessionClient({
+      parentComm: 'node',
+      env: { AMP_DATA_DIR: amp },
+      ttyKey: 'tty:/dev/null',
+      now: Date.now(),
+    });
+    assert.equal(client.threadId, 'T-lock');
+    assert.equal(client.source, 'amp-session-last');
+    const result = collectSpend({
+      cwd,
+      env: { HOME: join(root, 'home'), AMP_DATA_DIR: amp },
+      homedir: join(root, 'home'),
+      windowStart: '2026-08-30T00:00:00.000Z',
+      windowEnd: '2026-08-30T23:59:59.000Z',
+      platforms: ['amp'],
+      ampThreadId: client.threadId,
+      listRecentAmpThreads: false,
+      exportAmpThread: (id) => ({
+        id,
+        agentMode: 'low',
+        env: { initial: { trees: [{ uri: `file://${cwd}` }] } },
+        messages: [{
+          messageId: 'm-lock',
+          usage: {
+            model: 'accounts/fireworks/models/glm-5p2',
+            totalInputTokens: 20,
+            outputTokens: 4,
+            timestamp: '2026-08-30T12:00:00.000Z',
+          },
+        }],
+      }),
+    });
+    assert.ok(result.sources.length >= 1);
+    assert.ok(result.sources.every((src) => String(src.id).startsWith('T-lock:')));
+    assert.equal(result.sources.some((src) => String(src.id).startsWith('T-archive:')), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('parseAmpThreadList reads Thread ID column', () => {
   const text = [
     'Title                                         Last Updated  Visibility  Messages  Thread ID',

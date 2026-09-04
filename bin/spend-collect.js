@@ -504,8 +504,10 @@ function collectAmpCli(ctx) {
     if (id && !ids.includes(id)) ids.push(id);
   };
   push(ampThreadId);
-  push(ampCurrentThreadId(env));
-  if (!ids.length) {
+  if (ctx.listRecentAmpThreads !== false) {
+    push(ampCurrentThreadId(env));
+  }
+  if (!ids.length && ctx.listRecentAmpThreads !== false) {
     for (const id of listRecentAmpThreadIds(ctx)) push(id);
   }
   const sources = [];
@@ -825,6 +827,7 @@ export function collectSpend(options = {}) {
     homedir,
     notes,
     ampThreadId: options.ampThreadId,
+    listRecentAmpThreads: options.listRecentAmpThreads,
     cursorConversationId: options.cursorConversationId,
     exportAmpThread: options.exportAmpThread,
     listAmpThreads: options.listAmpThreads,

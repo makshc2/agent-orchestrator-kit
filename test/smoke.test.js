@@ -5,6 +5,7 @@ import { existsSync, mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
+import { attachLeftoverSources } from '../bin/agent-orchestrator.js';
 
 const KIT_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CLI = join(KIT_ROOT, 'bin', 'agent-orchestrator.js');
@@ -4311,6 +4312,228 @@ test('handoff and archive help show --collect and not --no-collect; archive stdo
     assert.match(archived.stdout, /by model/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function leftoverAmpWindow() {
+  return {
+    endedAt: '2026-09-04T16:00:00.000Z',
+    leftoverEnd: '2026-09-04T16:02:00.000Z',
+    at: '2026-09-04T16:01:00.000Z',
+  };
+}
+
+function leftoverAmpThread(id, cwd, messageId, inputTokens, at) {
+  return {
+    id,
+    agentMode: 'low',
+    env: { initial: { trees: [{ uri: `file://${cwd}` }] } },
+    messages: [{
+      messageId,
+      usage: {
+        model: 'accounts/fireworks/models/glm-5p2',
+        totalInputTokens: inputTokens,
+        outputTokens: 1,
+        timestamp: at,
+      },
+    }],
+  };
+}
+
+function leftoverImplementerSession(threadId, extra = {}) {
+  const { endedAt } = leftoverAmpWindow();
+  return {
+    role: 'Implementer',
+    phase: 'apply',
+    platform: 'amp',
+    threadId,
+    startedAt: '2026-09-04T15:50:00.000Z',
+    endedAt,
+    spendSource: 'amp-usage',
+    inputTokens: 495184,
+    outputTokens: 0,
+    totalTokens: 495184,
+    costUsd: 12.69,
+    sources: [{
+      id: 'T-apply:8',
+      platform: 'amp',
+      inputTokens: 495184,
+      outputTokens: 0,
+      totalTokens: 495184,
+      costUsd: null,
+      at: endedAt,
+    }],
+    ...extra,
+  };
+}
+
+function attachScopedLeftover(session, extra = {}) {
+  const cwd = extra.cwd;
+  const { leftoverEnd, at } = leftoverAmpWindow();
+  const amp = join(cwd, 'amp');
+  mkdirSync(join(amp, 'threads'), { recursive: true });
+  mkdirSync(join(cwd, '.agents/spend'), { recursive: true });
+  writeFileSync(join(amp, 'threads', 'T-archive.json'), JSON.stringify(
+    leftoverAmpThread('T-archive', cwd, '2', 2, at),
+  ));
+  writeFileSync(join(cwd, '.agents/spend/cursor-usage.jsonl'), `${JSON.stringify({
+    id: 'cursor-window-hook',
+    event: 'stop',
+    model: 'cursor-grok-4.6',
+    inputTokens: 99,
+    outputTokens: 9,
+    at,
+  })}\n`);
+  let listed = 0;
+  const exported = [];
+  const metrics = { sessions: [session] };
+  attachLeftoverSources(metrics, session, leftoverEnd, {
+    cwd,
+    homedir: cwd,
+    env: {
+      HOME: cwd,
+      AMP_DATA_DIR: amp,
+      AMP_CURRENT_THREAD: 'T-archive',
+    },
+    listAmpThreads: () => {
+      listed += 1;
+      return ['T-archive', 'T-apply'];
+    },
+    exportAmpThread: (id) => {
+      exported.push(id);
+      if (id === 'T-archive') return leftoverAmpThread(id, cwd, '2', 2, at);
+      if (id === 'T-apply') {
+        return leftoverAmpThread(id, cwd, extra.applyMessageId || 'late', extra.applyInput || 8, at);
+      }
+      return null;
+    },
+    usageAmpThread: () => ({ costUsd: 12.69, models: [] }),
+    ampThreads: extra.ampThreads,
+  });
+  return { session, listed, exported };
+}
+
+test('restore without Amp env locks pending from session.json lastThreadId T-lock', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-restore-session-last-'));
+  try {
+    runInit(dir, '--profile generic --name RestoreLast --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+    mkdirSync(join(dir, '.aok-amp'), { recursive: true });
+    writeFileSync(join(dir, '.aok-amp', 'session.json'), JSON.stringify({
+      lastThreadId: 'T-lock',
+      updatedAt: Date.now(),
+    }));
+    cliExec(dir, 'handoff add-thing --restore', { AOK_TTY: '/dev/null' });
+    const pending = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).pending;
+    assert.equal(pending.threadId, 'T-lock');
+    assert.match(String(pending.clientSource || ''), /amp-session-last/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('restore Closed/next role Archiver sentence writes pending.role Archiver', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-restore-archiver-role-'));
+  try {
+    runInit(dir, '--profile generic --name RestoreArchiver --lang en');
+    const changeDir = join(dir, 'openspec/changes/add-thing');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'handoff.md'), `# Session Handoff
+
+## Closed role
+Archiver — deferred until the CI-green…
+
+## Done
+archived
+
+## Next command
+\`/opsx:archive add-thing\`
+
+## Next role
+Archiver — deferred until the CI-green…
+`);
+    cliExec(dir, 'handoff add-thing --restore');
+    const pending = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).pending;
+    assert.equal(pending.role, 'Archiver');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('leftover Implementer without threadId keeps T-apply prefix and drops T-archive and cursor hook', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'aok-leftover-null-tid-'));
+  try {
+    const session = leftoverImplementerSession(null);
+    const { listed } = attachScopedLeftover(session, { cwd });
+    const ids = (session.sources || []).map((src) => src.id);
+    assert.equal(ids.includes('T-archive:2'), false);
+    assert.equal(ids.includes('cursor-window-hook'), false);
+    assert.equal(listed, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('leftover Implementer threadId T-apply accepts only T-apply sources', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'aok-leftover-tid-apply-'));
+  try {
+    const session = leftoverImplementerSession('T-apply');
+    attachScopedLeftover(session, { cwd, applyMessageId: 'late', applyInput: 8 });
+    const ids = (session.sources || []).map((src) => src.id);
+    assert.ok(ids.includes('T-apply:8'));
+    assert.ok(ids.includes('T-apply:late'));
+    assert.ok(ids.every((id) => String(id).startsWith('T-apply:')));
+    assert.equal(ids.includes('T-archive:2'), false);
+    assert.equal(ids.includes('cursor-window-hook'), false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('leftover amp-usage resyncs tokens from sources and keeps billed Cost', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'aok-leftover-amp-usage-'));
+  try {
+    const session = leftoverImplementerSession('T-apply');
+    attachScopedLeftover(session, { cwd, applyMessageId: 'late', applyInput: 681362 });
+    assert.equal(session.inputTokens, 1176546);
+    assert.equal(session.costUsd, 12.69);
+    assert.equal(session.spendSource, 'amp-usage');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('leftover usageModels keeps one Luna from T-apply and drops Fable from another thread', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'aok-leftover-usage-models-'));
+  try {
+    const session = leftoverImplementerSession('T-apply');
+    attachScopedLeftover(session, {
+      cwd,
+      applyMessageId: 'late',
+      applyInput: 8,
+      ampThreads: [
+        {
+          id: 'T-apply',
+          models: [
+            { model: 'Luna', inputTokens: 10, outputTokens: 1 },
+            { model: 'Luna', inputTokens: 20, outputTokens: 2 },
+          ],
+        },
+        {
+          id: 'T-review',
+          models: [
+            { model: 'Fable', inputTokens: 50, outputTokens: 5 },
+          ],
+        },
+      ],
+    });
+    const models = (session.usageModels || []).map((row) => row.model);
+    assert.equal(models.filter((name) => name === 'Luna').length, 1);
+    assert.equal(models.includes('Fable'), false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
   }
 });
 

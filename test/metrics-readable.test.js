@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { formatKyivDisplay, formatUtcIso, parseFlexibleIso } from '../bin/metrics-time.js';
 import { parseAmpUsageDetails, matchAmpUsageModel, ampAgentMode } from '../bin/amp-usage.js';
 import { describeCursorCostEstimate, estimateCursorCostUsd } from '../bin/cursor-cost-estimate.js';
-import { formatMetricsCostLine, resolveSessionSpend } from '../bin/agent-orchestrator.js';
+import { formatMetricsCostLine, resolveSessionSpend, recomputeMetricsAggregates } from '../bin/agent-orchestrator.js';
 
 test('parseFlexibleIso accepts broken Amp microsecond+.000Z stamps', () => {
   const broken = '2026-08-31T07:08:17.563464.000Z';
@@ -115,4 +115,48 @@ test('resolveSessionSpend keeps self-report and flags out of costUsdEstimated', 
   const fromFlag = resolveSessionSpend({ costUsd: 9.99 }, {}, []);
   assert.equal(fromFlag.costUsd, 9.99);
   assert.equal(fromFlag.costUsdEstimated, null);
+});
+
+function ampNullCostSources(prefix, count) {
+  return Array.from({ length: count }, (_, i) => ({
+    id: `${prefix}:${i + 1}`,
+    platform: 'amp',
+    costUsd: null,
+    inputTokens: 10,
+    outputTokens: 1,
+  }));
+}
+
+test('recomputeMetricsAggregates adds session.costUsd once when sources costUsd are null', () => {
+  const metrics = {
+    sessions: [{
+      phase: 'apply',
+      platform: 'amp',
+      role: 'Implementer',
+      costUsd: 12.69,
+      sources: ampNullCostSources('T-apply', 3),
+    }],
+  };
+
+  recomputeMetricsAggregates(metrics);
+
+  assert.equal(metrics.spend.costUsd, 12.69);
+  assert.equal(metrics.spendByPlatform.amp.costUsd, 12.69);
+  assert.equal(metrics.phases.apply.costUsd, 12.69);
+  assert.notEqual(metrics.spend.costUsd, 38.07);
+});
+
+test('recomputeMetricsAggregates sums Cost fallback across three Amp sessions', () => {
+  const metrics = {
+    sessions: [
+      { phase: 'apply', platform: 'amp', costUsd: 4.42, sources: ampNullCostSources('T-a', 2) },
+      { phase: 'apply', platform: 'amp', costUsd: 8.81, sources: ampNullCostSources('T-b', 2) },
+      { phase: 'apply', platform: 'amp', costUsd: 12.69, sources: ampNullCostSources('T-c', 2) },
+    ],
+  };
+
+  recomputeMetricsAggregates(metrics);
+
+  assert.equal(metrics.spend.costUsd, 25.92);
+  assert.equal(metrics.spendByPlatform.amp.costUsd, 25.92);
 });

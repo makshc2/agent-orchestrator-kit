@@ -508,7 +508,9 @@ function recompute(metrics) {
     }
     phases[key] = phase;
 
+    let sessionSourceCostUsd = null;
     for (const src of session.sources || []) {
+      sessionSourceCostUsd = addNullable(sessionSourceCostUsd, numOrNull(src.costUsd));
       const platform = src.platform;
       if (platform && byPlatform[platform]) {
         const bucket = byPlatform[platform];
@@ -542,6 +544,11 @@ function recompute(metrics) {
         row.costUsdEstimated = addNullable(row.costUsdEstimated, numOrNull(src.costUsdEstimated));
         byModel.set(modelKey, row);
       }
+    }
+    const sessionCostUsd = numOrNull(session.costUsd);
+    if (sessionSourceCostUsd == null && sessionCostUsd != null) {
+      const billedBucket = session.platform && byPlatform[session.platform];
+      if (billedBucket) billedBucket.costUsd = addNullable(billedBucket.costUsd, sessionCostUsd);
     }
   }
 

@@ -1788,12 +1788,64 @@ function leftoverTimestampInWindow(at, windowStart, leftoverEnd, exclusiveEnd) {
   return true;
 }
 
+function uniqueAmpSourceThreadPrefix(sources) {
+  const prefixes = [];
+  for (const src of sources || []) {
+    const id = src && src.id != null ? String(src.id) : '';
+    if (!id.startsWith('T-')) continue;
+    const prefix = id.split(':')[0];
+    if (!prefix) continue;
+    if (!prefixes.includes(prefix)) prefixes.push(prefix);
+  }
+  return prefixes.length === 1 ? prefixes[0] : null;
+}
+
+function leftoverAmpThreadId(session) {
+  if (!session) return null;
+  if (session.threadId) return String(session.threadId);
+  return uniqueAmpSourceThreadPrefix(session.sources);
+}
+
+function sessionAmpThreadKeys(session) {
+  const keys = new Set();
+  if (session && session.threadId) keys.add(String(session.threadId));
+  for (const src of (session && session.sources) || []) {
+    const id = src && src.id != null ? String(src.id) : '';
+    if (!id.startsWith('T-')) continue;
+    const prefix = id.split(':')[0];
+    if (prefix) keys.add(prefix);
+  }
+  return keys;
+}
+
+function usageModelTokenCount(row) {
+  const total = numOrNull(row && row.totalTokens);
+  if (total != null) return total;
+  return (numOrNull(row && row.inputTokens) ?? 0) + (numOrNull(row && row.outputTokens) ?? 0);
+}
+
+function usageModelsForSession(session, ampThreads) {
+  const allowed = sessionAmpThreadKeys(session);
+  const byModel = new Map();
+  for (const thread of ampThreads || []) {
+    const id = thread && thread.id != null ? String(thread.id) : '';
+    if (!allowed.has(id)) continue;
+    for (const row of (thread && thread.models) || []) {
+      if (!row || !row.model) continue;
+      const key = String(row.model);
+      const prev = byModel.get(key);
+      if (!prev || usageModelTokenCount(row) >= usageModelTokenCount(prev)) {
+        byModel.set(key, row);
+      }
+    }
+  }
+  return [...byModel.values()];
+}
+
 function sessionSpendIsFrozen(session) {
   if (!session) return false;
   if (session.spendSource === 'flag') return true;
-  if (!reportedHasSpendNumbers(session)) return false;
-  if (!session.spendSource || session.spendSource === 'adapter' || session.spendSource === 'unreported') return false;
-  return true;
+  return session.spendSource === 'self-report' && reportedHasSpendNumbers(session);
 }
 
 function existingSourceRecords(metrics) {
@@ -1994,41 +2046,90 @@ function sessionTotalsFromSources(sources) {
 function runCollectSpend(metrics, windowStart, windowEnd, extra = {}) {
   try {
     return collectSpend({
-      cwd: process.cwd(),
+      cwd: extra.cwd || process.cwd(),
       windowStart,
       windowEnd,
       existingSourceIds: existingSourceIdSet(metrics),
       existingSources: existingSourceRecords(metrics),
-      env: process.env,
-      homedir: process.env.HOME,
+      env: extra.env || process.env,
+      homedir: extra.homedir || process.env.HOME,
       platforms: extra.platforms,
       ampThreadId: extra.ampThreadId,
       ampCli: extra.ampCli === true,
       cursorConversationId: extra.cursorConversationId,
       exportAmpThread: extra.exportAmpThread,
       usageAmpThread: extra.usageAmpThread,
+      listRecentAmpThreads: extra.listRecentAmpThreads,
+      listAmpThreads: extra.listAmpThreads,
     });
   } catch {
     return { sources: [], byPlatform: defaultSpendByPlatform(), byModel: [], notes: [] };
   }
 }
 
+function leftoverCollectPlatforms(session, collectAll, ampThreadId) {
+  if (collectAll) return undefined;
+  if (session.platform === 'amp' || session.platform === 'cursor' || session.platform === 'claude') {
+    if (session.platform === 'amp' && !ampThreadId) return [];
+    return [session.platform];
+  }
+  if (session.platform == null && ampThreadId) return ['amp'];
+  return [];
+}
+
+function resyncLeftoverSessionSpend(session, priorCost, priorSource) {
+  const fromSources = sessionTotalsFromSources(session.sources || []);
+  session.inputTokens = fromSources.inputTokens;
+  session.outputTokens = fromSources.outputTokens;
+  let totalTokens = fromSources.totalTokens;
+  if (totalTokens == null && (fromSources.inputTokens != null || fromSources.outputTokens != null)) {
+    totalTokens = (fromSources.inputTokens ?? 0) + (fromSources.outputTokens ?? 0);
+  }
+  session.totalTokens = totalTokens;
+  if (fromSources.costUsd == null && priorCost != null) {
+    session.costUsd = priorCost;
+  }
+  if (priorSource === 'amp-usage' && numOrNull(session.costUsd) != null) {
+    session.spendSource = 'amp-usage';
+  }
+}
+
 function attachLeftoverSources(metrics, session, leftoverEnd, extra = {}) {
   if (!session || !session.endedAt || !leftoverEnd) return 0;
   const exclusiveEnd = extra.exclusiveEnd === true;
+  const collectAll = extra.collect === true;
+  const ampThreadId = leftoverAmpThreadId(session);
+  const platforms = leftoverCollectPlatforms(session, collectAll, ampThreadId);
+  if (!collectAll && (!Array.isArray(platforms) || platforms.length === 0)) return 0;
+  const collectAmp = collectAll || (Array.isArray(platforms) && platforms.includes('amp'));
+  const collectCursor = collectAll || (Array.isArray(platforms) && platforms.includes('cursor'));
   const collected = runCollectSpend(metrics, session.endedAt, leftoverEnd, {
-    platforms: extra.platforms,
-    ampThreadId: session.threadId || extra.ampThreadId || ampThreadIdFromEnv(process.env) || null,
-    ampCli: extra.ampCli === true || session.platform === 'amp',
+    platforms,
+    ...(ampThreadId ? { ampThreadId } : {}),
+    listRecentAmpThreads: false,
+    ampCli: extra.ampCli === true || collectAmp,
     cursorConversationId: extra.cursorConversationId
-      || (session.platform === 'cursor' ? session.threadId : undefined),
+      || (collectCursor && session.platform === 'cursor' ? session.threadId : undefined),
+    exportAmpThread: extra.exportAmpThread,
+    usageAmpThread: extra.usageAmpThread,
+    listAmpThreads: extra.listAmpThreads,
+    env: extra.env,
+    cwd: extra.cwd,
+    homedir: extra.homedir,
   });
-  const incoming = (collected.sources || []).filter((src) => leftoverTimestampInWindow(
+  let incoming = (collected.sources || []).filter((src) => leftoverTimestampInWindow(
     src.at,
     session.endedAt,
     leftoverEnd,
     exclusiveEnd,
   ));
+  if (ampThreadId) {
+    const prefix = `${ampThreadId}:`;
+    incoming = incoming.filter((src) => {
+      if (src && src.platform === 'amp') return String(src.id || '').startsWith(prefix);
+      return true;
+    });
+  }
   if (!incoming.length) return 0;
   const merged = [...(session.sources || []), ...incoming];
   if (sessionSpendIsFrozen(session)) {
@@ -2036,10 +2137,13 @@ function attachLeftoverSources(metrics, session, leftoverEnd, extra = {}) {
     const uniqueModels = uniqueSourceModels(merged);
     if (uniqueModels.length > 1) session.models = uniqueModels;
   } else {
+    const priorCost = numOrNull(session.costUsd);
+    const priorSource = session.spendSource;
     applyCollectedSessionFields(session, merged, session.model, {}, {
       model: session.model,
       platform: session.platform,
-    }, { ampThreads: collected.ampThreads });
+    }, { ampThreads: Array.isArray(extra.ampThreads) ? extra.ampThreads : collected.ampThreads });
+    resyncLeftoverSessionSpend(session, priorCost, priorSource);
   }
   return incoming.length;
 }
@@ -2070,13 +2174,10 @@ function applyCollectedSessionFields(session, sources, resolvedModel, opts, repo
   session.costUsdEstimated = spend.costUsdEstimated;
   session.spendSource = spend.spendSource;
   if (spend.agentMode) session.agentMode = spend.agentMode;
-  const usageModels = [];
-  for (const thread of extra.ampThreads || []) {
-    for (const row of thread.models || []) {
-      if (row && row.model) usageModels.push(row);
-    }
+  const usageModels = usageModelsForSession(session, extra.ampThreads);
+  if (usageModels.length || Array.isArray(session.usageModels)) {
+    session.usageModels = usageModels;
   }
-  if (usageModels.length) session.usageModels = usageModels;
 }
 
 function sessionTotalsLookOverridden(session) {
@@ -2199,6 +2300,14 @@ function recomputeSpendMaps(metrics) {
     const sources = session.sources || [];
     if (sources.length > 0) {
       for (const src of sources) addSourceRow(src);
+      let sourceCost = null;
+      for (const src of sources) sourceCost = addNullable(sourceCost, numOrNull(src.costUsd));
+      if (sourceCost == null && session.platform && byPlatform[session.platform]) {
+        byPlatform[session.platform].costUsd = addNullable(
+          byPlatform[session.platform].costUsd,
+          numOrNull(session.costUsd),
+        );
+      }
       continue;
     }
     const sessionNums = spendTuple(session);
@@ -2258,11 +2367,18 @@ function recomputeMetricsAggregates(metrics) {
         ? session.endedAt
         : laterTimestamp(phase.endedAt, session.endedAt);
     }
+    const sources = session.sources || [];
+    let sourceCost = null;
+    for (const src of sources) sourceCost = addNullable(sourceCost, numOrNull(src.costUsd));
     for (const spendKey of METRICS_SPEND_KEYS) {
       let value = null;
-      if ((session.sources || []).length > 0) {
-        for (const src of session.sources) {
-          value = addNullable(value, numOrNull(src[spendKey]));
+      if (sources.length > 0) {
+        if (spendKey === 'costUsd') {
+          value = sourceCost == null ? numOrNull(session.costUsd) : sourceCost;
+        } else {
+          for (const src of sources) {
+            value = addNullable(value, numOrNull(src[spendKey]));
+          }
         }
       } else {
         value = sessionFieldOrSources(session, spendKey);
@@ -2303,7 +2419,7 @@ function metricsRecordSessionStart(projectDir, changeName, role, client = {}) {
   const metrics = loadMetricsFile(filePath, changeName, nowIso);
   metrics.pending = {
     startedAt: nowIso,
-    role: role || '',
+    role: canonicalRole(role) || role || '',
     platform: client.platform || null,
     threadId: client.threadId || null,
     clientSource: client.source || null,
@@ -2324,6 +2440,7 @@ function metricsRecordSessionEnd(projectDir, fields, opts = {}) {
     : leftoverGraceEnd(lastClosed && lastClosed.endedAt);
   attachLeftoverSources(metrics, lastClosed, leftoverEnd, {
     exclusiveEnd: Boolean(metrics.pending && metrics.pending.startedAt),
+    collect: opts.collect === true,
   });
   let startedAt = isoOrNull(opts.startedAt) || isoOrNull(metrics.pending && metrics.pending.startedAt) || null;
   const reported = opts.reported || fields.metrics || emptyMetricsFields();
@@ -2464,7 +2581,7 @@ function metricsFinalizeArchive(targetDir, changeName, opts = {}) {
   return filePath;
 }
 
-function metricsPrepareArchiveStart(changeRoot, changeName, client = {}) {
+function metricsPrepareArchiveStart(changeRoot, changeName, client = {}, extra = {}) {
   const filePath = join(changeRoot, 'metrics.json');
   if (!existsSync(filePath)) return;
   const nowIso = nowUtcIso();
@@ -2481,6 +2598,7 @@ function metricsPrepareArchiveStart(changeRoot, changeName, client = {}) {
   const leftoverEnd = metrics.pending && metrics.pending.startedAt;
   attachLeftoverSources(metrics, lastNonArchiverSession(metrics.sessions), leftoverEnd, {
     exclusiveEnd: true,
+    collect: extra.collect === true,
   });
   metrics.updatedAt = nowIso;
   recomputeMetricsAggregates(metrics);
@@ -3876,7 +3994,7 @@ program
       homedir: process.env.HOME,
       platform: opts.platform,
     });
-    metricsPrepareArchiveStart(changeRoot, name, archiveClient);
+    metricsPrepareArchiveStart(changeRoot, name, archiveClient, { collect: opts.collect === true });
     mkdirSync(dirname(targetDir), { recursive: true });
     renameSync(changeRoot, targetDir);
 
@@ -4447,4 +4565,13 @@ if (isDirectCliRun()) {
   program.parse();
 }
 
-export { formatMetricsCostLine, resolveSessionSpend, canonicalRole, phaseForRole };
+export {
+  formatMetricsCostLine,
+  resolveSessionSpend,
+  canonicalRole,
+  phaseForRole,
+  recomputeMetricsAggregates,
+  sessionSpendIsFrozen,
+  attachLeftoverSources,
+  runCollectSpend,
+};

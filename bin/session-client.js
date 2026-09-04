@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readlinkSync } from 'fs';
+import { existsSync, readFileSync, readlinkSync, statSync } from 'fs';
 import { join } from 'path';
 import { homedir as osHomedir } from 'os';
 import { execFileSync } from 'child_process';
@@ -114,28 +114,68 @@ function isFreshTimestamp(value, now, maxAgeMs) {
   return now - n >= 0 && now - n <= maxAgeMs;
 }
 
+function isSessionFileFresh(updatedAt, filePath, now, maxAgeMs) {
+  if (updatedAt != null && updatedAt !== '') {
+    return isFreshTimestamp(updatedAt, now, maxAgeMs);
+  }
+  try {
+    return isFreshTimestamp(statSync(filePath).mtimeMs, now, maxAgeMs);
+  } catch {
+    return false;
+  }
+}
+
+function emptyAmpSessionHint(filePath, fileFresh, updatedAt) {
+  return {
+    threadId: '',
+    source: '',
+    lastThreadId: '',
+    filePath: filePath || '',
+    fileFresh: Boolean(fileFresh),
+    updatedAt: updatedAt == null ? '' : updatedAt,
+  };
+}
+
 export function readAmpSessionHint(options = {}) {
   const env = options.env || {};
   const homedir = options.homedir || env.HOME;
   const now = options.now != null ? Number(options.now) : Date.now();
   const maxAgeMs = options.maxAgeMs != null ? Number(options.maxAgeMs) : AMP_TTY_MAX_AGE_MS;
   const filePath = join(ampDataRoot(env, homedir), 'session.json');
-  if (!existsSync(filePath)) return { threadId: '', source: '' };
+  if (!existsSync(filePath)) return emptyAmpSessionHint(filePath, false, '');
   let data;
   try {
     data = JSON.parse(readFileSync(filePath, 'utf-8'));
   } catch {
-    return { threadId: '', source: '' };
+    return emptyAmpSessionHint(filePath, isSessionFileFresh('', filePath, now, maxAgeMs), '');
   }
-  if (!data || typeof data !== 'object') return { threadId: '', source: '', lastThreadId: '' };
+  if (!data || typeof data !== 'object') {
+    return emptyAmpSessionHint(filePath, isSessionFileFresh('', filePath, now, maxAgeMs), '');
+  }
   const lastThreadId = trim(data.lastThreadId);
+  const updatedAt = data.updatedAt;
+  const fileFresh = isSessionFileFresh(updatedAt, filePath, now, maxAgeMs);
   const rawTty = options.ttyKey != null ? options.ttyKey : currentTtyKey(env, options.readlink);
   const ttyKey = isUsableTtyPath(rawTty) ? (String(rawTty).startsWith('tty:') ? rawTty : `tty:${rawTty}`) : '';
   const byTty = data.lastThreadByTerminal && ttyKey ? data.lastThreadByTerminal[ttyKey] : null;
   if (byTty && trim(byTty.lastThreadId) && isFreshTimestamp(byTty.updatedAt, now, maxAgeMs)) {
-    return { threadId: trim(byTty.lastThreadId), source: 'amp-session-tty', lastThreadId };
+    return {
+      threadId: trim(byTty.lastThreadId),
+      source: 'amp-session-tty',
+      lastThreadId,
+      filePath,
+      fileFresh,
+      updatedAt,
+    };
   }
-  return { threadId: '', source: '', lastThreadId };
+  return {
+    threadId: '',
+    source: '',
+    lastThreadId,
+    filePath,
+    fileFresh,
+    updatedAt,
+  };
 }
 
 export function detectSessionClient(options = {}) {
@@ -167,6 +207,15 @@ export function detectSessionClient(options = {}) {
   }
   if (hint.threadId) {
     return { platform: 'amp', threadId: hint.threadId, source: hint.source };
+  }
+  if (hint.lastThreadId && hint.fileFresh) {
+    return { platform: 'amp', threadId: hint.lastThreadId, source: 'amp-session-last' };
+  }
+  if (hint.fileFresh) {
+    const listed = listRecentAmpThreadIds(options);
+    if (listed[0]) {
+      return { platform: 'amp', threadId: listed[0], source: 'amp-session-list' };
+    }
   }
 
   return { platform: null, threadId: null, source: 'none' };
