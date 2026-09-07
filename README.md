@@ -74,7 +74,7 @@ npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-veri
 
 See [Installation](#installation) for profile/CI options.
 
-**🔄 Already have the kit installed? Upgrade to latest (compact metrics schema v2, bounded collection windows, Claude/Amp estimates, and dashboard JSON in v0.14.0):**
+**🔄 Already have the kit installed? Upgrade to latest (compact metrics schema v2, exhaustive Tier 2 punch list, bounded collection windows, Claude/Amp estimates, and dashboard JSON in v0.14.0):**
 
 ```bash
 npx agent-orchestrator-kit@latest update
@@ -1014,6 +1014,11 @@ The kit moves toward an Agentic Factory in four phases. **One phase = one OpenSp
 Phase bounds and non-goals: [`openspec/specs/agentic-factory-roadmap/spec.md`](openspec/specs/agentic-factory-roadmap/spec.md).
 
 ## Changelog
+
+### 0.14.0
+- **BREAKING: compact metrics schema v2** — sessions persist `sourceIds` / `sourceTotals` / `byModel` instead of `sources`; `metrics --migrate` is schema-only; `metrics --summary-json` for dashboards
+- Bounded persist/leftover windows, thread-scoped Amp usage + fresh Cost, Claude dedup/subagent capture, static Claude/Amp estimates
+- Exhaustive Tier 2 punch list in kit templates; after REQUEST CHANGES next command is `/opsx:propose`; Spec review discovery loops ≤ 2
 
 ### 0.13.0
 - Amp Cost-once rollup: `Cost: $N` once per qualifying session into `spend` / `spendByPlatform.amp` / `phases` (not ×N sources; several sessions accumulate)

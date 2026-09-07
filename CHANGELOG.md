@@ -4,15 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Changed
-- Kit templates require an exhaustive Tier 2 punch list (full scan before the verdict; schema Checklist / Findings / Required Before Apply / Previous findings). After REQUEST CHANGES the next command is `/opsx:propose`; `openspec-guide` no longer maps RC back to review. Metric: Spec review discovery loops ≤ 2.
-
 ## [0.14.0] - 2026-09-07
 
 ### Changed
 - **BREAKING: compact metrics schema v2.** Sessions persist `sourceIds`, `sourceTotals`, and `byModel` instead of `sources`; v1 remains readable and `metrics --migrate` performs a schema-only rewrite.
 - Collection now has bounded persist/leftover windows, thread-scoped Amp usage totals and fresh Cost, Claude message dedup/subagent capture, and static Claude/Amp cost estimates.
 - Added `metrics --summary-json` as the aggregate dashboard contract; phase bounds come from `phases.*`, never git history.
+- Kit templates require an exhaustive Tier 2 punch list (full scan before the verdict; schema Checklist / Findings / Required Before Apply / Previous findings). After REQUEST CHANGES the next command is `/opsx:propose`; `openspec-guide` no longer maps RC back to review. Metric: Spec review discovery loops ≤ 2.
 
 ## [0.13.0] - 2026-09-04
 
