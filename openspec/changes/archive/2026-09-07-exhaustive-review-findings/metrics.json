@@ -2,7 +2,7 @@
   "version": 2,
   "change": "exhaustive-review-findings",
   "createdAt": "2026-09-07T19:22:40.998Z",
-  "updatedAt": "2026-09-07T20:14:20.940Z",
+  "updatedAt": "2026-09-07T20:22:18.493Z",
   "archivedAt": "2026-09-07T20:14:02.139Z",
   "spend": {
     "inputTokens": 1301285,
@@ -50,6 +50,16 @@
       "costUsd": null,
       "ampCredits": null,
       "costUsdEstimated": 3.5504
+    },
+    {
+      "model": "claude-fable-5-1",
+      "platform": "claude",
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null
     }
   ],
   "totals": {
@@ -154,8 +164,7 @@
       "costUsd": null,
       "ampCredits": null,
       "costUsdEstimated": null,
-      "spendSource": "adapter",
-      "sources": []
+      "spendSource": "adapter"
     },
     {
       "startedAt": "2026-09-07T19:23:20.808Z",
@@ -178,8 +187,7 @@
       "costUsd": null,
       "ampCredits": null,
       "costUsdEstimated": null,
-      "spendSource": "adapter",
-      "sources": []
+      "spendSource": "adapter"
     },
     {
       "startedAt": "2026-09-07T19:32:13.328Z",
@@ -202,8 +210,7 @@
       "costUsd": null,
       "ampCredits": null,
       "costUsdEstimated": null,
-      "spendSource": "adapter",
-      "sources": []
+      "spendSource": "adapter"
     },
     {
       "startedAt": "2026-09-07T19:40:23.508Z",
@@ -226,8 +233,7 @@
       "costUsd": null,
       "ampCredits": null,
       "costUsdEstimated": null,
-      "spendSource": "adapter",
-      "sources": []
+      "spendSource": "adapter"
     },
     {
       "startedAt": "2026-09-07T19:47:11.661Z",
@@ -250,8 +256,7 @@
       "costUsd": null,
       "ampCredits": null,
       "costUsdEstimated": null,
-      "spendSource": "adapter",
-      "sources": []
+      "spendSource": "adapter"
     },
     {
       "startedAt": "2026-09-07T20:12:36.236Z",
@@ -289,23 +294,7 @@
       "costUsd": null,
       "ampCredits": null,
       "costUsdEstimated": 3.5504,
-      "spendSource": "adapter",
-      "sources": [
-        {
-          "id": "042058cd-8e46-46fa-905b-56b346a22a89",
-          "platform": "cursor",
-          "model": "cursor-grok-4.6-xhigh-fast",
-          "inputTokens": 1301285,
-          "outputTokens": 13964,
-          "totalTokens": 1315249,
-          "costUsd": null,
-          "ampCredits": null,
-          "at": "2026-09-07T20:14:20.924Z",
-          "cacheReadTokens": 1199168,
-          "costUsdEstimated": 3.5504,
-          "costSource": "api-estimate"
-        }
-      ]
+      "spendSource": "adapter"
     }
   ],
   "pending": null

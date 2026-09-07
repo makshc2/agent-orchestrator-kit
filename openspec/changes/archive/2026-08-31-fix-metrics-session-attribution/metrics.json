@@ -2,7 +2,7 @@
   "version": 2,
   "change": "fix-metrics-session-attribution",
   "createdAt": "2026-08-31T17:01:43.390Z",
-  "updatedAt": "2026-09-07T20:14:20.937Z",
+  "updatedAt": "2026-09-07T20:22:18.488Z",
   "archivedAt": "2026-08-31T20:46:27.221Z",
   "spend": {
     "inputTokens": 104655,
@@ -41,6 +41,16 @@
     }
   },
   "spendByModel": [
+    {
+      "model": "cursor-grok-4.6",
+      "platform": "cursor",
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null
+    },
     {
       "model": "cursor-grok-4.6-low",
       "platform": "cursor",
@@ -157,8 +167,7 @@
       "spendSource": "adapter",
       "sourceIds": [],
       "sourceTotals": {},
-      "byModel": [],
-      "sources": []
+      "byModel": []
     },
     {
       "startedAt": "2026-08-31T17:02:25.354Z",
@@ -181,8 +190,7 @@
       "spendSource": "adapter",
       "sourceIds": [],
       "sourceTotals": {},
-      "byModel": [],
-      "sources": []
+      "byModel": []
     },
     {
       "startedAt": "2026-08-31T17:09:06.856Z",
@@ -205,8 +213,7 @@
       "spendSource": "adapter",
       "sourceIds": [],
       "sourceTotals": {},
-      "byModel": [],
-      "sources": []
+      "byModel": []
     },
     {
       "startedAt": "2026-08-31T17:22:44.625Z",
@@ -229,8 +236,7 @@
       "spendSource": "adapter",
       "sourceIds": [],
       "sourceTotals": {},
-      "byModel": [],
-      "sources": []
+      "byModel": []
     },
     {
       "startedAt": "2026-08-31T17:28:19.293Z",
@@ -253,8 +259,7 @@
       "spendSource": "adapter",
       "sourceIds": [],
       "sourceTotals": {},
-      "byModel": [],
-      "sources": []
+      "byModel": []
     },
     {
       "startedAt": "2026-08-31T20:18:05.087Z",
@@ -277,8 +282,7 @@
       "spendSource": "unreported",
       "sourceIds": [],
       "sourceTotals": {},
-      "byModel": [],
-      "sources": []
+      "byModel": []
     },
     {
       "startedAt": "2026-08-31T20:33:54.590Z",
@@ -301,8 +305,7 @@
       "spendSource": "adapter",
       "sourceIds": [],
       "sourceTotals": {},
-      "byModel": [],
-      "sources": []
+      "byModel": []
     },
     {
       "startedAt": "2026-08-31T20:41:14.367Z",
@@ -325,8 +328,7 @@
       "spendSource": "adapter",
       "sourceIds": [],
       "sourceTotals": {},
-      "byModel": [],
-      "sources": []
+      "byModel": []
     },
     {
       "startedAt": "2026-08-31T20:46:25.841Z",
@@ -361,22 +363,6 @@
           "outputTokens": 862,
           "totalTokens": 105517,
           "costUsd": null,
-          "costUsdEstimated": 0.1083,
-          "costSource": "api-estimate"
-        }
-      ],
-      "sources": [
-        {
-          "id": "84743a83-7bb5-4855-a518-4904e29c91d8",
-          "platform": "cursor",
-          "model": "cursor-grok-4.6-low",
-          "inputTokens": 104655,
-          "outputTokens": 862,
-          "totalTokens": 105517,
-          "costUsd": null,
-          "ampCredits": null,
-          "at": "2026-08-31T20:46:32.498Z",
-          "cacheReadTokens": 70784,
           "costUsdEstimated": 0.1083,
           "costSource": "api-estimate"
         }
