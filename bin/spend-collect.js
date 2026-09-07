@@ -1,10 +1,11 @@
 import { existsSync, readdirSync, readFileSync } from 'fs';
-import { join, basename } from 'path';
+import { join, basename, sep } from 'path';
 import { homedir as osHomedir } from 'os';
 import { execFileSync } from 'child_process';
 import { listRecentAmpThreadIds } from './session-client.js';
 import { formatUtcIso, parseFlexibleIso } from './metrics-time.js';
 import { describeCursorCostEstimate } from './cursor-cost-estimate.js';
+import { describeClaudeCostEstimate } from './claude-cost-estimate.js';
 import { ampAgentMode, matchAmpUsageModel, parseAmpUsageDetails } from './amp-usage.js';
 
 const PLATFORMS = ['cursor', 'claude', 'amp'];
@@ -216,17 +217,31 @@ function collectClaude({ cwd, windowStart, windowEnd, existing, env, homedir, no
     notes.push('claude: project folder missing');
     return sources;
   }
-  let files;
+  let entries;
   try {
-    files = readdirSync(projectDir).filter((name) => name.endsWith('.jsonl'));
+    entries = readdirSync(projectDir, { withFileTypes: true });
   } catch {
     notes.push('claude: cannot read project folder');
     return sources;
   }
+  const files = entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.jsonl'))
+    .map((entry) => join(projectDir, entry.name));
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const subagentsDir = join(projectDir, entry.name, 'subagents');
+    if (!existsSync(subagentsDir)) continue;
+    try {
+      for (const name of readdirSync(subagentsDir)) {
+        if (name.endsWith('.jsonl')) files.push(join(subagentsDir, name));
+      }
+    } catch {}
+  }
+  const bestById = new Map();
   for (const file of files) {
     let text;
     try {
-      text = readFileSync(join(projectDir, file), 'utf-8');
+      text = readFileSync(file, 'utf-8');
     } catch {
       continue;
     }
@@ -245,9 +260,18 @@ function collectClaude({ cwd, windowStart, windowEnd, existing, env, homedir, no
       const id = message.id;
       if (id == null || id === '') continue;
       if (existing.has(String(id))) continue;
-      if (row.cwd !== cwd) continue;
+      if (row.cwd !== cwd && !String(row.cwd || '').startsWith(`${cwd}${sep}`)) continue;
       if (!inWindow(row.timestamp, windowStart, windowEnd)) continue;
-      sources.push(sourceRecord({
+      const cacheReadTokens = numOrNull(usage.cache_read_input_tokens ?? usage.cacheReadInputTokens);
+      const cacheCreationTokens = numOrNull(usage.cache_creation_input_tokens ?? usage.cacheCreationInputTokens);
+      const described = describeClaudeCostEstimate({
+        model: message.model,
+        inputTokens: usage.input_tokens ?? usage.inputTokens,
+        cacheReadTokens,
+        cacheCreationTokens,
+        outputTokens: usage.output_tokens ?? usage.outputTokens,
+      });
+      const record = sourceRecord({
         id,
         platform: 'claude',
         model: message.model,
@@ -256,9 +280,21 @@ function collectClaude({ cwd, windowStart, windowEnd, existing, env, homedir, no
         costUsd: claudeCostUsd(row, usage),
         ampCredits: null,
         at: row.timestamp,
-      }));
+        cacheReadTokens,
+        costUsdEstimated: described?.usd ?? null,
+        costSource: described?.costSource ?? null,
+      });
+      const previous = bestById.get(String(id));
+      if (!previous || (record.totalTokens ?? 0) > (previous.totalTokens ?? 0)) {
+        bestById.set(String(id), record);
+      } else if ((record.totalTokens ?? 0) === (previous.totalTokens ?? 0)) {
+        const at = parseTime(record.at);
+        const previousAt = parseTime(previous.at);
+        if (Number.isFinite(at) && (!Number.isFinite(previousAt) || at < previousAt)) previous.at = record.at;
+      }
     }
   }
+  sources.push(...bestById.values());
   return sources;
 }
 
@@ -409,10 +445,14 @@ export function sourcesFromAmpThread(thread, ctx, fileName = '', via = null) {
   return sources;
 }
 
-function collectAmp({ cwd, windowStart, windowEnd, existing, env, homedir, notes }) {
+function collectAmp({ cwd, windowStart, windowEnd, existing, env, homedir, notes, ampThreadId, collectAll }) {
   const root = ampRoot(env, homedir);
   const threadsDir = join(root, 'threads');
   const sources = [];
+  if (!ampThreadId && collectAll !== true) {
+    notes.push('amp: skipped local threads without thread id');
+    return sources;
+  }
   if (!existsSync(threadsDir)) {
     notes.push('amp: threads folder missing');
     return sources;
@@ -432,6 +472,8 @@ function collectAmp({ cwd, windowStart, windowEnd, existing, env, homedir, notes
     } catch {
       continue;
     }
+    const threadKey = thread && thread.id ? String(thread.id) : basename(file, '.json');
+    if (ampThreadId && threadKey !== String(ampThreadId)) continue;
     sources.push(...sourcesFromAmpThread(thread, ctx, file));
   }
   return sources;
@@ -504,10 +546,10 @@ function collectAmpCli(ctx) {
     if (id && !ids.includes(id)) ids.push(id);
   };
   push(ampThreadId);
-  if (ctx.listRecentAmpThreads !== false) {
+  if (ctx.listRecentAmpThreads === true) {
     push(ampCurrentThreadId(env));
   }
-  if (!ids.length && ctx.listRecentAmpThreads !== false) {
+  if (!ids.length && ctx.listRecentAmpThreads === true) {
     for (const id of listRecentAmpThreadIds(ctx)) push(id);
   }
   const sources = [];
@@ -529,6 +571,10 @@ function collectAmpCli(ctx) {
       ...row,
       model: matchAmpUsageModel(row.model, sourceModels),
     }));
+    const alreadyBilled = ctx.existingThreadIds.has(id) && ctx.rebillThreadId !== id;
+    if (alreadyBilled) {
+      for (const row of usageModels) row.costUsd = null;
+    }
     if (usage && usage.costUsd != null) {
       for (const src of extracted) {
         src.costSource = 'amp-usage';
@@ -537,7 +583,7 @@ function collectAmpCli(ctx) {
     threads.push({
       id,
       agentMode,
-      costUsd: usage ? numOrNull(usage.costUsd) : null,
+      costUsd: usage && !alreadyBilled ? numOrNull(usage.costUsd) : null,
       inputTokens: usage ? numOrNull(usage.inputTokens) : null,
       outputTokens: usage ? numOrNull(usage.outputTokens) : null,
       totalTokens: usage ? numOrNull(usage.totalTokens) : null,
@@ -708,7 +754,6 @@ function collectCursor({ cwd, windowStart, windowEnd, existing, existingSources,
     if (!row || typeof row !== 'object') continue;
     const id = row.id == null || row.id === '' ? null : String(row.id);
     if (!id) continue;
-    if (existing.has(id)) continue;
     if (filterId) {
       const rowConversationId = row.conversationId == null || row.conversationId === ''
         ? ''
@@ -809,6 +854,9 @@ export function collectSpend(options = {}) {
         ? [...options.existingSourceIds]
         : [],
   );
+  const existingSourceTotals = options.existingSourceTotals && typeof options.existingSourceTotals === 'object'
+    ? options.existingSourceTotals
+    : {};
   const windowStart = options.windowStart;
   const windowEnd = options.windowEnd;
   const notes = [];
@@ -823,6 +871,7 @@ export function collectSpend(options = {}) {
     windowEnd,
     existing,
     existingSources,
+    existingSourceTotals,
     env,
     homedir,
     notes,
@@ -834,6 +883,9 @@ export function collectSpend(options = {}) {
     usageAmpThread: options.usageAmpThread,
     ampBin: options.ampBin,
     timeoutMs: options.timeoutMs,
+    collectAll: options.collectAll === true || options.platforms == null,
+    existingThreadIds: new Set(options.existingThreadIds || []),
+    rebillThreadId: options.rebillThreadId || null,
   };
   let sources = [];
   const ampThreads = [];
@@ -867,9 +919,20 @@ export function collectSpend(options = {}) {
       notes.push('cursor: adapter failed');
     }
   }
+  sources = sources.filter((source) => {
+    if (!source || !existing.has(String(source.id))) return true;
+    if (!Object.hasOwn(existingSourceTotals, source.id)) return false;
+    return (numOrNull(source.totalTokens) ?? 0) > (numOrNull(existingSourceTotals[source.id]) ?? 0);
+  });
   const { byPlatform, byModel } = aggregate(sources);
   applyAmpThreadSpend(byPlatform, byModel, ampThreads);
-  return { sources, byPlatform, byModel, notes, ampThreads };
+  const ids = [...new Set(sources.map((source) => String(source.id)))];
+  const totals = {};
+  for (const source of sources) {
+    const id = String(source.id);
+    totals[id] = Math.max(numOrNull(totals[id]) ?? 0, numOrNull(source.totalTokens) ?? 0);
+  }
+  return { sources, ids, totals, byPlatform, byModel, notes, ampThreads };
 }
 
 function applyAmpThreadSpend(byPlatform, byModel, threads) {

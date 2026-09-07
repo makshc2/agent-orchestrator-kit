@@ -3,7 +3,14 @@ import assert from 'node:assert/strict';
 import { formatKyivDisplay, formatUtcIso, parseFlexibleIso } from '../bin/metrics-time.js';
 import { parseAmpUsageDetails, matchAmpUsageModel, ampAgentMode } from '../bin/amp-usage.js';
 import { describeCursorCostEstimate, estimateCursorCostUsd } from '../bin/cursor-cost-estimate.js';
-import { formatMetricsCostLine, resolveSessionSpend, recomputeMetricsAggregates } from '../bin/agent-orchestrator.js';
+import { estimateClaudeCostUsd } from '../bin/claude-cost-estimate.js';
+import {
+  firstSpawnName,
+  formatMetricsCostLine,
+  normalizeMetricsV2,
+  resolveSessionSpend,
+  recomputeMetricsAggregates,
+} from '../bin/agent-orchestrator.js';
 
 test('parseFlexibleIso accepts broken Amp microsecond+.000Z stamps', () => {
   const broken = '2026-08-31T07:08:17.563464.000Z';
@@ -95,6 +102,69 @@ test('estimateCursorCostUsd fallback for non-grok models', () => {
   assert.equal(estimateCursorCostUsd({ model: '', inputTokens: 1000000 }), 3);
   assert.equal(estimateCursorCostUsd({ model: 'gpt-5.6' }), null);
   assert.equal(describeCursorCostEstimate({ model: 'gpt-5.6' }), null);
+});
+
+test('Claude estimate uses cache split and fallback', () => {
+  assert.equal(estimateClaudeCostUsd({
+    model: 'claude-opus-5',
+    inputTokens: 100000,
+    cacheReadTokens: 900000,
+    cacheCreationTokens: 0,
+    outputTokens: 10000,
+  }), 1.2);
+  assert.equal(estimateClaudeCostUsd({ model: 'gpt-6-astra', inputTokens: 1000000, outputTokens: 10000 }), 3.15);
+});
+
+test('normalizeMetricsV2 compacts legacy sources without changing numeric summaries', () => {
+  const metrics = {
+    version: 1,
+    spend: { totalTokens: 46, costUsd: 3.96 },
+    totals: { sessions: 1, durationMs: 100 },
+    spendByPlatform: { amp: { totalTokens: 46, costUsd: 3.96 } },
+    spendByModel: [{ model: 'm1', totalTokens: 30 }],
+    phases: { apply: { totalTokens: 46, costUsd: 3.96 } },
+    sessions: [{
+      model: 'm1',
+      platform: 'amp',
+      inputTokens: 40,
+      outputTokens: 6,
+      totalTokens: 46,
+      costUsd: 3.96,
+      sources: [
+        { id: 'a', model: 'm1', platform: 'amp', inputTokens: 10, outputTokens: 2, totalTokens: 12 },
+        { id: 'b', model: 'm1', platform: 'amp', inputTokens: 15, outputTokens: 3, totalTokens: 18 },
+        { id: 'c', model: 'm2', platform: 'amp', inputTokens: 9, outputTokens: 1, totalTokens: 10 },
+        { id: 'd', model: 'm2', platform: 'amp', inputTokens: 6, outputTokens: 0, totalTokens: 6 },
+      ],
+    }],
+  };
+  const numericBefore = JSON.parse(JSON.stringify({
+    spend: metrics.spend,
+    totals: metrics.totals,
+    spendByPlatform: metrics.spendByPlatform,
+    spendByModel: metrics.spendByModel,
+    phases: metrics.phases,
+    session: Object.fromEntries(Object.entries(metrics.sessions[0]).filter(([, value]) => typeof value === 'number')),
+  }));
+  normalizeMetricsV2(metrics);
+  assert.equal(metrics.version, 2);
+  assert.equal(metrics.sessions[0].sourceIds.length, 4);
+  assert.equal(metrics.sessions[0].byModel.length, 2);
+  assert.equal('sources' in metrics.sessions[0], false);
+  assert.deepEqual({
+    spend: metrics.spend,
+    totals: metrics.totals,
+    spendByPlatform: metrics.spendByPlatform,
+    spendByModel: metrics.spendByModel,
+    phases: metrics.phases,
+    session: Object.fromEntries(Object.entries(metrics.sessions[0]).filter(([, value]) => typeof value === 'number')),
+  }, numericBefore);
+});
+
+test('firstSpawnName only accepts backticks or canonical role mapping', () => {
+  assert.equal(firstSpawnName('Implementer — restore verification after baseline lint'), '');
+  assert.equal(firstSpawnName('Architect (spawn `spec-architect`)'), 'spec-architect');
+  assert.equal(firstSpawnName('Spec Reviewer'), 'spec-reviewer');
 });
 
 test('formatMetricsCostLine shows billed and estimate without mixing credits', () => {

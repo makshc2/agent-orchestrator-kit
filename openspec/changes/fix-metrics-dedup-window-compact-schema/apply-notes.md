@@ -1,0 +1,15 @@
+# Apply Notes
+- Preserve start provenance: `--started-at` overrides pending; either explicit or pending start gets 120-second grace.
+- Give `last.endedAt` and `metrics.createdAt` boundaries no grace.
+- Archive collect is leftover-first, then `[pending.startedAt - 120s, now]`, deduplicated against all session `sourceIds`.
+- Cap null-thread leftover at `min(next pending, endedAt + 120s)`; keep thread-identified pending behavior.
+- Schema-only migration must preserve all existing numeric values and must not recompute.
+- Persist only v2 compact fields: `sourceIds`, `sourceTotals`, and `byModel`; legacy `sources` stays normalization-only.
+- Preserve fresh Amp usage totals/chat model/Cost and count each thread Cost once.
+- Keep Claude collection local: message-id dedup, prefix cwd match, subagent JSONL, static price estimates.
+- Keep cursor `.cjs` script/template pairs byte-identical; do not make kit/template rules byte-identical.
+- Keep template always-apply rules below 12,000 characters and retain canonical template checks.
+- Do not add HTTP, SDKs, npm dependencies, git-derived phase bounds, or consumer numeric backfill.
+- Do not let agents write `decisions.md`; keep that CLI-only.
+- Verify: `cmp scripts/cursor-spend-collect.cjs templates/scripts/cursor-spend-collect.cjs` and hook equivalent.
+- Verify: `npm test && npm run release:check`.

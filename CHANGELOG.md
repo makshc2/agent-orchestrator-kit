@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-09-07
+
+### Changed
+- **BREAKING: compact metrics schema v2.** Sessions persist `sourceIds`, `sourceTotals`, and `byModel` instead of `sources`; v1 remains readable and `metrics --migrate` performs a schema-only rewrite.
+- Collection now has bounded persist/leftover windows, thread-scoped Amp usage totals and fresh Cost, Claude message dedup/subagent capture, and static Claude/Amp cost estimates.
+- Added `metrics --summary-json` as the aggregate dashboard contract; phase bounds come from `phases.*`, never git history.
+
 ## [0.13.0] - 2026-09-04
 
 ### Fixed

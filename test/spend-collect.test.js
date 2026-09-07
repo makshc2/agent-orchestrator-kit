@@ -99,6 +99,74 @@ test('claude jsonl: window, cwd, encode, cache_*, null cost, dedup', () => {
   rmSync(root, { recursive: true, force: true });
 });
 
+test('Claude streamed rows deduplicate six message ids to live token total', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aok-claude-live-dedup-'));
+  try {
+    const cwd = join(root, 'project');
+    const home = join(root, 'home');
+    mkdirSync(cwd, { recursive: true });
+    const inputs = [50000, 60000, 70000, 80000, 90000, 9148];
+    const rows = [];
+    inputs.forEach((input, index) => {
+      const row = {
+        type: 'assistant',
+        cwd: join(cwd, 'openspec/changes/x'),
+        timestamp: '2026-09-07T12:00:00.000Z',
+        message: {
+          id: `msg-${index + 1}`,
+          role: 'assistant',
+          model: 'claude-opus-5',
+          usage: { input_tokens: input, output_tokens: 0 },
+        },
+      };
+      rows.push(row, row);
+      if (index < 3) rows.push(row);
+    });
+    writeClaudeJsonl(home, cwd, rows);
+    const result = collectSpend({
+      cwd,
+      homedir: home,
+      env: { HOME: home, AMP_DATA_DIR: join(root, 'amp') },
+      platforms: ['claude'],
+      windowStart: '2026-09-07T11:00:00.000Z',
+      windowEnd: '2026-09-07T13:00:00.000Z',
+    });
+    assert.equal(result.ids.length, 6);
+    assert.equal(result.byPlatform.claude.inputTokens, 359148);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('Claude collector includes session subagents and excludes other cwd', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aok-claude-subagents-'));
+  try {
+    const cwd = join(root, 'project');
+    const home = join(root, 'home');
+    const projectDir = join(home, '.claude', 'projects', encodeClaudeProject(cwd));
+    const subagents = join(projectDir, 'session-id', 'subagents');
+    mkdirSync(subagents, { recursive: true });
+    const make = (id, rowCwd) => ({
+      type: 'assistant',
+      cwd: rowCwd,
+      timestamp: '2026-09-07T12:00:00.000Z',
+      message: { id, role: 'assistant', model: 'claude-opus-5', usage: { input_tokens: 10, output_tokens: 1 } },
+    });
+    writeFileSync(join(subagents, 'agent-a.jsonl'), `${JSON.stringify(make('subagent-a', cwd))}\n${JSON.stringify(make('foreign', '/other/project'))}\n`);
+    const result = collectSpend({
+      cwd,
+      homedir: home,
+      env: { HOME: home, AMP_DATA_DIR: join(root, 'amp') },
+      platforms: ['claude'],
+      windowStart: '2026-09-07T11:00:00.000Z',
+      windowEnd: '2026-09-07T13:00:00.000Z',
+    });
+    assert.deepEqual(result.ids, ['subagent-a']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('amp thread: trees uri match, fallback cwd signals, skip other project, no ledger → null credits', () => {
   const root = mkdtempSync(join(tmpdir(), 'aok-collect-amp-'));
   const cwd = join(root, 'work');
@@ -657,7 +725,7 @@ test('cursor spend hook leftover attaches after stop without a separate collect'
     assert.match(jsonl, /hook-leftover-stop/);
     const metrics = JSON.parse(readFileSync(join(root, 'openspec/changes/add-thing/metrics.json'), 'utf-8'));
     const last = metrics.sessions[metrics.sessions.length - 1];
-    assert.equal((last.sources || []).filter((src) => src.id === 'hook-leftover-stop').length, 1);
+    assert.equal(last.sourceIds.filter((id) => id === 'hook-leftover-stop').length, 1);
     const collectPath = new URL('../scripts/cursor-spend-collect.cjs', import.meta.url).pathname;
     execFileSync('node', [collectPath], {
       cwd: root,
@@ -665,7 +733,7 @@ test('cursor spend hook leftover attaches after stop without a separate collect'
       encoding: 'utf-8',
     });
     const again = JSON.parse(readFileSync(join(root, 'openspec/changes/add-thing/metrics.json'), 'utf-8'));
-    assert.equal(again.sessions.at(-1).sources.filter((src) => src.id === 'hook-leftover-stop').length, 1);
+    assert.equal(again.sessions.at(-1).sourceIds.filter((id) => id === 'hook-leftover-stop').length, 1);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -708,7 +776,7 @@ test('sessionEnd leftover attaches only last.threadId conversation rows', () => 
       encoding: 'utf-8',
     });
     const metrics = JSON.parse(readFileSync(join(root, 'openspec/changes/archive/2026-09-02-add-auth/metrics.json'), 'utf-8'));
-    const ids = (metrics.sessions.at(-1).sources || []).map((src) => src.id);
+    const ids = metrics.sessions.at(-1).sourceIds || [];
     assert.ok(ids.includes('archiver-a'));
     assert.ok(!ids.includes('hotfix-b'));
   } finally {
@@ -778,7 +846,7 @@ test('hook writes consumer jsonl in multi-root; collect from kit updates consume
       encoding: 'utf-8',
     });
     const archived = JSON.parse(readFileSync(join(consumer, 'openspec/changes/archive/2026-09-02-add-auth/metrics.json'), 'utf-8'));
-    assert.ok((archived.sessions.at(-1).sources || []).some((src) => src.id === 'multi-root-g1'));
+    assert.ok((archived.sessions.at(-1).sourceIds || []).includes('multi-root-g1'));
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -827,16 +895,52 @@ test('collectSpend Amp CLI keeps Cost on ampThreads and does not copy it onto so
         phase: 'apply',
         platform: 'amp',
         costUsd: result.ampThreads[0].costUsd,
-        sources: result.sources,
+        sourceIds: result.ids,
+        sourceTotals: result.totals,
+        byModel: result.byModel,
       }],
     };
     recomputeMetricsAggregates(metrics);
     assert.equal(metrics.spend.costUsd, 12.69);
     assert.equal(metrics.spendByPlatform.amp.costUsd, 12.69);
     assert.notEqual(metrics.spend.costUsd, 38.07);
-    for (const src of metrics.sessions[0].sources) {
-      assert.notEqual(src.costUsd, 12.69);
-    }
+    assert.equal('sources' in metrics.sessions[0], false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('collectSpend bills an Amp thread Cost once but allows leftover rebill', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aok-collect-amp-thread-dedup-'));
+  const cwd = join(root, 'work');
+  mkdirSync(cwd, { recursive: true });
+  const options = {
+    cwd,
+    env: { HOME: join(root, 'home') },
+    homedir: join(root, 'home'),
+    windowStart: '2026-08-30T00:00:00.000Z',
+    windowEnd: '2026-08-30T23:59:59.000Z',
+    platforms: ['amp'],
+    ampThreadId: 'T-apply',
+    existingThreadIds: ['T-apply'],
+    exportAmpThread: (id) => ({
+      id,
+      env: { initial: { trees: [{ uri: `file://${cwd}` }] } },
+      messages: [{ messageId: 'm1', usage: { model: 'amp-model', inputTokens: 4, outputTokens: 1, timestamp: '2026-08-30T12:00:00.000Z' } }],
+    }),
+    usageAmpThread: () => ({
+      costUsd: 3.5,
+      models: [{ model: 'amp-model', costUsd: 3.5, inputTokens: 4, outputTokens: 1 }],
+    }),
+  };
+  try {
+    const duplicate = collectSpend(options);
+    assert.equal(duplicate.ampThreads[0].costUsd, null);
+    assert.equal(duplicate.ampThreads[0].models[0].costUsd, null);
+
+    const leftover = collectSpend({ ...options, rebillThreadId: 'T-apply' });
+    assert.equal(leftover.ampThreads[0].costUsd, 3.5);
+    assert.equal(leftover.ampThreads[0].models[0].costUsd, 3.5);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

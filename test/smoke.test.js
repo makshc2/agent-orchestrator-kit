@@ -1440,11 +1440,11 @@ test('handoff persist without spend keeps metrics null-honest and --no-metrics s
     cliExec(dir, 'handoff add-thing');
     const metrics = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
     assert.equal(metrics.sessions.length, 1);
-    assert.equal(metrics.sessions[0].durationMs, null, 'no restore marker → duration stays null');
+    assert.equal(typeof metrics.sessions[0].durationMs, 'number', 'no restore marker uses metrics.createdAt as lower bound');
     assert.equal(metrics.sessions[0].totalTokens, null);
     assert.equal(metrics.spend.totalTokens, null, 'unreported spend stays null, never 0');
     assert.equal(metrics.spend.costUsd, null);
-    assert.equal(metrics.phases.spec.durationMs, null);
+    assert.equal(typeof metrics.phases.spec.durationMs, 'number');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -1513,11 +1513,11 @@ test('next persist collects hook rows written after the previous persist', () =>
     const metrics = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
     assert.equal(metrics.sessions.length, 2);
     assert.ok(
-      metrics.sessions[0].sources.some((src) => src.id === 'late-after-persist'),
+      metrics.sessions[0].sourceIds.includes('late-after-persist'),
       'late hook row at previous endedAt leftover-attaches to the first session',
     );
     assert.equal(
-      metrics.sessions[1].sources.some((src) => src.id === 'late-after-persist'),
+      metrics.sessions[1].sourceIds.includes('late-after-persist'),
       false,
       'late hook row at previous endedAt must not land on the next session',
     );
@@ -1550,7 +1550,7 @@ test('metrics --collect backfills the last session without adding another sessio
 
     const metrics = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
     assert.equal(metrics.sessions.length, 1);
-    assert.ok(metrics.sessions[0].sources.some((src) => src.id === 'backfill-1'));
+    assert.ok(metrics.sessions[0].sourceIds.includes('backfill-1'));
     assert.equal(metrics.sessions[0].totalTokens, 315);
     assert.equal(metrics.spendByPlatform.cursor.source, 'cursor-hook');
 
@@ -1590,8 +1590,8 @@ test('persist infers model from Amp sources and --collect backfills leftover Amp
     assert.equal(afterPersist.sessions.length, 1);
     assert.equal(afterPersist.sessions[0].model, 'amp-sonnet');
     assert.equal(afterPersist.sessions[0].platform, 'amp');
-    assert.ok(afterPersist.sessions[0].sources.some((src) => src.id === 'T-live:amp-live'));
-    assert.equal(afterPersist.spendByPlatform.amp.source, 'amp-thread');
+    assert.ok(afterPersist.sessions[0].sourceIds.includes('T-live:amp-live'));
+    assert.equal(afterPersist.spendByPlatform.amp.source, 'amp-cli');
     assert.equal(afterPersist.spendByModel[0].model, 'amp-sonnet');
 
     const leftoverAt = afterPersist.sessions[0].endedAt;
@@ -1624,7 +1624,7 @@ test('persist infers model from Amp sources and --collect backfills leftover Amp
     assert.match(out, /collect: 1 new source/);
     const afterCollect = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
     assert.equal(afterCollect.sessions.length, 1);
-    assert.ok(afterCollect.sessions[0].sources.some((src) => src.id === 'T-live:amp-late'));
+    assert.ok(afterCollect.sessions[0].sourceIds.includes('T-live:amp-late'));
     assert.equal(afterCollect.sessions[0].totalTokens, 61);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -1658,11 +1658,11 @@ test('sessionEnd collect script merges leftover hook rows into the last session'
 
     const metrics = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
     assert.equal(metrics.sessions.length, 1);
-    assert.ok(metrics.sessions[0].sources.some((src) => src.id === 'session-end-1'));
+    assert.ok(metrics.sessions[0].sourceIds.includes('session-end-1'));
     assert.equal(metrics.sessions[0].totalTokens, 128);
     assert.equal(metrics.sessions[0].costUsdEstimated, 0.0003);
     assert.equal(metrics.sessions[0].spendSource, 'adapter');
-    assert.equal(metrics.sessions[0].sources[0].costSource, 'api-estimate');
+    assert.equal(metrics.sessions[0].byModel[0].costSource, 'api-estimate');
     assert.equal(metrics.spend.costUsdEstimated, 0.0003);
     assert.equal(metrics.spendByPlatform.cursor.source, 'cursor-hook');
     assert.equal(metrics.spendByPlatform.cursor.costUsdEstimated, 0.0003);
@@ -1699,7 +1699,7 @@ test('sessionEnd collect collapses duplicate stop/afterAgentResponse sources on 
         costSource: 'api-estimate',
       },
       {
-        id: 'stop-1',
+        id: 'after-1',
         platform: 'cursor',
         model: 'cursor-grok-4.6-xhigh-fast',
         inputTokens: 1000,
@@ -1728,9 +1728,9 @@ test('sessionEnd collect collapses duplicate stop/afterAgentResponse sources on 
     });
 
     const metrics = JSON.parse(readFileSync(metricsPath, 'utf-8'));
-    assert.equal(metrics.sessions[0].sources.length, 1);
+    assert.equal(metrics.sessions[0].sourceIds.length, 1);
     assert.equal(metrics.sessions[0].inputTokens, 1000);
-    assert.equal(metrics.sessions[0].costUsdEstimated, metrics.sessions[0].sources[0].costUsdEstimated);
+    assert.equal(metrics.sessions[0].costUsdEstimated, metrics.sessions[0].byModel[0].costUsdEstimated);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -1772,7 +1772,7 @@ test('sessionEnd collect does not attach current pending session turns to the la
     const metrics = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
     assert.equal(metrics.sessions.length, 1);
     assert.equal(
-      metrics.sessions[0].sources.some((src) => src.id === 'current-session-turn'),
+      metrics.sessions[0].sourceIds.includes('current-session-turn'),
       false,
       'turns after pending.startedAt belong to the open session, not the last closed one',
     );
@@ -1798,6 +1798,10 @@ test('metrics command prints a summary and raw --json', () => {
     const raw = JSON.parse(cliExec(dir, 'metrics add-thing --json'));
     assert.equal(raw.sessions[0].startedAt, '2026-08-29T06:00:00.000Z', '--started-at overrides the marker');
     assert.ok(raw.sessions[0].durationMs > 0);
+    const summary = JSON.parse(cliExec(dir, 'metrics add-thing --summary-json'));
+    assert.equal('sessions' in summary, false);
+    assert.equal(JSON.stringify(summary).includes('commits'), false);
+    assert.equal(summary.phases.spec.startedAt, raw.phases.spec.startedAt);
 
     assert.throws(
       () => cliExec(dir, 'metrics missing-change'),
@@ -1807,6 +1811,46 @@ test('metrics command prints a summary and raw --json', () => {
         return true;
       },
     );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('metrics --json normalizes v1 without writing and --migrate rewrites schema only', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-metrics-migrate-'));
+  try {
+    runInit(dir, '--profile generic --name MetricsMigrate --lang en');
+    const changeDir = join(dir, 'openspec/changes/legacy');
+    mkdirSync(changeDir, { recursive: true });
+    const filePath = join(changeDir, 'metrics.json');
+    const legacy = {
+      version: 1,
+      change: 'legacy',
+      createdAt: '2026-09-01T10:00:00.000Z',
+      spend: { totalTokens: 12, costUsd: 0.5 },
+      totals: { sessions: 1, durationMs: 100, leadTimeMs: 100, cloudSessions: 0 },
+      spendByPlatform: { cursor: { totalTokens: 12, costUsd: 0.5 } },
+      spendByModel: [{ model: 'm', totalTokens: 12, costUsd: 0.5 }],
+      phases: { apply: { totalTokens: 12, costUsd: 0.5 } },
+      sessions: [{ model: 'm', platform: 'cursor', totalTokens: 12, costUsd: 0.5, sources: [
+        { id: 'a', model: 'm', platform: 'cursor', inputTokens: 10, outputTokens: 2, totalTokens: 12 },
+      ] }],
+      pending: null,
+    };
+    const before = `${JSON.stringify(legacy, null, 2)}\n`;
+    writeFileSync(filePath, before);
+    const normalized = JSON.parse(cliExec(dir, 'metrics legacy --json'));
+    assert.equal(normalized.version, 2);
+    assert.equal(normalized.sessions[0].sourceIds[0], 'a');
+    assert.equal(readFileSync(filePath, 'utf-8'), before);
+    cliExec(dir, 'metrics legacy --migrate');
+    const migrated = JSON.parse(readFileSync(filePath, 'utf-8'));
+    assert.equal(migrated.version, 2);
+    assert.equal('sources' in migrated.sessions[0], false);
+    assert.equal(migrated.spend.totalTokens, legacy.spend.totalTokens);
+    assert.equal(migrated.spend.costUsd, legacy.spend.costUsd);
+    assert.deepEqual(migrated.totals, legacy.totals);
+    assert.deepEqual(migrated.phases, legacy.phases);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -1915,7 +1959,7 @@ test('restore locks Amp client and persist collects Amp without host env', () =>
     assert.equal(metrics.pending, null);
     assert.equal(metrics.sessions[0].platform, 'amp');
     assert.equal(metrics.sessions[0].threadId, 'T-lock');
-    assert.ok(metrics.sessions[0].sources.some((src) => src.id === 'T-lock:amp-lock'));
+    assert.ok(metrics.sessions[0].sourceIds.includes('T-lock:amp-lock'));
     assert.equal(metrics.spendByPlatform.amp.totalTokens, 24);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -1952,7 +1996,7 @@ test('restore locks Cursor client and persist does not ingest Amp disk threads',
     cliExec(dir, 'handoff add-thing --model cursor-grok-4.6');
     const session = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions[0];
     assert.equal(session.platform, 'cursor');
-    assert.equal((session.sources || []).length, 0);
+    assert.equal(session.sourceIds.length, 0);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -2376,9 +2420,9 @@ test('persist Claude fixture fills session totals; flags override; default persi
 
     cliExec(dir, 'handoff add-thing --collect');
     const collected = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
-    assert.equal(collected.sessions[0].sources.length, 2);
+    assert.equal(collected.sessions[0].sourceIds.length, 2);
     assert.equal(collected.spendByPlatform.claude.source, 'claude-jsonl');
-    const sourceTotal = collected.sessions[0].sources.reduce((sum, src) => sum + src.totalTokens, 0);
+    const sourceTotal = Object.values(collected.sessions[0].sourceTotals).reduce((sum, total) => sum + total, 0);
     assert.equal(collected.sessions[0].totalTokens, sourceTotal);
     assert.equal(collected.sessions[0].costUsd, 1.25);
     assert.equal(collected.spend.costUsd, 1.25);
@@ -2405,9 +2449,9 @@ test('persist Claude fixture fills session totals; flags override; default persi
     const overridden = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
     const second = overridden.sessions[1];
     assert.equal(second.costUsd, 9.99);
-    assert.ok(second.sources.some((src) => src.id === 'msg-3'));
+    assert.ok(second.sourceIds.includes('msg-3'));
     assert.equal(overridden.spendByPlatform.claude.source, 'claude-jsonl');
-    assert.ok(overridden.sessions.some((session) => session.sources && session.sources.length));
+    assert.ok(overridden.sessions.some((session) => session.sourceIds && session.sourceIds.length));
 
     writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
     cliExec(dir, 'handoff add-thing --restore');
@@ -2427,7 +2471,7 @@ test('persist Claude fixture fills session totals; flags override; default persi
     cliExec(dir, 'handoff add-thing');
     const skipped = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
     const last = skipped.sessions.at(-1);
-    assert.deepEqual(last.sources, []);
+    assert.deepEqual(last.sourceIds, []);
     assert.equal(last.totalTokens, null);
 
     const unknownFlag = cliSpawn(dir, ['handoff', 'add-thing', '--no-collect']);
@@ -2503,7 +2547,7 @@ test('archive without --collect finalizes without Archiver sources', () => {
     const metrics = JSON.parse(readFileSync(join(archiveRoot, entry, 'metrics.json'), 'utf-8'));
     const archiver = metrics.sessions.find((session) => session.role === 'Archiver');
     assert.ok(archiver);
-    assert.deepEqual(archiver.sources, []);
+    assert.deepEqual(archiver.sourceIds, []);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -2560,12 +2604,9 @@ test('archive collects Cursor hook into the Archiver session without --collect',
     assert.ok(implementer);
     assert.ok(archiver);
     assert.equal(archiver.platform, 'cursor');
-    assert.ok(
-      implementer.sources.some((src) => src.id === 'archive-hook-1'),
-      'hook between Implementer endedAt and archive start leftover-attaches to Implementer',
-    );
+    assert.equal(implementer.sourceIds.includes('archive-hook-1'), false, 'null-thread leftover is capped at 120 seconds');
     assert.equal(
-      archiver.sources.some((src) => src.id === 'archive-hook-1'),
+      archiver.sourceIds.includes('archive-hook-1'),
       false,
       'hook before archive start must not land on Archiver',
     );
@@ -2631,11 +2672,11 @@ test('archive collects Cursor hook written after archive start into the Archiver
     assert.ok(implementer);
     assert.ok(archiver);
     assert.ok(
-      archiver.sources.some((src) => src.id === 'archive-hook-after-start'),
+      archiver.sourceIds.includes('archive-hook-after-start'),
       'hook after archive pending.startedAt must land on Archiver',
     );
     assert.equal(
-      (implementer.sources || []).some((src) => src.id === 'archive-hook-after-start'),
+      (implementer.sourceIds || []).includes('archive-hook-after-start'),
       false,
     );
     assert.equal(typeof archiver.durationMs, 'number');
@@ -2708,12 +2749,9 @@ test('archive ignores leftover apply ## Metrics that would double-count', () => 
     assert.ok(implementer);
     assert.ok(archiver);
     assert.notEqual(archiver.inputTokens, 1000);
-    assert.ok(
-      implementer.sources.some((src) => src.id === 'archive-hook-stale'),
-      'stale apply hook leftover-attaches to Implementer',
-    );
+    assert.equal(implementer.sourceIds.includes('archive-hook-stale'), false, 'null-thread leftover is capped at 120 seconds');
     assert.equal(
-      archiver.sources.some((src) => src.id === 'archive-hook-stale'),
+      archiver.sourceIds.includes('archive-hook-stale'),
       false,
       'Archiver must not steal leftover apply hook tokens',
     );
@@ -2761,10 +2799,10 @@ test('persist prefers hook product id over --model family in session and spendBy
         model: 'cursor-grok-4.6-low',
         inputTokens: 10,
         outputTokens: 2,
-        at: '2026-08-29T12:00:00.000Z',
+        at: new Date().toISOString(),
       })}\n`,
     );
-    cliExec(dir, 'handoff add-thing --model cursor-grok-4.6 --collect');
+    cliExec(dir, 'handoff add-thing --model cursor-grok-4.6 --collect --started-at 2026-01-01T00:00:00Z');
     const metrics = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
     const session = metrics.sessions[0];
     assert.equal(session.model, 'cursor-grok-4.6-low');
@@ -2808,8 +2846,8 @@ test('leftover sources resync placeholder self-report totals to adapter', () => 
     });
     const metrics = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
     const session = metrics.sessions[0];
-    assert.ok(session.sources.some((src) => src.id === 'leftover-a'));
-    assert.ok(session.sources.some((src) => src.id === 'leftover-b'));
+    assert.ok(session.sourceIds.includes('leftover-a'));
+    assert.ok(session.sourceIds.includes('leftover-b'));
     assert.equal(session.inputTokens, 1463048);
     assert.equal(session.totalTokens, 1463048);
     assert.equal(session.spendSource, 'adapter');
@@ -2854,7 +2892,7 @@ test('sessionEnd leftover after archive attaches hook to archived metrics.json',
     const metrics = JSON.parse(readFileSync(metricsPath, 'utf-8'));
     const lastAfter = metrics.sessions[metrics.sessions.length - 1];
     assert.ok(
-      (lastAfter.sources || []).some((src) => src.id === 'archive-session-end-plus5'),
+      (lastAfter.sourceIds || []).includes('archive-session-end-plus5'),
       'sessionEnd leftover must attach +5s hook to archived metrics.json',
     );
   } finally {
@@ -2897,9 +2935,9 @@ test('sessionEnd leftover after empty archive attaches late +35s hook', () => {
     });
     const metrics = JSON.parse(readFileSync(metricsPath, 'utf-8'));
     const last = metrics.sessions.find((session) => session.role === 'Archiver');
-    assert.ok((last.sources || []).some((src) => src.id === 'archive-late-35s'));
+    assert.ok((last.sourceIds || []).includes('archive-late-35s'));
     assert.equal(last.spendSource, 'adapter');
-    const inputSum = (last.sources || []).reduce((sum, src) => sum + (src.inputTokens ?? 0), 0);
+    const inputSum = (last.byModel || []).reduce((sum, row) => sum + (row.inputTokens ?? 0), 0);
     assert.equal(last.inputTokens, inputSum);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -2985,7 +3023,7 @@ test('phase aggregates keep own clock and do not clone totals.leadTimeMs', () =>
   }
 });
 
-test('persist without pending uses earliest source.at as startedAt and keeps two sessions', () => {
+test('persist without pending uses createdAt then last.endedAt and ignores older sources', () => {
   const dir = mkdtempSync(join(tmpdir(), 'aok-earliest-start-'));
   try {
     runInit(dir, '--profile generic --name EarliestStart --lang en');
@@ -3007,8 +3045,9 @@ test('persist without pending uses earliest source.at as startedAt and keeps two
     cliExec(dir, 'handoff add-thing --collect');
     const first = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
     assert.equal(first.pending, null);
-    assert.equal(first.sessions[0].startedAt, t1);
-    assert.equal(first.sessions[0].durationMs, Date.parse(first.sessions[0].endedAt) - Date.parse(t1));
+    assert.equal(first.sessions[0].startedAt, first.createdAt);
+    assert.equal(first.sessions[0].sourceIds.includes('ac6-a'), false);
+    assert.equal(first.sessions[0].sourceIds.includes('ac6-b'), false);
 
     writeFileSync(
       join(dir, '.agents/spend/cursor-usage.jsonl'),
@@ -3023,8 +3062,9 @@ test('persist without pending uses earliest source.at as startedAt and keeps two
     cliExec(dir, 'handoff add-thing --collect');
     const metrics = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
     assert.equal(metrics.sessions.length, 2);
-    assert.equal(metrics.sessions[0].startedAt, t1);
-    assert.equal(metrics.sessions[0].durationMs, Date.parse(metrics.sessions[0].endedAt) - Date.parse(t1));
+    assert.equal(metrics.sessions[1].startedAt, metrics.sessions[0].endedAt);
+    assert.equal(metrics.sessions[1].sourceIds.includes('ac6-c'), false);
+    assert.equal(metrics.sessions[1].sourceIds.includes('ac6-d'), false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -4146,7 +4186,7 @@ test('persist resolve chains: flags beat self-report; self-report beats env; emp
     ]);
     cliExec(dir, 'handoff add-thing');
     const skipped = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions.at(-1);
-    assert.deepEqual(skipped.sources, []);
+    assert.deepEqual(skipped.sourceIds, []);
 
     writeFileSync(join(changeDir, 'handoff.md'), handoffWithMetrics({
       platform: 'claude',
@@ -4171,7 +4211,7 @@ test('persist resolve chains: flags beat self-report; self-report beats env; emp
     ]);
     cliExec(dir, 'handoff add-thing --collect --model cursor-grok-4.6');
     const collected = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions.at(-1);
-    assert.ok(collected.sources.length >= 1);
+    assert.ok(collected.sourceIds.length >= 1);
     assert.equal(collected.inputTokens, 1000);
     assert.equal(collected.model, 'claude-opus-4-7');
   } finally {
@@ -4354,14 +4394,16 @@ function leftoverImplementerSession(threadId, extra = {}) {
     outputTokens: 0,
     totalTokens: 495184,
     costUsd: 12.69,
-    sources: [{
-      id: 'T-apply:8',
+    sourceIds: ['T-apply:8'],
+    sourceTotals: { 'T-apply:8': 495184 },
+    byModel: [{
+      model: 'amp-model',
       platform: 'amp',
       inputTokens: 495184,
       outputTokens: 0,
       totalTokens: 495184,
       costUsd: null,
-      at: endedAt,
+      costUsdEstimated: null,
     }],
     ...extra,
   };
@@ -4467,7 +4509,7 @@ test('leftover Implementer without threadId keeps T-apply prefix and drops T-arc
   try {
     const session = leftoverImplementerSession(null);
     const { listed } = attachScopedLeftover(session, { cwd });
-    const ids = (session.sources || []).map((src) => src.id);
+    const ids = session.sourceIds || [];
     assert.equal(ids.includes('T-archive:2'), false);
     assert.equal(ids.includes('cursor-window-hook'), false);
     assert.equal(listed, 0);
@@ -4481,7 +4523,7 @@ test('leftover Implementer threadId T-apply accepts only T-apply sources', () =>
   try {
     const session = leftoverImplementerSession('T-apply');
     attachScopedLeftover(session, { cwd, applyMessageId: 'late', applyInput: 8 });
-    const ids = (session.sources || []).map((src) => src.id);
+    const ids = session.sourceIds || [];
     assert.ok(ids.includes('T-apply:8'));
     assert.ok(ids.includes('T-apply:late'));
     assert.ok(ids.every((id) => String(id).startsWith('T-apply:')));

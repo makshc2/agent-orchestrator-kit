@@ -303,11 +303,13 @@ function dedupeCursorSources(sources) {
 }
 
 function leftoverWindowEnd(metrics, last) {
-  if (metrics.pending && metrics.pending.startedAt) return metrics.pending.startedAt;
   if (!last || !last.endedAt) return null;
   const end = Date.parse(last.endedAt);
   if (!Number.isFinite(end)) return null;
-  return new Date(end + CURSOR_LEFTOVER_GRACE_MS).toISOString();
+  const grace = new Date(end + CURSOR_LEFTOVER_GRACE_MS).toISOString();
+  const pending = metrics.pending && metrics.pending.startedAt;
+  if (!pending || last.threadId) return pending || grace;
+  return Date.parse(pending) < Date.parse(grace) ? pending : grace;
 }
 
 function leftoverEndExclusive(metrics) {
@@ -317,9 +319,7 @@ function leftoverEndExclusive(metrics) {
 function existingIds(metrics) {
   const ids = new Set();
   for (const session of metrics.sessions || []) {
-    for (const src of session.sources || []) {
-      if (src && src.id != null && src.id !== '') ids.add(String(src.id));
-    }
+    for (const id of session.sourceIds || []) ids.add(String(id));
   }
   return ids;
 }
@@ -417,7 +417,7 @@ function sourceTotals(sources) {
 }
 
 function looksOverridden(session) {
-  const fromSources = sourceTotals(session.sources || []);
+  const fromSources = sourceTotals(session.byModel || []);
   return ['inputTokens', 'outputTokens', 'totalTokens', 'costUsd'].some((key) => {
     const sessionVal = numOrNull(session[key]);
     const sourceVal = numOrNull(fromSources[key]);
@@ -489,13 +489,7 @@ function recompute(metrics) {
       phase.endedAt = session.endedAt;
     }
     for (const spendKey of ['inputTokens', 'outputTokens', 'totalTokens', 'costUsd', 'costUsdEstimated']) {
-      const fromSession = numOrNull(session[spendKey]);
-      let value = fromSession;
-      if (value == null) {
-        let sum = null;
-        for (const src of session.sources || []) sum = addNullable(sum, numOrNull(src[spendKey]));
-        value = sum;
-      }
+      const value = numOrNull(session[spendKey]);
       phase[spendKey] = addNullable(phase[spendKey], value);
       spend[spendKey] = addNullable(spend[spendKey], value);
     }
@@ -508,27 +502,21 @@ function recompute(metrics) {
     }
     phases[key] = phase;
 
-    let sessionSourceCostUsd = null;
-    for (const src of session.sources || []) {
-      sessionSourceCostUsd = addNullable(sessionSourceCostUsd, numOrNull(src.costUsd));
-      const platform = src.platform;
-      if (platform && byPlatform[platform]) {
-        const bucket = byPlatform[platform];
-        bucket.inputTokens = addNullable(bucket.inputTokens, numOrNull(src.inputTokens));
-        bucket.outputTokens = addNullable(bucket.outputTokens, numOrNull(src.outputTokens));
-        bucket.totalTokens = addNullable(bucket.totalTokens, numOrNull(src.totalTokens));
-        bucket.costUsd = addNullable(bucket.costUsd, numOrNull(src.costUsd));
-        bucket.ampCredits = addNullable(bucket.ampCredits, numOrNull(src.ampCredits));
-        bucket.costUsdEstimated = addNullable(bucket.costUsdEstimated, numOrNull(src.costUsdEstimated));
-        if (platform === 'claude') bucket.source = 'claude-jsonl';
-        else if (platform === 'amp') bucket.source = 'amp-thread';
-        else if (platform === 'cursor') bucket.source = 'cursor-hook';
+    const platform = session.platform;
+    if (platform && byPlatform[platform]) {
+      const bucket = byPlatform[platform];
+      for (const key of ['inputTokens', 'outputTokens', 'totalTokens', 'costUsd', 'ampCredits', 'costUsdEstimated']) {
+        bucket[key] = addNullable(bucket[key], numOrNull(session[key]));
       }
+      if ((session.sourceIds || []).length) bucket.source = platform === 'cursor' ? 'cursor-hook' : `${platform}-jsonl`;
+    }
+    const modelRows = (session.byModel || []).length ? session.byModel : [session];
+    for (const src of modelRows) {
       if (src.model) {
-        const modelKey = `${src.model}::${src.platform || ''}`;
+        const modelKey = `${src.model}::${src.platform || session.platform || ''}`;
         const row = byModel.get(modelKey) || {
           model: src.model,
-          platform: src.platform || null,
+          platform: src.platform || session.platform || null,
           inputTokens: null,
           outputTokens: null,
           totalTokens: null,
@@ -544,11 +532,6 @@ function recompute(metrics) {
         row.costUsdEstimated = addNullable(row.costUsdEstimated, numOrNull(src.costUsdEstimated));
         byModel.set(modelKey, row);
       }
-    }
-    const sessionCostUsd = numOrNull(session.costUsd);
-    if (sessionSourceCostUsd == null && sessionCostUsd != null) {
-      const billedBucket = session.platform && byPlatform[session.platform];
-      if (billedBucket) billedBucket.costUsd = addNullable(billedBucket.costUsd, sessionCostUsd);
     }
   }
 
@@ -583,7 +566,6 @@ function incomingCursorSources(cwd, existing, fingerprints, windowStart, windowE
   const filterId = String(filterConversationId || '').trim();
   const bestById = new Map();
   for (const [id, row] of byId) {
-    if (existing.has(id)) continue;
     if (filterId) {
       const rowConversationId = row.conversationId == null || row.conversationId === ''
         ? ''
@@ -631,14 +613,7 @@ function incomingCursorSources(cwd, existing, fingerprints, windowStart, windowE
 }
 
 function existingFingerprints(metrics) {
-  const set = new Set();
-  for (const session of metrics.sessions || []) {
-    for (const src of session.sources || []) {
-      const fp = cursorSpendFingerprint(src);
-      if (fp) set.add(fp);
-    }
-  }
-  return set;
+  return new Set();
 }
 
 function sessionHasSpendNumbers(session) {
@@ -661,7 +636,7 @@ function sessionSpendFrozen(session) {
 
 function syncAdapterSessionTotals(session) {
   if (sessionSpendFrozen(session)) return false;
-  const totals = sourceTotals(session.sources || []);
+  const totals = sourceTotals(session.byModel || []);
   let changed = false;
   for (const key of ['inputTokens', 'outputTokens', 'totalTokens', 'costUsd', 'costUsdEstimated']) {
     if (session[key] !== totals[key]) {
@@ -669,7 +644,7 @@ function syncAdapterSessionTotals(session) {
       changed = true;
     }
   }
-  if ((session.sources || []).length > 0 && session.spendSource !== 'adapter') {
+  if ((session.sourceIds || []).length > 0 && session.spendSource !== 'adapter') {
     session.spendSource = 'adapter';
     changed = true;
   }
@@ -677,27 +652,113 @@ function syncAdapterSessionTotals(session) {
 }
 
 function enrichMetrics(metrics, cwd) {
-  const byId = loadCursorUsageById(cwd);
   let changed = false;
   for (const session of metrics.sessions || []) {
-    const deduped = dedupeCursorSources(session.sources || []);
-    if (deduped.length !== (session.sources || []).length) {
-      session.sources = deduped;
-      changed = true;
-    } else {
-      session.sources = deduped;
-    }
-    if (attachCursorEstimates(session.sources || [], byId)) changed = true;
     if (syncAdapterSessionTotals(session)) changed = true;
     if (
       session.spendSource === 'unreported'
-      && (session.inputTokens != null || session.totalTokens != null || (session.sources || []).length)
+      && (session.inputTokens != null || session.totalTokens != null || (session.sourceIds || []).length)
     ) {
       session.spendSource = 'adapter';
       changed = true;
     }
   }
   return changed;
+}
+
+function compactModelRows(sources) {
+  const rows = new Map();
+  for (const source of sources || []) {
+    if (!source) continue;
+    const model = source.model == null || source.model === '' ? null : String(source.model);
+    const key = `${source.platform || ''}::${model || ''}`;
+    const row = rows.get(key) || {
+      model,
+      platform: source.platform || null,
+      inputTokens: null,
+      outputTokens: null,
+      totalTokens: null,
+      costUsd: null,
+      costUsdEstimated: null,
+    };
+    for (const field of ['inputTokens', 'outputTokens', 'totalTokens', 'costUsd']) {
+      row[field] = addNullable(row[field], numOrNull(source[field]));
+    }
+    row.costUsdEstimated = roundUsd4(addNullable(row.costUsdEstimated, numOrNull(source.costUsdEstimated)));
+    if (source.costSource) row.costSource = source.costSource;
+    rows.set(key, row);
+  }
+  return [...rows.values()];
+}
+
+function mergeModelRows(current, incoming) {
+  return compactModelRows([...(current || []), ...(incoming || [])]);
+}
+
+function normalizeMetricsV2(metrics) {
+  metrics.version = 2;
+  metrics.sessions = Array.isArray(metrics.sessions) ? metrics.sessions : [];
+  for (const session of metrics.sessions) {
+    if (Array.isArray(session.sources)) {
+      const bestById = new Map();
+      for (const source of session.sources) {
+        if (!source || source.id == null || source.id === '') continue;
+        const id = String(source.id);
+        const previous = bestById.get(id);
+        if (!previous || (numOrNull(source.totalTokens) ?? 0) >= (numOrNull(previous.totalTokens) ?? 0)) bestById.set(id, source);
+      }
+      const compactSources = [...bestById.values()].map((source) => ({
+        ...source,
+        model: source.model || session.model || null,
+        platform: source.platform || session.platform || null,
+      }));
+      session.sourceIds = [];
+      session.sourceTotals = {};
+      for (const source of compactSources) {
+        if (!source || source.id == null || source.id === '') continue;
+        const id = String(source.id);
+        if (!session.sourceIds.includes(id)) session.sourceIds.push(id);
+        const total = numOrNull(source.totalTokens);
+        if (total != null) session.sourceTotals[id] = Math.max(numOrNull(session.sourceTotals[id]) ?? 0, total);
+      }
+      session.byModel = compactModelRows(compactSources);
+      if (!session.platform && compactSources[0] && compactSources[0].platform) session.platform = compactSources[0].platform;
+      if (!session.model && compactSources[0] && compactSources[0].model) session.model = compactSources[0].model;
+      delete session.sources;
+    } else {
+      session.sourceIds = Array.isArray(session.sourceIds) ? [...new Set(session.sourceIds.map(String))] : [];
+      session.sourceTotals = session.sourceTotals && typeof session.sourceTotals === 'object' ? session.sourceTotals : {};
+      session.byModel = Array.isArray(session.byModel) ? session.byModel : [];
+    }
+  }
+  return metrics;
+}
+
+function mergeIncomingCompact(session, incoming) {
+  session.sourceIds = Array.isArray(session.sourceIds) ? session.sourceIds : [];
+  session.sourceTotals = session.sourceTotals && typeof session.sourceTotals === 'object' ? session.sourceTotals : {};
+  const deltaSources = [];
+  for (const source of incoming || []) {
+    const id = String(source.id);
+    const previous = numOrNull(session.sourceTotals[id]);
+    const next = numOrNull(source.totalTokens);
+    if (!session.sourceIds.includes(id)) session.sourceIds.push(id);
+    if (next != null) session.sourceTotals[id] = Math.max(previous ?? 0, next);
+    if (previous == null || next == null) {
+      deltaSources.push(source);
+      continue;
+    }
+    const delta = Math.max(0, next - previous);
+    if (!delta) continue;
+    const ratio = next > 0 ? delta / next : 0;
+    const copy = { ...source };
+    for (const field of ['inputTokens', 'outputTokens', 'totalTokens', 'costUsd', 'costUsdEstimated']) {
+      const value = numOrNull(copy[field]);
+      if (value != null) copy[field] = field.includes('Usd') ? roundUsd4(value * ratio) : Math.round(value * ratio);
+    }
+    deltaSources.push(copy);
+  }
+  session.byModel = mergeModelRows(session.byModel, compactModelRows(deltaSources));
 }
 
 function backfillMetricsFile(cwd, filePath) {
@@ -709,18 +770,14 @@ function backfillMetricsFile(cwd, filePath) {
     return;
   }
   if (!metrics || typeof metrics !== 'object') return;
+  const schemaChanged = metrics.version !== 2 || (metrics.sessions || []).some((session) => Array.isArray(session.sources));
+  normalizeMetricsV2(metrics);
   const sessions = Array.isArray(metrics.sessions) ? metrics.sessions : [];
   if (!sessions.length) return;
-  let collapsed = false;
-  for (const session of sessions) {
-    const next = dedupeCursorSources(session.sources || []);
-    if (next.length !== (session.sources || []).length) collapsed = true;
-    session.sources = next;
-  }
   const last = sessions[sessions.length - 1];
   const byId = loadCursorUsageById(cwd);
   const leftoverEnd = leftoverWindowEnd(metrics, last);
-  const incoming = last.endedAt && leftoverEnd
+  const incoming = (last.endedAt && leftoverEnd
     ? incomingCursorSources(
       cwd,
       existingIds(metrics),
@@ -731,11 +788,16 @@ function backfillMetricsFile(cwd, filePath) {
       leftoverEndExclusive(metrics),
       last.threadId,
     )
-    : [];
+    : []).filter((source) => {
+      const previous = numOrNull(last.sourceTotals && last.sourceTotals[source.id]);
+      return previous == null || (numOrNull(source.totalTokens) ?? 0) > previous;
+    });
   if (incoming.length) {
-    last.sources = [...(last.sources || []), ...incoming];
+    mergeIncomingCompact(last, incoming);
+    if (!last.platform) last.platform = 'cursor';
+    if (!last.model && incoming[0].model) last.model = incoming[0].model;
     if (!sessionSpendFrozen(last)) {
-      const totals = sourceTotals(last.sources);
+      const totals = sourceTotals(last.byModel);
       last.inputTokens = totals.inputTokens;
       last.outputTokens = totals.outputTokens;
       last.totalTokens = totals.totalTokens;
@@ -745,7 +807,7 @@ function backfillMetricsFile(cwd, filePath) {
     }
   }
   const enriched = enrichMetrics(metrics, cwd);
-  if (!incoming.length && !enriched && !collapsed) return;
+  if (!incoming.length && !enriched && !schemaChanged) return;
   metrics.updatedAt = new Date().toISOString();
   recompute(metrics);
   writeFileSync(filePath, `${JSON.stringify(metrics, null, 2)}\n`);
