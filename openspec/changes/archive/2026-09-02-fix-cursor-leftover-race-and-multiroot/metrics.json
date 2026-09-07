@@ -2,7 +2,7 @@
   "version": 2,
   "change": "fix-cursor-leftover-race-and-multiroot",
   "createdAt": "2026-09-02T16:40:29.977Z",
-  "updatedAt": "2026-09-07T19:56:29.672Z",
+  "updatedAt": "2026-09-07T20:12:01.608Z",
   "archivedAt": "2026-09-02T19:48:28.542Z",
   "spend": {
     "inputTokens": 1619064,
