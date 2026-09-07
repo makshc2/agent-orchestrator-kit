@@ -15,8 +15,9 @@ On every invocation:
 4. Map what you find to the correct next command:
    - No `proposal.md` yet → `/opsx:propose <name>`
    - `require_design_brief: true`, UI-touching change, no `design-brief.md`, no `Design: none` in `proposal.md` → `/opsx:design <name>`
-   - `proposal.md` exists but no `review.md` with `Verdict: APPROVE` → `/opsx:review <name>` (must run in a separate read-only session)
-   - `review.md` says APPROVE but `tasks.md` has unchecked `- [ ]` items → `/opsx:apply <name>`
+   - `proposal.md` exists but no `review.md` → `/opsx:review <name>` (must run in a separate read-only session)
+   - `review.md` contains `Verdict: REQUEST CHANGES` → `/opsx:propose <name>`
+   - `review.md` has `Verdict: APPROVE` but `tasks.md` has unchecked `- [ ]` items → `/opsx:apply <name>`
    - All tasks `[x]` and review approved → ready to archive, suggest `/opsx:archive <name>` (or note that GitLab/GitHub CI auto-archives after merge if `archive_after_merge: true`)
 5. If a CI gate (`gate-check`, `verify-openspec-pr`) is failing, reproduce the check locally (`npx agent-orchestrator-kit gate-check <name>`, `npm run verify:openspec:pr`) and quote the exact failing reason from its output — don't guess.
 6. If `pipeline.max_active_changes` is exceeded, say so explicitly and name which changes are over the limit.

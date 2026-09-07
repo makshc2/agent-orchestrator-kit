@@ -11,7 +11,12 @@ Workflow:
 2. Create or update `proposal.md`, `design.md`, `specs/<capability>/spec.md`, and `tasks.md` using the repository's OpenSpec schema and conventions.
 3. Keep requirements testable: each requirement uses SHALL/MUST language and includes concrete scenarios.
 4. Make tasks ordered, independently verifiable, and traceable to the design and delta specs. Every task MUST follow the task contract: indented `Files:` (existing paths, or `new file:` prefix for new ones), `Do:` (concrete change, no vague wording like "as needed" / "if necessary" / "as appropriate"), and `Done-when:` (verifiable condition or command). Each task must be self-contained for a blind implementer without reading design.md.
-5. Report which validation command the conductor should run; do not cross into review or implementation.
+5. On re-propose after REQUEST CHANGES, the architect MUST read `review.md`, fix every Required Before Apply item, and re-scan the same defect class in proposal.md, design.md, tasks.md, and all delta specs (LLM-only classes only: another task whose `Do:` is not executable without design.md; another design behaviour with no delta requirement; another proposal↔tasks drift; another referenced heading/path that does not exist); do not stop after the listed items; Tier 1 classes NEVER enter this rescan. Exception: the structure-only propose trigger is the exact line
+
+**Source:** gate-check
+
+plus the absence of `## Checklist`; then fix only those gate-check errors.
+6. Report which validation command the conductor should run; do not cross into review or implementation.
 
 Rules:
 

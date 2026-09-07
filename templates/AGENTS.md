@@ -25,7 +25,7 @@ Routing table, HARD STOP, and CLI forms: `.agents/rules/` (`agent-orchestration`
 
 Session Start / Exit are **parent-driven** — canonical protocol in `.agents/rules/session-handoff.mdc`. Start: `status` → `handoff --restore` → `handoff.md` fallback. Exit HARD STOP: parent writes `handoff.md` including `## Metrics` (use `unknown` when a value is missing) → `npx agent-orchestrator-kit handoff <name>` (exit 0; optional `--collect`) → paste the CLI `/opsx:*` prompt. `session-handoff` subagent = fallback only. Do not start the next phase here.
 
-Quality gates: `gate-check --tasks <name>` lints the task contract (Files/Do/Done-when, `pipeline.task_contract: warn|strict|off`); `gate-check --review <name>` is deterministic Tier 1 of review — spec-reviewer (Tier 2) is spawned only after it passes and writes `apply-notes.md` on APPROVE.
+Quality gates: `gate-check --tasks <name>` lints the task contract (Files/Do/Done-when, `pipeline.task_contract: warn|strict|off`); `gate-check --review <name>` is deterministic Tier 1 of review — spec-reviewer (Tier 2) is spawned only after it passes and writes `apply-notes.md` on APPROVE. Spec review discovery loops ≤ 2 (optional Tier 1 structural RC plus one semantic Tier 2 RC; a confirmation APPROVE after an exhaustive propose does not count). Anti-pattern: one-finding review loop — fragments defects across many propose/review sessions.
 
 ## Hard rules
 - One active change (unless mvp profile).

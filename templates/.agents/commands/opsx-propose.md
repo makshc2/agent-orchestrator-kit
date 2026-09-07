@@ -35,6 +35,12 @@ When ready to implement, run /opsx:apply
 
 Each task must be self-contained for a blind implementer — executable without reading design.md. `Files:` paths must exist unless prefixed with `new file:`. Lint: `npx agent-orchestrator-kit gate-check --tasks <name>` (mode via `pipeline.task_contract: warn|strict|off`).
 
+On re-propose after `review.md` Verdict REQUEST CHANGES, the conductor MUST pass `review.md` (path + verdict + Required Before Apply list) in the `spec-architect` spawn prompt and verify the report addresses every item; the parent MUST NOT itself edit proposal/design/specs/tasks. Exception: the structure-only propose trigger is the exact line
+
+**Source:** gate-check
+
+plus the absence of `## Checklist`; then fix only those gate-check errors.
+
 **Steps**
 
 1. **If no input provided, ask what they want to build**

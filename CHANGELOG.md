@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- Kit templates require an exhaustive Tier 2 punch list (full scan before the verdict; schema Checklist / Findings / Required Before Apply / Previous findings). After REQUEST CHANGES the next command is `/opsx:propose`; `openspec-guide` no longer maps RC back to review. Metric: Spec review discovery loops ≤ 2.
+
 ## [0.14.0] - 2026-09-07
 
 ### Changed

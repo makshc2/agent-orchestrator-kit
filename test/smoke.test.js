@@ -631,6 +631,38 @@ test('opsx-review writes review.md and vue3 checklist', () => {
   assert.match(review, /Vue 3/);
 });
 
+test('review punch-list templates route RC to propose', () => {
+  const review = readFileSync(join(KIT_ROOT, 'templates/.agents/commands/opsx-review.md'), 'utf-8');
+  const specReviewer = readFileSync(join(KIT_ROOT, 'templates/.agents/subagents/spec-reviewer.md'), 'utf-8');
+  const propose = readFileSync(join(KIT_ROOT, 'templates/.agents/commands/opsx-propose.md'), 'utf-8');
+  const proposeSkill = readFileSync(join(KIT_ROOT, 'templates/.agents/skills/openspec-propose/SKILL.md'), 'utf-8');
+  const architect = readFileSync(join(KIT_ROOT, 'templates/.agents/subagents/spec-architect.md'), 'utf-8');
+  const guide = readFileSync(join(KIT_ROOT, 'templates/.agents/subagents/openspec-guide.md'), 'utf-8');
+  const skill = readFileSync(join(KIT_ROOT, 'templates/.agents/skills/agent-orchestration/SKILL.md'), 'utf-8');
+  const agents = readFileSync(join(KIT_ROOT, 'templates/AGENTS.md'), 'utf-8');
+
+  assert.match(review, /MUST NOT stop at the first blocking/);
+  assert.match(specReviewer, /MUST NOT stop at the first blocking/);
+  assert.match(review, /Previous findings/);
+  assert.match(specReviewer, /Previous findings/);
+  assert.match(review, /same defect class/);
+  assert.match(specReviewer, /same defect class/);
+  assert.match(review, /Required Before Apply/);
+  assert.match(specReviewer, /Required Before Apply/);
+  assert.match(architect, /Required Before Apply/);
+  assert.match(propose, /Required Before Apply/);
+  assert.match(proposeSkill, /Required Before Apply/);
+  assert.match(review, /Verdict: REQUEST CHANGES.*\/opsx:propose/);
+  assert.match(guide, /Verdict: REQUEST CHANGES.*\/opsx:propose/);
+  assert.match(skill, /run `\/opsx:propose <name>` to fix the punch list/);
+  assert.match(skill, /Spec review discovery loops: ≤ 2/);
+  assert.match(skill, /one-finding review loop/);
+  assert.match(review, /\*\*Source:\*\* gate-check/);
+  assert.doesNotMatch(skill, /Spec review loops: ≤ 1/);
+  assert.doesNotMatch(guide, /no `review\.md` with `Verdict: APPROVE`/);
+  assert.ok(agents.length > 0);
+});
+
 function initGit(dir) {
   execSync('git init -q', { cwd: dir });
   execSync('git config user.email "test@example.com"', { cwd: dir });

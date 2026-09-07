@@ -109,7 +109,7 @@ Before apply, check `.agents/orchestrator.yaml`:
 - `require_spec_review: true` → apply MUST find `review.md` with `Verdict: APPROVE` or Approve in session
 - `require_spec_review: false` → apply allowed directly (mvp / quick mode)
 
-If Request Changes — fix artifacts, re-run `/opsx:review`.
+If Request Changes — run `/opsx:propose <name>` to fix the punch list, then a new `/opsx:review`.
 
 This is no longer only a chat convention: `npx agent-orchestrator-kit gate-check` runs in CI (both `agent-verify.yml` fragments) and fails the pipeline if `src/` changed without an approved `review.md` — a forgotten or skipped review is caught at merge time, not just at apply time. When `require_design_brief: true`, the same command also requires `design-brief.md` (or `Design: none` in `proposal.md`).
 
@@ -257,12 +257,13 @@ Before declaring a session closed, the parent MUST, in order: (1) write `openspe
 | No archive after merge | Next propose has stale domain specs |
 | Strong model on lint fixes | 5–10x cost with no quality gain |
 | Skip Memory MCP / skip `handoff` CLI | Next thread has no context; Amp looks like it “ignored the rules” |
+| one-finding review loop | fragments defects across many propose/review sessions |
 
 ## Metrics (health check per change)
 
 - Sessions: 4–8 (not 1 marathon, not 20 micro-sessions)
 - Apply iterations to PR: ≤ 2
-- Spec review loops: ≤ 1
+- Spec review discovery loops: ≤ 2 (optional Tier 1 structural RC plus one semantic Tier 2 RC; a confirmation APPROVE after an exhaustive propose does not count as a discovery loop)
 - Tasks rework: ≤ 10%
 
 If apply iterations > 2 → problem is in Architect or Reviewer, not Implementer.

@@ -1,8 +1,8 @@
 {
-  "version": 1,
+  "version": 2,
   "change": "fix-metrics-model-and-spend",
   "createdAt": "2026-08-29T08:29:57.506Z",
-  "updatedAt": "2026-08-31T20:17:52.582Z",
+  "updatedAt": "2026-09-07T19:12:47.965Z",
   "archivedAt": "2026-08-29T09:39:22.213Z",
   "spend": {
     "inputTokens": null,
@@ -40,7 +40,28 @@
       "source": "none"
     }
   },
-  "spendByModel": [],
+  "spendByModel": [
+    {
+      "model": "cursor-grok-4.6",
+      "platform": null,
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null
+    },
+    {
+      "model": "cursor-grok-4.6",
+      "platform": "cursor",
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null
+    }
+  ],
   "totals": {
     "sessions": 7,
     "durationMs": 2449985,
@@ -51,6 +72,9 @@
     "spec": {
       "sessions": 3,
       "durationMs": 467553,
+      "startedAt": "2026-08-29T08:53:59.249Z",
+      "endedAt": "2026-08-29T09:01:46.802Z",
+      "leadTimeMs": 467553,
       "inputTokens": null,
       "outputTokens": null,
       "totalTokens": null,
@@ -67,6 +91,9 @@
     "review": {
       "sessions": 2,
       "durationMs": 763251,
+      "startedAt": "2026-08-29T08:46:50.685Z",
+      "endedAt": "2026-08-29T09:09:40.361Z",
+      "leadTimeMs": 1369676,
       "inputTokens": null,
       "outputTokens": null,
       "totalTokens": null,
@@ -82,6 +109,9 @@
     "apply": {
       "sessions": 1,
       "durationMs": 1219181,
+      "startedAt": "2026-08-29T09:10:43.859Z",
+      "endedAt": "2026-08-29T09:31:03.040Z",
+      "leadTimeMs": 1219181,
       "inputTokens": null,
       "outputTokens": null,
       "totalTokens": null,
@@ -97,6 +127,9 @@
     "archive": {
       "sessions": 1,
       "durationMs": null,
+      "startedAt": "2026-08-29T09:39:22.213Z",
+      "endedAt": "2026-08-29T09:39:22.213Z",
+      "leadTimeMs": 0,
       "inputTokens": null,
       "outputTokens": null,
       "totalTokens": null,
@@ -125,8 +158,10 @@
       "outputTokens": null,
       "totalTokens": null,
       "costUsd": null,
-      "sources": [],
-      "costUsdEstimated": null
+      "costUsdEstimated": null,
+      "sourceIds": [],
+      "sourceTotals": {},
+      "byModel": []
     },
     {
       "startedAt": null,
@@ -142,8 +177,10 @@
       "outputTokens": null,
       "totalTokens": null,
       "costUsd": null,
-      "sources": [],
-      "costUsdEstimated": null
+      "costUsdEstimated": null,
+      "sourceIds": [],
+      "sourceTotals": {},
+      "byModel": []
     },
     {
       "startedAt": "2026-08-29T08:46:50.685Z",
@@ -159,8 +196,10 @@
       "outputTokens": null,
       "totalTokens": null,
       "costUsd": null,
-      "sources": [],
-      "costUsdEstimated": null
+      "costUsdEstimated": null,
+      "sourceIds": [],
+      "sourceTotals": {},
+      "byModel": []
     },
     {
       "startedAt": "2026-08-29T08:53:59.249Z",
@@ -176,8 +215,10 @@
       "outputTokens": null,
       "totalTokens": null,
       "costUsd": null,
-      "sources": [],
-      "costUsdEstimated": null
+      "costUsdEstimated": null,
+      "sourceIds": [],
+      "sourceTotals": {},
+      "byModel": []
     },
     {
       "startedAt": "2026-08-29T09:03:23.434Z",
@@ -193,8 +234,10 @@
       "outputTokens": null,
       "totalTokens": null,
       "costUsd": null,
-      "sources": [],
-      "costUsdEstimated": null
+      "costUsdEstimated": null,
+      "sourceIds": [],
+      "sourceTotals": {},
+      "byModel": []
     },
     {
       "startedAt": "2026-08-29T09:10:43.859Z",
@@ -207,12 +250,14 @@
       "model": "cursor-grok-4.6",
       "platform": "cursor",
       "tasks": "14/14",
-      "sources": [],
       "inputTokens": null,
       "outputTokens": null,
       "totalTokens": null,
       "costUsd": null,
-      "costUsdEstimated": null
+      "costUsdEstimated": null,
+      "sourceIds": [],
+      "sourceTotals": {},
+      "byModel": []
     },
     {
       "startedAt": "2026-08-29T09:39:22.213Z",
@@ -225,12 +270,14 @@
       "model": "cursor-grok-4.6",
       "platform": "cursor",
       "tasks": "14/14",
-      "sources": [],
       "inputTokens": null,
       "outputTokens": null,
       "totalTokens": null,
       "costUsd": null,
-      "costUsdEstimated": null
+      "costUsdEstimated": null,
+      "sourceIds": [],
+      "sourceTotals": {},
+      "byModel": []
     }
   ],
   "pending": null

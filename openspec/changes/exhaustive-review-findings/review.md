@@ -1,0 +1,64 @@
+# Spec Review
+
+**Change:** exhaustive-review-findings
+**Date:** 2026-09-07
+**Reviewer:** spec-reviewer (Tier 2, review cycle 2)
+**Tier 1:** `npx agent-orchestrator-kit gate-check --review exhaustive-review-findings` — PASSED (reported by conductor)
+**Strict validation:** `npx openspec validate exhaustive-review-findings --strict --type change` → `Change 'exhaustive-review-findings' is valid`
+**Reviewed:** cycle-1 `review.md` (read before overwrite), proposal.md, design.md, tasks.md, decisions.md, handoff.md, specs/tiered-review/spec.md, specs/pipeline-subagents/spec.md; main specs `openspec/specs/tiered-review/spec.md`, `openspec/specs/pipeline-subagents/spec.md`, `openspec/specs/task-contract/spec.md`, `openspec/specs/session-handoff/spec.md` (handoff sections / next_command), `openspec/specs/change-metrics/spec.md` (review-phase mentions); `openspec/config.yaml`; `templates/.agents/commands/opsx-review.md`, `templates/.agents/commands/opsx-propose.md`, `templates/.agents/skills/openspec-propose/SKILL.md`, `templates/.agents/subagents/spec-architect.md`, `templates/.agents/subagents/spec-reviewer.md`, `templates/.agents/subagents/openspec-guide.md`, `templates/.agents/skills/agent-orchestration/SKILL.md` (lines 6–112, 249–270), `templates/AGENTS.md` (line 28), `test/smoke.test.js` (lines 620–640, gate-check tests), `CHANGELOG.md`, `package.json` version; `bin/agent-orchestrator.js` `parseReviewVerdict` (line 3031) and `runTier1Review` (line 3149) locations. `.agents/orchestrator.yaml` does not exist in this repo (no vue3 section).
+
+## Checklist
+
+| # | Tier 2 item | Result | Evidence |
+|---|-------------|--------|----------|
+| 1 | proposal ↔ design ↔ tasks tell the same story | ✓ | `Previous findings` rule is now the same sentence in proposal REVIEW-MD-SCHEMA, design D4 + Risks bullet 2, tiered-review delta requirement "Схема review.md…" + scenario "T2 REQUEST CHANGES має всі обов'язкові секції" (GIVEN now states "перед спавном `review.md` не існував"), tasks 1.1 and 1.2. Recovery protocol (re-spawn once → `## Blocked` + `/opsx:review <name>`) identical in proposal PARENT-HEADING-CHECK, design D4, task 1.1. Guide routing "replace only line 18, keep line 19 as the single APPROVE branch" identical in proposal GUIDE-ROUTING / Impact, design D8, task 2.2. Metric colon form (skill) vs no-colon form (AGENTS.md) identical in proposal HEALTH-METRIC, design D9, tasks 3.1/3.2, delta "Метрика discovery loops". T1 marker `**Source:** gate-check` + no `## Checklist` identical in proposal AC 1/8, design D1/D2/D6, tasks 1.1/2.1, both deltas. |
+| 2 | Delta specs cover all changed/added behaviour described in design | ✓ | D1/D2 → tiered-review "Схема review.md" scenario "T1-only RC не вимагає LLM-Checklist" + "Next command після REQUEST CHANGES". D3 → "Повнота повторного review" (read before overwrite, carry punch list). D4 → "Схема review.md" + "Перевірка заголовків conductor-ом після Tier 2" incl. new scenario "Другий неконформний RC веде в review, не в propose" and the "existence fact + path in spawn prompt" sentence (also in pipeline-subagents "Parent вставляє чекліст"). D6 → pipeline-subagents "Повторний propose після REQUEST CHANGES" with split conductor/architect subjects. D7 → "Parent вставляє чекліст Tier 2". D8 → "openspec-guide маршрутизує…". D9 → "Метрика discovery loops". D5 (no CLI counter) is a Non-goal and needs no delta. |
+| 3 | No conflicts with existing `openspec/specs/` requirements | ✓ | Same-class examples are now LLM-only in proposal RE-REVIEW-CLASS, design Risks bullet 4, tiered-review "Повнота повторного review", pipeline-subagents "Повторний propose…"; each states Tier 1 classes NEVER enter the rescan — consistent with main tiered-review scenario "Tier 1 OK передає скорочений чекліст у Tier 2 … без пунктів, які вже покрив Tier 1". Main scenario "Падіння Tier 1 завершує review без LLM-читання" explicitly preserved. Main "apply-notes.md при APPROVE" preserved (delta heading-check requirement last sentence; task 1.2 keeps it). Parent T1 write vs pipeline-subagents "MUST NOT сама писати вердикт" is now named an accepted exception in both deltas (n3 applied). No ADDED requirement name duplicates an existing one; task-contract untouched (Non-goal). session-handoff template already has `## Blocked` / `## Next command`, so the blocked-exit scenario needs no session-handoff delta. |
+| 4 | No scope creep vs proposal Non-goals | ✓ | Tasks touch exactly the 9 Impact paths; no `bin/`, no `gate-check --review` / `runTier1Review` change, no new flag, no findings-count gate (task 3.2 forbids `findings.length`), no consumer patches, no task-contract spec change. |
+| 5 | Task self-sufficiency (blind implementer, no design.md) | ✓ | 1.1: exact strings to replace (`(source: gate-check)` → `**Source:** gate-check`, "### Issues Found" example, "Fix the above, then re-run…"), exact rules to add, recovery protocol spelled out, Done-when anchors are new phrases (`MUST NOT stop at the first blocking`, `none — first review cycle`, `paste the full Tier 2 checklist`, `re-spawn \`spec-reviewer\` once`, `MUST NOT rewrite`). 1.2: specialist-only sentences, explicit "read the existing `review.md` before overwriting it". 2.1: per-file subject (conductor: pass path + verdict + Required Before Apply, verify report, parent does not edit; architect: read, fix every item, rescan LLM-only class), T1-only trigger defined by the marker line + absence of `## Checklist`. 2.2: quotes lines 18 and 19 verbatim, "replace only line 18", "reword says APPROVE → `Verdict: APPROVE`", "no second APPROVE→apply rule". 3.1: exact old/new strings for lines 112 and 265, anti-pattern row wording, AGENTS.md anchor paragraph. 3.2: anchor at existing test name, list of regexes, colon-form note. 3.3: content and package.json guard. |
+| 6 | Repository references exist and quoted text matches reality | ✓ | All 9 Files paths exist. opsx-review.md line 41 contains "(source: gate-check)", lines 126–132 "### Issues Found" with exactly 2 bullets, line 137 "Fix the above, then re-run `/opsx:review <name>`.", line 64 Vue 3 block keyed on `project.stack: vue3`. openspec-guide.md line 18 = "`proposal.md` exists but no `review.md` with `Verdict: APPROVE` → `/opsx:review <name>` (must run in a separate read-only session)" and line 19 = "`review.md` says APPROVE but `tasks.md` has unchecked `- [ ]` items → `/opsx:apply <name>`" — both quoted verbatim in task 2.2. agent-orchestration/SKILL.md line 112 "If Request Changes — fix artifacts, re-run `/opsx:review`.", line 249 "## Anti-patterns" table, line 265 "- Spec review loops: ≤ 1". templates/AGENTS.md line 28 begins "Quality gates: `gate-check --tasks <name>` lints the task contract". test/smoke.test.js line 628 `test('opsx-review writes review.md and vue3 checklist'`. CHANGELOG.md has an empty `## [Unreleased]`; package.json version 0.14.0. `parseReviewVerdict` regex `\*{0,2}Verdict:\*{0,2}\s*(.+?)` accepts `**Verdict:** REQUEST CHANGES` / `APPROVE`. `rg` 14.1.1 present. No other template carries "re-run `/opsx:review`" besides the two targeted lines. |
+
+Same-defect-class rescan (LLM-only classes from cycle 1; Tier 1 classes excluded): (a) unenforceable `Do:` — none: every task names exact strings/lines; (b) design behaviour with no delta — none: each of D1–D4, D6–D9 maps to a delta requirement (table row 2); (c) proposal↔tasks drift — none: AC 1–12 each map to a task Done-when (AC1→1.1, AC2→1.1/1.2, AC3/4→1.1/1.2, AC5/6/7→1.1, AC8→2.1, AC9→2.2, AC10→3.1, AC11→3.2, AC12→3.3); (d) missing referenced heading/path — none: all quoted line numbers and strings verified above.
+
+## Findings
+
+### Blocking
+(none)
+
+### Major
+(none)
+
+### Minor
+(none)
+
+### Nit
+
+**n5 — "після існуючого абзацу task-contract" has no literal paragraph in spec-architect.md**
+Files: `tasks.md` 2.1; `templates/.agents/subagents/spec-architect.md`.
+Problem: the two conductor files have a "**Task contract**" paragraph (lines 27–36); spec-architect.md carries the task contract inside Workflow step 4. Placement in spec-architect.md is therefore "after step 4 / in Rules" by inference. Not blocking — Done-when is string-based, not position-based.
+Required fix: optional; implementer inserts the architect block after Workflow step 4 (or as a Rules bullet).
+
+**n6 — decisions.md line 7 vs line 20**
+Files: `decisions.md`.
+Problem: the early entry "Після будь-якого REQUEST CHANGES next command — `/opsx:propose`" is refined by the later entry "NEXT-AFTER-RC applies only to an accepted schema-conforming RC". The file is append-only and the later entry governs; no artifact edit required.
+Required fix: none.
+
+**n3 (carried, optional)** — pipeline-subagents main requirement "MUST NOT сама писати артефакти чи вердикт" is not MODIFIED; the accepted T1 exception lives only in ADDED requirements of both deltas. Acceptable (pre-existing tension, now documented), left as in cycle 1.
+**n2 / n4 (carried, left by design)** — 3.3 / 3.2 eyeball checks; `handoff.md ## Change` extra fields. Not required.
+
+## Required Before Apply
+
+none
+
+## Previous findings
+
+1. M1 (`Previous findings` heading rule) — `resolved`: single rule "ALWAYS присутній після будь-якого Tier 2 проходу; без попереднього файла тіло `none — first review cycle`; інакше `resolved` | `unresolved` + evidence" appears verbatim in proposal.md What Changes → REVIEW-MD-SCHEMA (line 10), design.md D4 (line 42) and Risks bullet 2 (line 67), specs/tiered-review/spec.md requirement "Схема review.md…" (line 24) and scenario GIVEN/THEN (lines 28, 33), tasks.md 1.1 (line 5) and 1.2 (line 10); conductor snapshot of prior-file existence in proposal PARENT-HEADING-CHECK, design D4, tiered-review "Перевірка заголовків…" (line 66), pipeline-subagents "Parent вставляє чекліст" (line 17) and task 1.1.
+2. M2 (Tier 1 classes in same-class examples) — `resolved`: examples are now "інший таск, чий `Do:` не виконується без design.md; інша design-поведінка без вимоги в delta; інший drift proposal↔tasks; інший згаданий заголовок/шлях, якого немає" with "Класи Tier 1 … NEVER входять" in proposal RE-REVIEW-CLASS (line 11), design Risks bullet 4 (line 69), tiered-review "Повнота повторного review" (line 46) + scenario AND-line 62, pipeline-subagents "Повторний propose…" (line 36) and spec-reviewer requirement (line 5), tasks 1.1 / 1.2 / 2.1.
+3. M3 (conductor recovery after rejected `review.md`) — `resolved`: "re-spawn `spec-reviewer` once with the rejection reason and the required headings; second non-conforming file → `## Blocked` naming missing headings, next command `/opsx:review <name>`; rejected file is not an accepted verdict" in tasks.md 1.1 (line 5), proposal PARENT-HEADING-CHECK (line 12) and NEXT-AFTER-RC (line 13), design D4 (line 42), tiered-review requirement "Перевірка заголовків…" (line 66), new scenario "Другий неконформний RC веде в review, не в propose" (lines 75–82), and NEXT-AFTER-RC requirement "застосовується лише до прийнятого RC" (line 92).
+4. m1 (task 2.1 block subject) — `resolved`: tasks.md 2.1 (line 17) now gives the conductor files "pass `review.md` (path + verdict + Required Before Apply list) in the spawn prompt and verify the report; parent MUST NOT itself edit…" and spec-architect.md "read `review.md`, fix every Required Before Apply item, re-scan…"; mirrored in proposal PUNCH-LIST-PROPOSE (line 14), design D6 (line 50), pipeline-subagents requirement (line 36) + scenario AND-lines 42–46.
+5. m2 (T1-only marker) — `resolved`: tasks.md 1.1 defines the exact line `**Source:** gate-check` and "T1 `review.md` не має секції `## Checklist`"; task 2.1 uses "the exact line `**Source:** gate-check` plus the absence of `## Checklist`" as the structure-only trigger; Done-when greps for `\*\*Source:\*\* gate-check` in opsx-review.md and all three propose files; same marker in proposal AC 1/8, design D1/D2/D6, tiered-review scenarios lines 38, 86, pipeline-subagents lines 17, 36, 50.
+6. m3 / m4 (Done-when anchors, guide line 19) — `resolved`: tasks 1.1 Done-when anchors `MUST NOT stop at the first blocking|none — first review cycle|\*\*Source:\*\* gate-check|paste the full Tier 2 checklist`, `Verdict: REQUEST CHANGES.*/opsx:propose`, `accepted exception|re-spawn … once|MUST NOT rewrite`; 3.1 anchor "run `/opsx:propose <name>` to fix the punch list" and colon-form metric; 3.2 Done-when lists the same regexes and forbids `findings.length`; task 2.2 (line 22) says "Замінити лише рядок 18 … Рядок 19 … залишити єдиною гілкою APPROVE→apply … перефразувати «says APPROVE» на `Verdict: APPROVE`. Не додавати друге правило APPROVE→apply", Done-when adds `rg "says APPROVE"` empty and old-rule grep empty.
+
+Nits: n1 applied (skill colon form vs AGENTS.md no-colon form stated in proposal HEALTH-METRIC, design D9, tasks 3.1/3.2, delta "Метрика"); n3 applied (accepted-exception clause in both deltas and task 1.1); n2 and n4 left, as the handoff states.
+
+**Verdict:** APPROVE
