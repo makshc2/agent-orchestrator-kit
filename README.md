@@ -74,7 +74,7 @@ npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-veri
 
 See [Installation](#installation) for profile/CI options.
 
-**🔄 Already have the kit installed? Upgrade to latest (compact metrics schema v2, exhaustive Tier 2 punch list, bounded collection windows, Claude/Amp estimates, and dashboard JSON in v0.14.0):**
+**🔄 Already have the kit installed? Upgrade to latest (v0.14.1 fixes a `handoff` persist that wiped the Memory graph, syncs the `/opsx:*` commands into Cursor and Claude Code, and stops `status` / `gate-check` from reporting a gate as met when it is not):**
 
 ```bash
 npx agent-orchestrator-kit@latest update
@@ -1016,6 +1016,11 @@ The kit moves toward an Agentic Factory in four phases. **One phase = one OpenSp
 Phase bounds and non-goals: [`openspec/specs/agentic-factory-roadmap/spec.md`](openspec/specs/agentic-factory-roadmap/spec.md).
 
 ## Changelog
+
+### 0.14.1
+- **Memory graph survives `handoff` persist** — JSONL graphs were misread as an aggregate document and returned empty, so each persist overwrote the file with only the current change; all `Decision:*`, other changes, and relations were lost
+- `/opsx:*` commands now sync to `.cursor/commands/` (flat) and `.claude/commands/opsx/` (namespaced), so the documented slash commands exist in both IDEs
+- `status` applies `require_spec_review` / `require_design_brief` before saying "ready to archive"; `gate-check` verifies the gate instead of exiting 0 when the diff is unknown, and reads `pipeline.src_glob` for code outside `src/`
 
 ### 0.14.0
 - **BREAKING: compact metrics schema v2** — sessions persist `sourceIds` / `sourceTotals` / `byModel` instead of `sources`; `metrics --migrate` is schema-only; `metrics --summary-json` for dashboards

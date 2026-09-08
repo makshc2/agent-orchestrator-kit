@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-09-08
+
 ### Fixed
 - **Memory graph survives `handoff` persist.** `loadMemoryItems` classified a memory file by its first character, so every JSONL graph (the format `@modelcontextprotocol/server-memory` reads and writes) was treated as an aggregate `{entities, relations}` document, failed to parse, and returned `[]` — the next persist then overwrote the whole file with just the current change's two entities. Everything the Memory MCP server had accumulated — all `Decision:*`, every other change, and all relations — was destroyed on each persist, leaving cross-session memory permanently one change deep. Detection is now by shape, `handoff --restore` reads JSONL graphs again instead of reporting "Memory JSON empty or missing", and a line that cannot be parsed is preserved verbatim rather than dropped.
 - **`/opsx:*` commands reach the IDEs.** `.agents/commands/` was installed and documented but synced nowhere. `sync` now writes `.cursor/commands/opsx-<phase>.md` (flat, `/opsx-<phase>`) and `.claude/commands/opsx/<phase>.md` (namespaced, so the documented `/opsx:<phase>` exists in Claude Code), with the same stale-file deletion as skills and subagents. `sync-local-agent-skills.sh` matches.
