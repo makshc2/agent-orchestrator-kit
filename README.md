@@ -74,7 +74,7 @@ npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-veri
 
 See [Installation](#installation) for profile/CI options.
 
-**🔄 Already have the kit installed? Upgrade to latest (v0.14.1 fixes a `handoff` persist that wiped the Memory graph, syncs the `/opsx:*` commands into Cursor and Claude Code, and stops `status` / `gate-check` from reporting a gate as met when it is not):**
+**🔄 Already have the kit installed? Upgrade to latest (v0.15.0 adds `costUsdTotal`, one USD figure per change / phase / platform / model that sums billed Amp with estimated Cursor and Claude, rounds billed sums like estimates, and keeps cache-split Claude estimates from being re-billed at the full input rate):**
 
 ```bash
 npx agent-orchestrator-kit@latest update
@@ -1016,6 +1016,11 @@ The kit moves toward an Agentic Factory in four phases. **One phase = one OpenSp
 Phase bounds and non-goals: [`openspec/specs/agentic-factory-roadmap/spec.md`](openspec/specs/agentic-factory-roadmap/spec.md).
 
 ## Changelog
+
+### 0.15.0
+- **`costUsdTotal`** on `spend`, `phases.*`, `spendByPlatform.*`, `spendByModel[]`, and sessions — billed `costUsd` when present, otherwise `costUsdEstimated`, per session; a change that ran on Amp (billed) plus Cursor and Claude (estimated) now sums all three platforms instead of showing only the billed part; the human `cost:` line prints `$21.08 ($14.48 billed + ~$6.60 est.)` and `--summary-json` carries the field
+- Billed `costUsd` aggregates are rounded to 4 decimals like estimates (no more `4.4399999999999995` in `spendByModel`)
+- Cache-split Claude cost estimates survive the session recompute instead of being re-billed at the full input rate (`$30.11` → `$5.16` on a 3.5M-token change)
 
 ### 0.14.1
 - **Memory graph survives `handoff` persist** — JSONL graphs were misread as an aggregate document and returned empty, so each persist overwrote the file with only the current change; all `Decision:*`, other changes, and relations were lost

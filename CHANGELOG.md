@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-09-08
+
 ### Added
 - **`costUsdTotal` — one USD figure per change, phase, platform, model, and session.** Each session contributes its billed `costUsd` when present, otherwise its `costUsdEstimated`; sums are rounded to 4 decimals. A change that ran on Amp (billed `$14.48`) plus Claude (`~$5.16`) and Cursor (`~$1.43`) now carries `spend.costUsdTotal: 21.0779` instead of forcing a dashboard to pick `costUsd` and drop the estimated platforms. `costUsd` and `costUsdEstimated` stay separate fields and Amp credits stay out of every USD field. `metrics --summary-json` carries the field; the human `cost:` line prints `$21.08 ($14.48 billed + ~$6.60 est.)`.
 
