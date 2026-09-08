@@ -11,6 +11,9 @@ All notable changes to this project will be documented in this file.
 - **`gate-check` no longer passes silently.** When the git diff cannot be computed (shallow clone, missing base ref, no commits) the review gate is verified instead of skipped.
 - The next-thread prompt renders `- Change: <name>` instead of `- Change: - name: <name>`.
 
+### Removed
+- `templates/.cursor/memory.json` — an unused snapshot of the kit's own development memory. It was referenced by nothing (`init` writes an empty `.cursor/memory.json`), gitignored so it never showed up in a diff, yet the `files` allowlist still published it to npm. `files` now excludes `templates/.cursor` so it cannot ship again.
+
 ### Added
 - `pipeline.src_glob` in `orchestrator.yaml` — the paths `gate-check` treats as product code. The hardcoded `src/` default silently disabled the review gate in repos whose code lives elsewhere; `--src-glob` still overrides.
 
