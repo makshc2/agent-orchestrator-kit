@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Cache-split cost estimates survive the session recompute.** `applyCollectedSessionFields` recomputed `byModel[].costUsdEstimated` from `inputTokens` + `outputTokens` alone and overwrote the value the adapters had already produced. Since `inputTokens` includes `cache_read_*` / `cache_creation_*`, every cached token was billed at the full input rate: a real Claude change with 3.5M tokens estimated `$30.11` instead of `$5.16`, and Cursor rows lost their own rate table to the Claude `$3/$15` fallback. The recompute now only fills rows that have no adapter estimate, so ESTIMATE-ALL still covers Amp rows without `Cost:` while `claude-opus-5` with 100k input + 900k cache read + 10k output stays at `$1.20`.
+
 ## [0.14.1] - 2026-09-08
 
 ### Fixed

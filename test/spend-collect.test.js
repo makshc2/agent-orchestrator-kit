@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { collectSpend, attachCursorEstimates, enrichMetricsCursorEstimates } from '../bin/spend-collect.js';
-import { recomputeMetricsAggregates } from '../bin/agent-orchestrator.js';
+import { attachLeftoverSources, recomputeMetricsAggregates } from '../bin/agent-orchestrator.js';
 
 function encodeClaudeProject(cwd) {
   return String(cwd).replace(/[/.]/g, '-');
@@ -1028,6 +1028,62 @@ test('leftover recompute rounds costUsdEstimated sum to four decimals', () => {
     assert.notEqual(metrics.spend.costUsdEstimated, 6.561400000000001);
     assert.equal(metrics.spendByPlatform.cursor.costUsdEstimated, 6.5614);
     assert.equal(metrics.phases.apply.costUsdEstimated, 6.5614);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('session estimate keeps the adapter cache-split value instead of the coarse recompute', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aok-claude-cache-estimate-'));
+  try {
+    const cwd = join(root, 'project');
+    const home = join(root, 'home');
+    mkdirSync(cwd, { recursive: true });
+    writeClaudeJsonl(home, cwd, [{
+      type: 'assistant',
+      cwd,
+      timestamp: '2026-09-07T12:00:30.000Z',
+      message: {
+        id: 'msg-cache-split',
+        role: 'assistant',
+        model: 'claude-opus-5',
+        usage: {
+          input_tokens: 100000,
+          cache_read_input_tokens: 900000,
+          cache_creation_input_tokens: 0,
+          output_tokens: 10000,
+        },
+      },
+    }]);
+    const session = {
+      role: 'Implementer',
+      phase: 'apply',
+      platform: 'claude',
+      threadId: null,
+      startedAt: '2026-09-07T11:50:00.000Z',
+      endedAt: '2026-09-07T12:00:00.000Z',
+      inputTokens: null,
+      outputTokens: null,
+      totalTokens: null,
+      costUsd: null,
+      costUsdEstimated: null,
+      spendSource: 'unreported',
+      sourceIds: [],
+      sourceTotals: {},
+      byModel: [],
+    };
+    const added = attachLeftoverSources({ sessions: [session] }, session, '2026-09-07T12:01:00.000Z', {
+      cwd,
+      homedir: home,
+      env: { HOME: home, AMP_DATA_DIR: join(root, 'amp') },
+    });
+    assert.equal(added, 1);
+    assert.equal(session.inputTokens, 1000000);
+    assert.equal(session.costUsd, null);
+    // 100k * $5 + 900k * $0.5 + 10k * $25 per MTok, not 1M * $5 + 10k * $25
+    assert.equal(session.costUsdEstimated, 1.2);
+    assert.equal(session.byModel[0].costUsdEstimated, 1.2);
+    assert.equal(session.byModel[0].costSource, 'api-estimate');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

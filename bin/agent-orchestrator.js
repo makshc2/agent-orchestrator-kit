@@ -2466,6 +2466,9 @@ function applyCollectedSessionFields(session, sources, resolvedModel, opts, repo
   if (session.costUsd == null) {
     for (const row of session.byModel) {
       if (row.costUsd != null) continue;
+      // adapters already estimated with the cache-read / cache-write split; do not
+      // overwrite it with the coarse input+output estimate below
+      if (row.costUsdEstimated != null) continue;
       const described = describeClaudeCostEstimate({
         model: String(row.model || '').replace(/^Claude\s+/i, 'claude-').replaceAll(' ', '-').toLowerCase(),
         inputTokens: row.inputTokens,
