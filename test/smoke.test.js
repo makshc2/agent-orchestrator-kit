@@ -44,21 +44,34 @@ function isolatedEnv(dir, extra = {}) {
   return env;
 }
 
+// picocolors colours the ✓ / ✗ / → glyph but not the message after it, so a
+// coloured run renders "✓\x1B[39m ready to archive". Assertions must not depend
+// on whether the runner inherited FORCE_COLOR, so strip the codes everywhere.
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\x1B\[[0-9;]*m/g;
+
+function stripAnsi(value) {
+  return typeof value === 'string' ? value.replace(ANSI_RE, '') : value;
+}
+
 function cliExec(dir, args, extraEnv) {
-  return execSync(`node "${CLI}" ${args}`, {
-    cwd: dir,
-    stdio: 'pipe',
-    encoding: 'utf-8',
-    env: isolatedEnv(dir, extraEnv),
-  });
+  return stripAnsi(
+    execSync(`node "${CLI}" ${args}`, {
+      cwd: dir,
+      stdio: 'pipe',
+      encoding: 'utf-8',
+      env: isolatedEnv(dir, extraEnv),
+    }),
+  );
 }
 
 function cliSpawn(dir, args, extraEnv) {
-  return spawnSync(process.execPath, [CLI, ...args], {
+  const res = spawnSync(process.execPath, [CLI, ...args], {
     cwd: dir,
     encoding: 'utf-8',
     env: isolatedEnv(dir, extraEnv),
   });
+  return { ...res, stdout: stripAnsi(res.stdout), stderr: stripAnsi(res.stderr) };
 }
 
 function encodeClaudeProject(cwd) {
@@ -671,7 +684,7 @@ function initGit(dir) {
 }
 
 function runCli(dir, args) {
-  return execSync(`node "${CLI}" ${args}`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' });
+  return stripAnsi(execSync(`node "${CLI}" ${args}`, { cwd: dir, stdio: 'pipe', encoding: 'utf-8' }));
 }
 
 test('status reports no active changes', () => {
