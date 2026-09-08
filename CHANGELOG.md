@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Memory graph survives `handoff` persist.** `loadMemoryItems` classified a memory file by its first character, so every JSONL graph (the format `@modelcontextprotocol/server-memory` reads and writes) was treated as an aggregate `{entities, relations}` document, failed to parse, and returned `[]` — the next persist then overwrote the whole file with just the current change's two entities. Everything the Memory MCP server had accumulated — all `Decision:*`, every other change, and all relations — was destroyed on each persist, leaving cross-session memory permanently one change deep. Detection is now by shape, `handoff --restore` reads JSONL graphs again instead of reporting "Memory JSON empty or missing", and a line that cannot be parsed is preserved verbatim rather than dropped.
+- **`/opsx:*` commands reach the IDEs.** `.agents/commands/` was installed and documented but synced nowhere. `sync` now writes `.cursor/commands/opsx-<phase>.md` (flat, `/opsx-<phase>`) and `.claude/commands/opsx/<phase>.md` (namespaced, so the documented `/opsx:<phase>` exists in Claude Code), with the same stale-file deletion as skills and subagents. `sync-local-agent-skills.sh` matches.
+- **`status` readiness mirrors the archive gates.** "ready to archive" was computed from `tasks.md` checkboxes alone, so it appeared on a change `archive` would refuse for a missing or non-APPROVE verdict. It now applies `require_spec_review` / `require_design_brief` and names the blockers.
+- **`gate-check` no longer passes silently.** When the git diff cannot be computed (shallow clone, missing base ref, no commits) the review gate is verified instead of skipped.
+- The next-thread prompt renders `- Change: <name>` instead of `- Change: - name: <name>`.
+
+### Added
+- `pipeline.src_glob` in `orchestrator.yaml` — the paths `gate-check` treats as product code. The hardcoded `src/` default silently disabled the review gate in repos whose code lives elsewhere; `--src-glob` still overrides.
+
 ## [0.14.0] - 2026-09-07
 
 ### Changed

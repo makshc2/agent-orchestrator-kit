@@ -699,7 +699,8 @@ test('status shows task progress and review verdict', () => {
     assert.match(out, /2\/3 tasks/);
     assert.match(out, /APPROVE/);
     assert.match(out, /brief:\s*no/);
-    assert.doesNotMatch(out, /ready to archive/);
+    assert.doesNotMatch(out, /✓ ready to archive/);
+    assert.match(out, /not ready to archive — tasks incomplete/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -4618,3 +4619,250 @@ function defaultLikePlatforms() {
     amp: { inputTokens: null, outputTokens: null, totalTokens: null, costUsd: null, ampCredits: null, source: 'none' },
   };
 }
+
+// ── Regression: memory graph must survive a handoff persist ─────────────
+
+function writeMinimalChange(dir, name, tasks = '- [x] 1.1 done\n') {
+  const changeDir = join(dir, 'openspec/changes', name);
+  mkdirSync(changeDir, { recursive: true });
+  writeFileSync(join(changeDir, 'tasks.md'), tasks);
+  return changeDir;
+}
+
+function persistHandoff(dir, name, extra = '') {
+  return cliExec(
+    dir,
+    `handoff ${name} --closed-role architect --done done --next-command "/opsx:review ${name}" --next-role spec-reviewer --no-metrics ${extra}`,
+  );
+}
+
+test('handoff persist keeps unrelated JSONL memory entities and relations', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-memory-jsonl-'));
+  try {
+    runInit(dir, '--profile generic --name MemoryJsonl --lang en');
+    writeMinimalChange(dir, 'add-x');
+
+    const memoryPath = join(dir, '.cursor/memory.json');
+    writeFileSync(
+      memoryPath,
+      [
+        '{"type":"entity","name":"Decision:auth-strategy","entityType":"Decision","observations":["chosen: JWT"]}',
+        '{"type":"entity","name":"Change:old-change","entityType":"Change","observations":["status: done"]}',
+        '{"type":"relation","from":"Change:old-change","to":"Decision:auth-strategy","relationType":"hasDecision"}',
+      ].join('\n') + '\n',
+    );
+
+    persistHandoff(dir, 'add-x');
+
+    const items = memoryEntities(dir);
+    const names = items.filter((i) => i.type === 'entity').map((i) => i.name);
+    assert.ok(names.includes('Decision:auth-strategy'), 'pre-existing Decision entity was destroyed');
+    assert.ok(names.includes('Change:old-change'), 'pre-existing Change entity was destroyed');
+    assert.ok(names.includes('Change:add-x'));
+    assert.ok(names.includes('Handoff:add-x'));
+    assert.equal(items.filter((i) => i.type === 'relation').length, 1, 'relations were destroyed');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('handoff restore reads JSONL memory entities', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-memory-restore-'));
+  try {
+    runInit(dir, '--profile generic --name MemoryRestore --lang en');
+    writeMinimalChange(dir, 'add-x');
+    persistHandoff(dir, 'add-x');
+
+    const out = cliExec(dir, 'handoff add-x --restore --no-metrics');
+    assert.match(out, /Memory entities: 2/);
+    assert.doesNotMatch(out, /Memory JSON empty or missing/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('handoff persist still reads the aggregate {entities, relations} memory form', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-memory-aggregate-'));
+  try {
+    runInit(dir, '--profile generic --name MemoryAggregate --lang en');
+    writeMinimalChange(dir, 'add-x');
+
+    writeFileSync(
+      join(dir, '.cursor/memory.json'),
+      JSON.stringify({
+        entities: [{ name: 'Decision:kept', entityType: 'Decision', observations: ['chosen: yes'] }],
+        relations: [{ from: 'Decision:kept', to: 'Decision:kept', relationType: 'self' }],
+      }),
+    );
+
+    persistHandoff(dir, 'add-x');
+
+    const items = memoryEntities(dir);
+    assert.ok(items.some((i) => i.type === 'entity' && i.name === 'Decision:kept'));
+    assert.ok(items.some((i) => i.type === 'relation'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('handoff persist preserves a memory line it cannot parse', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-memory-corrupt-'));
+  try {
+    runInit(dir, '--profile generic --name MemoryCorrupt --lang en');
+    writeMinimalChange(dir, 'add-x');
+    writeFileSync(join(dir, '.cursor/memory.json'), '{"type":"entity","name":"Decision:ok","entityType":"Decision","observations":[]}\n{not json\n');
+
+    persistHandoff(dir, 'add-x');
+
+    const raw = readFileSync(join(dir, '.cursor/memory.json'), 'utf-8');
+    assert.match(raw, /Decision:ok/);
+    assert.match(raw, /\{not json/, 'unparseable line was dropped');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ── Regression: /opsx:* commands reach the IDEs ─────────────────────────
+
+test('sync installs /opsx:* commands for Cursor (flat) and Claude (namespaced)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-commands-'));
+  try {
+    runInit(dir, '--profile generic --name Commands --lang en');
+    cliExec(dir, 'sync');
+
+    for (const phase of ['explore', 'propose', 'review', 'apply', 'archive']) {
+      assert.ok(
+        existsSync(join(dir, `.cursor/commands/opsx-${phase}.md`)),
+        `missing .cursor/commands/opsx-${phase}.md`,
+      );
+      assert.ok(
+        existsSync(join(dir, `.claude/commands/opsx/${phase}.md`)),
+        `missing .claude/commands/opsx/${phase}.md — /opsx:${phase} would not exist in Claude Code`,
+      );
+    }
+
+    const claudeCmd = readFileSync(join(dir, '.claude/commands/opsx/propose.md'), 'utf-8');
+    assert.match(claudeCmd, /^description:/m);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('sync removes a command dropped from .agents/commands', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-commands-stale-'));
+  try {
+    runInit(dir, '--profile generic --name CommandsStale --lang en');
+    cliExec(dir, 'sync');
+    rmSync(join(dir, '.agents/commands/opsx-quick.md'), { force: true });
+    cliExec(dir, 'sync');
+
+    assert.ok(!existsSync(join(dir, '.cursor/commands/opsx-quick.md')));
+    assert.ok(!existsSync(join(dir, '.claude/commands/opsx/quick.md')));
+    assert.ok(existsSync(join(dir, '.claude/commands/opsx/apply.md')));
+
+    // Emptying the namespace must not leave a bare .claude/commands/opsx/ behind.
+    for (const f of readdirSync(join(dir, '.agents/commands'))) {
+      rmSync(join(dir, '.agents/commands', f), { force: true });
+    }
+    cliExec(dir, 'sync');
+    assert.ok(!existsSync(join(dir, '.claude/commands/opsx')));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ── Regression: status readiness mirrors the archive gates ──────────────
+
+test('status withholds ready-to-archive until the review gate is met', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-status-gate-'));
+  try {
+    runInit(dir, '--profile generic --name StatusGate --lang en');
+    const changeDir = writeMinimalChange(dir, 'add-thing');
+
+    let out = runCli(dir, 'status');
+    assert.doesNotMatch(out, /✓ ready to archive/);
+    assert.match(out, /not ready to archive — no review\.md/);
+
+    writeFileSync(join(changeDir, 'review.md'), '# Review\n\n**Verdict:** REQUEST_CHANGES\n');
+    out = runCli(dir, 'status');
+    assert.doesNotMatch(out, /✓ ready to archive/);
+    assert.match(out, /need APPROVE/);
+
+    writeFileSync(join(changeDir, 'review.md'), '# Review\n\n**Verdict:** APPROVE\n');
+    out = runCli(dir, 'status');
+    assert.match(out, /✓ ready to archive/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('status ignores the review gate when require_spec_review is false', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-status-mvp-'));
+  try {
+    runInit(dir, '--profile mvp --name StatusMvp --lang en');
+    writeMinimalChange(dir, 'add-thing');
+
+    const out = runCli(dir, 'status');
+    assert.match(out, /✓ ready to archive/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ── Regression: gate-check src glob and unknown-diff handling ───────────
+
+test('gate-check honours pipeline.src_glob for code outside src/', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-gate-glob-'));
+  try {
+    runInit(dir, '--profile generic --name GateGlob --lang en');
+    writeMinimalChange(dir, 'add-thing');
+
+    const orchPath = join(dir, '.agents/orchestrator.yaml');
+    writeFileSync(
+      orchPath,
+      readFileSync(orchPath, 'utf-8').replace(/src_glob: "src\/"/, 'src_glob: "lib/"'),
+    );
+
+    execSync('git init -q . && git add -A && git -c user.email=t@t -c user.name=t commit -qm base', { cwd: dir, stdio: 'pipe' });
+    mkdirSync(join(dir, 'lib'), { recursive: true });
+    writeFileSync(join(dir, 'lib/a.js'), 'export const a = 1;\n');
+    execSync('git add -A', { cwd: dir, stdio: 'pipe' });
+
+    const res = cliSpawn(dir, ['gate-check', '--staged', 'add-thing']);
+    assert.equal(res.status, 1, 'gate should block code changes under the configured src_glob');
+    assert.match(res.stdout, /review gate failed/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('gate-check verifies the gate instead of passing when the diff is unknown', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-gate-nodiff-'));
+  try {
+    runInit(dir, '--profile generic --name GateNoDiff --lang en');
+    writeMinimalChange(dir, 'add-thing');
+
+    const res = cliSpawn(dir, ['gate-check', 'add-thing']);
+    assert.equal(res.status, 1, 'a blocking gate must not pass when the diff cannot be computed');
+    assert.match(res.stdout, /verifying the review gate anyway/);
+    assert.match(res.stdout, /review gate failed/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ── Regression: next-thread prompt renders the change name inline ───────
+
+test('handoff prompt does not render "Change: - name: <x>"', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-prompt-change-'));
+  try {
+    runInit(dir, '--profile generic --name PromptChange --lang en');
+    writeMinimalChange(dir, 'add-x');
+
+    const out = persistHandoff(dir, 'add-x');
+    assert.match(out, /^- Change: add-x$/m);
+    assert.doesNotMatch(out, /- Change: - name:/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -76,6 +76,13 @@ if [ -d .agents/subagents ]; then
   ok ".cursor/agents/"
 fi
 
+# Cursor reads .cursor/commands/<file>.md as /<file> — flat copy.
+if [ -d .agents/commands ]; then
+  mkdir -p .cursor/commands
+  rsync -a --delete .agents/commands/ .cursor/commands/
+  ok ".cursor/commands/"
+fi
+
 if [ ! -f .mcp.json ] && [ -f .agents/mcp.json.example ]; then
   cp .agents/mcp.json.example .mcp.json
   ok ".mcp.json created from example"
@@ -95,6 +102,26 @@ ok ".claude/skills/"
 if [ -d .agents/subagents ]; then
   rsync -a --delete .agents/subagents/ .claude/agents/
   ok ".claude/agents/"
+fi
+
+# Claude Code namespaces commands by subdirectory: .claude/commands/opsx/apply.md
+# is what makes the documented /opsx:apply exist.
+if [ -d .agents/commands ]; then
+  rm -rf .claude/commands
+  mkdir -p .claude/commands
+  for cmd in .agents/commands/*.md; do
+    [ -f "$cmd" ] || continue
+    BASE="$(basename "$cmd" .md)"
+    NS="${BASE%%-*}"
+    REST="${BASE#*-}"
+    if [ "$NS" != "$BASE" ] && [ -n "$REST" ]; then
+      mkdir -p ".claude/commands/$NS"
+      cp "$cmd" ".claude/commands/$NS/$REST.md"
+    else
+      cp "$cmd" ".claude/commands/$BASE.md"
+    fi
+  done
+  ok ".claude/commands/"
 fi
 
 if [ -f CLAUDE.md ]; then

@@ -189,7 +189,7 @@ your-project/
 |----------|----------|
 | Orchestration | 5-role pipeline, `AGENTS.md`, `orchestrator.yaml`, review command |
 | OpenSpec skills | All 7 skills for `/opsx:*` workflow |
-| IDE sync | Cursor + Claude Code sync script (`--delete` semantics — removes stale skills/subagents) |
+| IDE sync | Cursor + Claude Code sync script (`--delete` semantics — removes stale skills/subagents/commands) |
 | Subagents | 12 exclusive routes: guide/setup/session-handoff, explore/design/propose/review/archive stage agents, and apply implementation/test/code-review agents — native in Cursor + Claude Code, isolated Amp `subagent-*` wrappers |
 | CLI gates | `npx agent-orchestrator-kit status` / `gate-check` / `archive` / `handoff` / `metrics` / `memory-setup` — deterministic review-gate, archive, session-handoff, and change metrics (always via `npx`; see `cli-via-npm.mdc`) |
 | CI | `agent-verify.yml` — GitHub (default) or GitLab fragment + `prebuild` hook, both run `gate-check` |
@@ -986,11 +986,13 @@ npx agent-orchestrator-kit metrics [change-name] [--json] [--collect]
   skills/                # Synced from .agents/skills/
   rules/                 # Synced from .agents/rules/
   agents/                # Synced from .agents/subagents/
+  commands/              # Synced from .agents/commands/ (flat — /opsx-apply)
   memory.json            # Memory MCP data
 
 .claude/                 # Local only — Claude Code runtime
   skills/                # Synced from .agents/skills/
   agents/                # Synced from .agents/subagents/
+  commands/opsx/         # Synced from .agents/commands/ (namespaced — /opsx:apply)
   CLAUDE.md              # Synced from root CLAUDE.md
 
 .amp/                    # Local only — Amp config

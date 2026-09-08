@@ -16,6 +16,9 @@ pipeline:
   archive_after_merge: false
   quick_mode_enabled: true
   task_contract: off
+  # Paths gate-check treats as product code. Widen it when code lives
+  # outside src/ (e.g. "{src,lib,app}/") or the review gate never fires.
+  src_glob: "src/"
 
 roles:
   explorer:

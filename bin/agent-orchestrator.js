@@ -220,6 +220,47 @@ function copyDir(src, dest, opts = {}) {
   }
 }
 
+// `.agents/commands/opsx-<phase>.md` is the source of truth for the /opsx:*
+// role commands. Cursor reads `.cursor/commands/<file>.md` as `/<file>`, so it
+// gets a flat copy. Claude Code namespaces by subdirectory —
+// `.claude/commands/opsx/<phase>.md` is what makes the documented
+// `/opsx:<phase>` actually exist there.
+function syncCommands(projectDir, ideDir, { namespaced }) {
+  const src = join(projectDir, '.agents', 'commands');
+  const dest = join(projectDir, ideDir, 'commands');
+  if (!existsSync(src)) return;
+
+  const files = readdirSync(src).filter((f) => f.endsWith('.md'));
+  const written = new Set();
+  mkdirSync(dest, { recursive: true });
+
+  for (const file of files) {
+    const match = namespaced && file.match(/^([a-z0-9]+)-(.+\.md)$/i);
+    const rel = match ? join(match[1], match[2]) : file;
+    const destPath = join(dest, rel);
+    mkdirSync(dirname(destPath), { recursive: true });
+    copyFileSync(join(src, file), destPath);
+    written.add(rel);
+    log.ok(destPath.replace(process.cwd() + '/', ''));
+  }
+
+  // Drop commands a kit `update` removed, mirroring the skills/subagents sync.
+  const walk = (dir, prefix = '') => {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      const rel = prefix ? join(prefix, entry) : entry;
+      if (statSync(full).isDirectory()) {
+        walk(full, rel);
+        if (readdirSync(full).length === 0) rmSync(full, { recursive: true, force: true });
+      } else if (!written.has(rel)) {
+        rmSync(full, { force: true });
+        log.warn(`removed stale: ${join(dest, rel).replace(process.cwd() + '/', '')}`);
+      }
+    }
+  };
+  walk(dest);
+}
+
 function gitignoreLines(content) {
   return content.split('\n').map((l) => l.trim()).filter(Boolean);
 }
@@ -960,6 +1001,26 @@ function parseHandoffMarkdown(content) {
   return sections;
 }
 
+// The `## Change` section is a bullet list (`- name: <x>`), but the next-thread
+// prompt inlines it after its own bullet. Flatten it so the prompt does not
+// read "- Change: - name: <x>".
+function inlineChangeLabel(value, fallbackName) {
+  const text = String(value || '').trim();
+  if (!text) return fallbackName;
+  const parts = text
+    .split('\n')
+    .map((line) => line.replace(/^\s*[-*]\s*/, '').trim())
+    .filter(Boolean);
+  if (parts.length === 0) return fallbackName;
+  const named = parts.find((p) => /^name:\s*/i.test(p));
+  if (named) {
+    const rest = parts.filter((p) => p !== named);
+    const label = named.replace(/^name:\s*/i, '').trim() || fallbackName;
+    return rest.length ? `${label} (${rest.join('; ')})` : label;
+  }
+  return parts.join('; ');
+}
+
 function firstLineCommand(value) {
   const match = String(value || '').match(/\/opsx:[^\s`]+(?:\s+[^\s`]+)?/);
   if (match) return match[0].trim();
@@ -1397,7 +1458,7 @@ function buildNextSessionPrompt(fields, agentLanguage) {
 
 ## Повний контекст попередньої сесії (самодостатній — не покладайся лише на Memory)
 - Закрита роль: ${fields.closedRole || 'не вказано'}
-- Зміна: ${fields.change || name}
+- Зміна: ${inlineChangeLabel(fields.change, name)}
 - Зроблено:
 ${fields.done || 'не вказано'}
 - Рішення:
@@ -1449,7 +1510,7 @@ Do not mix phases. Do not start the following role in this chat until this phase
 
 ## Full previous-session context (self-contained — do not rely on Memory alone)
 - Closed role: ${fields.closedRole || 'not set'}
-- Change: ${fields.change || name}
+- Change: ${inlineChangeLabel(fields.change, name)}
 - Done:
 ${fields.done || 'not set'}
 - Decisions:
@@ -1481,26 +1542,48 @@ function loadMemoryItems(filePath) {
   if (!existsSync(filePath)) return [];
   const raw = readFileSync(filePath, 'utf-8').trim();
   if (!raw) return [];
-  if (raw.startsWith('{')) {
-    try {
-      const parsed = JSON.parse(raw);
+
+  // Aggregate form is a single JSON document: { entities: [...], relations: [...] }.
+  // Every JSONL line is an object too, so the *shape* decides — not the first
+  // character. Keying off `{` classified every JSONL graph as an aggregate,
+  // parsed it as one document, failed, and returned [] — which made the next
+  // persist overwrite the whole graph with just the current change.
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && !Array.isArray(parsed) && (Array.isArray(parsed.entities) || Array.isArray(parsed.relations))) {
       const entities = (parsed.entities || []).map((entity) => ({ type: 'entity', ...entity }));
       const relations = (parsed.relations || []).map((relation) => ({ type: 'relation', ...relation }));
       return [...entities, ...relations];
-    } catch {
-      return [];
     }
+  } catch {
+    // Not a single JSON document — fall through to JSONL.
   }
-  return raw
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => JSON.parse(line));
+
+  // JSONL: the format @modelcontextprotocol/server-memory reads and writes,
+  // one entity or relation per line. A line we cannot parse is kept verbatim
+  // so a persist never drops memory it failed to understand.
+  const items = [];
+  for (const line of raw.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let parsed;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      items.push({ __raw: trimmed });
+      continue;
+    }
+    if (parsed && typeof parsed === 'object' && parsed.type) items.push(parsed);
+    else items.push({ __raw: trimmed });
+  }
+  return items;
 }
 
 function saveMemoryItems(filePath, items) {
   mkdirSync(dirname(filePath), { recursive: true });
-  const body = items.map((item) => JSON.stringify(item)).join('\n');
+  const body = items
+    .map((item) => (item && item.__raw !== undefined ? item.__raw : JSON.stringify(item)))
+    .join('\n');
   writeFileSync(filePath, body ? `${body}\n` : '');
 }
 
@@ -3055,11 +3138,13 @@ function readPipelineConfig(projectDir) {
   const requireBriefMatch = content.match(/require_design_brief:\s*(true|false)/);
   const maxActiveMatch = content.match(/max_active_changes:\s*(\d+)/);
   const taskContractMatch = content.match(/task_contract:\s*(warn|strict|off)/);
+  const srcGlobMatch = content.match(/src_glob:\s*["']?([^"'\s#]+)["']?/);
   return {
     requireSpecReview: requireReviewMatch ? requireReviewMatch[1] === 'true' : true,
     requireDesignBrief: requireBriefMatch ? requireBriefMatch[1] === 'true' : false,
     maxActiveChanges: maxActiveMatch ? parseInt(maxActiveMatch[1], 10) : null,
     taskContract: taskContractMatch ? taskContractMatch[1] : 'warn',
+    srcGlob: srcGlobMatch ? srcGlobMatch[1] : null,
   };
 }
 
@@ -3891,6 +3976,7 @@ program
       }
       copyDir(join(projectDir, '.agents', 'rules'), join(projectDir, '.cursor', 'rules'), { overwrite: true, delete: true });
       copyDir(join(projectDir, '.agents', 'subagents'), join(projectDir, '.cursor', 'agents'), { overwrite: true, delete: true });
+      syncCommands(projectDir, '.cursor', { namespaced: false });
     }
 
     if (syncClaude) {
@@ -3900,6 +3986,7 @@ program
         rmSync(join(projectDir, '.claude', 'skills', wrapper), { recursive: true, force: true });
       }
       copyDir(join(projectDir, '.agents', 'subagents'), join(projectDir, '.claude', 'agents'), { overwrite: true, delete: true });
+      syncCommands(projectDir, '.claude', { namespaced: true });
 
       const claudeMd = join(projectDir, 'CLAUDE.md');
       const claudeDir = join(projectDir, '.claude');
@@ -3937,6 +4024,13 @@ program
     if (changes.length === 0) {
       log.info('No active changes');
     } else {
+      // Readiness must mirror the gates `archive` actually enforces — reporting
+      // "ready" on task count alone told the conductor to archive a change the
+      // CLI would then refuse.
+      const config = readPipelineConfig(projectDir);
+      const requireReview = config ? config.requireSpecReview : true;
+      const requireBrief = config ? config.requireDesignBrief : false;
+
       for (const name of changes) {
         const changeDir = join(projectDir, 'openspec', 'changes', name);
         const progress = parseTasksProgress(changeDir);
@@ -3944,13 +4038,24 @@ program
         const hasBrief = parseDesignBrief(changeDir);
         const progressStr = progress ? `${progress.done}/${progress.total} tasks` : 'no tasks.md';
         const verdictStr = verdict || 'none';
-        const readyToArchive = Boolean(progress && progress.total > 0 && progress.done === progress.total);
+
+        const blockers = [];
+        if (!(progress && progress.total > 0 && progress.done === progress.total)) {
+          blockers.push('tasks incomplete');
+        }
+        if (requireReview && !(verdict && /^APPROVE/i.test(verdict))) {
+          blockers.push(verdict ? `review verdict "${verdict}" (need APPROVE)` : 'no review.md');
+        }
+        if (requireBrief && !hasBrief && !hasDesignOptOut(changeDir)) {
+          blockers.push('no design-brief.md');
+        }
 
         console.log(`\n${pc.bold(name)}`);
         console.log(`  tasks:  ${progressStr}`);
         console.log(`  review: ${verdictStr}`);
         console.log(`  brief:  ${hasBrief ? 'yes' : 'no'}`);
-        if (readyToArchive) log.ok('ready to archive');
+        if (blockers.length === 0) log.ok('ready to archive');
+        else log.info(`not ready to archive — ${blockers.join('; ')}`);
       }
       console.log('');
     }
@@ -3963,7 +4068,7 @@ program
 program
   .command('gate-check [change-name]')
   .description('Deterministically check the review gate before apply/merge (exit non-zero if unmet)')
-  .option('--src-glob <glob>', 'source path filter used to detect code changes', 'src/')
+  .option('--src-glob <glob>', 'source path filter used to detect code changes (default: pipeline.src_glob, else src/)')
   .option('--base <ref>', 'git ref to diff against', 'HEAD~1')
   .option('--staged', 'check staged files (git diff --cached) instead of --base...HEAD', false)
   .option('--tasks <name>', 'lint task contracts (Files/Do/Done-when) of a change')
@@ -4019,16 +4124,21 @@ program
       return;
     }
 
+    // A repo whose code does not live in src/ used to fall through to
+    // "nothing to gate" on every run, silently disabling the review gate.
+    const srcGlob = opts.srcGlob || config.srcGlob || 'src/';
+
     const touchesSrc = opts.staged
-      ? gitStagedTouchesGlob(projectDir, opts.srcGlob)
-      : gitDiffTouchesGlob(projectDir, opts.base, opts.srcGlob);
+      ? gitStagedTouchesGlob(projectDir, srcGlob)
+      : gitDiffTouchesGlob(projectDir, opts.base, srcGlob);
     if (touchesSrc === false) {
-      log.ok(`no ${opts.staged ? 'staged ' : ''}changes under ${opts.srcGlob} — nothing to gate`);
+      log.ok(`no ${opts.staged ? 'staged ' : ''}changes under ${srcGlob} — nothing to gate`);
       return;
     }
     if (touchesSrc === null) {
-      log.warn(`could not compute git ${opts.staged ? 'staged ' : ''}diff — skipping gate-check`);
-      return;
+      // Cannot prove nothing changed (shallow clone, missing base ref, no
+      // commits yet) — verify the gate instead of passing a blocking check.
+      log.warn(`could not compute git ${opts.staged ? 'staged ' : ''}diff — verifying the review gate anyway`);
     }
 
     const changes = listActiveChanges(projectDir);
@@ -4039,7 +4149,7 @@ program
     let target = changeName;
     if (!target) {
       if (changes.length === 0) {
-        log.warn(`${opts.srcGlob} changed but no active OpenSpec change found — cannot verify review gate`);
+        log.warn(`${srcGlob} changed but no active OpenSpec change found — cannot verify review gate`);
         return;
       }
       target = changes
