@@ -23,6 +23,12 @@ function roundUsd4(x) {
   return Math.round(Number(x) * 10000) / 10000;
 }
 
+function costUsdTotalOf(obj) {
+  const billed = numOrNull(obj && obj.costUsd);
+  if (billed != null) return billed;
+  return numOrNull(obj && obj.costUsdEstimated);
+}
+
 function timestampMs(value) {
   if (value == null || value === '') return NaN;
   const ms = Date.parse(value);
@@ -435,6 +441,7 @@ function emptyPlatform(source = 'none') {
     costUsd: null,
     ampCredits: null,
     costUsdEstimated: null,
+    costUsdTotal: null,
     source,
   };
 }
@@ -442,7 +449,7 @@ function emptyPlatform(source = 'none') {
 function recompute(metrics) {
   const phases = {};
   const totals = { sessions: 0, durationMs: null, leadTimeMs: null, cloudSessions: 0 };
-  const spend = { inputTokens: null, outputTokens: null, totalTokens: null, costUsd: null, costUsdEstimated: null };
+  const spend = { inputTokens: null, outputTokens: null, totalTokens: null, costUsd: null, costUsdEstimated: null, costUsdTotal: null };
   const byPlatform = {
     cursor: emptyPlatform(),
     claude: emptyPlatform(),
@@ -477,6 +484,7 @@ function recompute(metrics) {
       totalTokens: null,
       costUsd: null,
       costUsdEstimated: null,
+      costUsdTotal: null,
       agents: [],
       models: [],
     };
@@ -493,6 +501,10 @@ function recompute(metrics) {
       phase[spendKey] = addNullable(phase[spendKey], value);
       spend[spendKey] = addNullable(spend[spendKey], value);
     }
+    const sessionCostUsdTotal = costUsdTotalOf(session);
+    session.costUsdTotal = roundUsd4(sessionCostUsdTotal);
+    phase.costUsdTotal = addNullable(phase.costUsdTotal, sessionCostUsdTotal);
+    spend.costUsdTotal = addNullable(spend.costUsdTotal, sessionCostUsdTotal);
     if (session.role && !phase.agents.includes(session.role)) phase.agents.push(session.role);
     if (session.model && !phase.models.includes(session.model)) phase.models.push(session.model);
     if (Array.isArray(session.models)) {
@@ -508,6 +520,7 @@ function recompute(metrics) {
       for (const key of ['inputTokens', 'outputTokens', 'totalTokens', 'costUsd', 'ampCredits', 'costUsdEstimated']) {
         bucket[key] = addNullable(bucket[key], numOrNull(session[key]));
       }
+      bucket.costUsdTotal = addNullable(bucket.costUsdTotal, sessionCostUsdTotal);
       if ((session.sourceIds || []).length) bucket.source = platform === 'cursor' ? 'cursor-hook' : `${platform}-jsonl`;
     }
     const modelRows = (session.byModel || []).length ? session.byModel : [session];
@@ -523,6 +536,7 @@ function recompute(metrics) {
           costUsd: null,
           ampCredits: null,
           costUsdEstimated: null,
+          costUsdTotal: null,
         };
         row.inputTokens = addNullable(row.inputTokens, numOrNull(src.inputTokens));
         row.outputTokens = addNullable(row.outputTokens, numOrNull(src.outputTokens));
@@ -530,6 +544,7 @@ function recompute(metrics) {
         row.costUsd = addNullable(row.costUsd, numOrNull(src.costUsd));
         row.ampCredits = addNullable(row.ampCredits, numOrNull(src.ampCredits));
         row.costUsdEstimated = addNullable(row.costUsdEstimated, numOrNull(src.costUsdEstimated));
+        row.costUsdTotal = addNullable(row.costUsdTotal, costUsdTotalOf(src));
         byModel.set(modelKey, row);
       }
     }
@@ -544,14 +559,22 @@ function recompute(metrics) {
     phase.leadTimeMs = Number.isFinite(startMs) && Number.isFinite(endMs)
       ? Math.max(0, endMs - startMs)
       : null;
+    phase.costUsd = roundUsd4(phase.costUsd);
     phase.costUsdEstimated = roundUsd4(phase.costUsdEstimated);
+    phase.costUsdTotal = roundUsd4(phase.costUsdTotal);
   }
+  spend.costUsd = roundUsd4(spend.costUsd);
   spend.costUsdEstimated = roundUsd4(spend.costUsdEstimated);
+  spend.costUsdTotal = roundUsd4(spend.costUsdTotal);
   for (const bucket of Object.values(byPlatform)) {
+    bucket.costUsd = roundUsd4(bucket.costUsd);
     bucket.costUsdEstimated = roundUsd4(bucket.costUsdEstimated);
+    bucket.costUsdTotal = roundUsd4(bucket.costUsdTotal);
   }
   for (const row of byModel.values()) {
+    row.costUsd = roundUsd4(row.costUsd);
     row.costUsdEstimated = roundUsd4(row.costUsdEstimated);
+    row.costUsdTotal = roundUsd4(row.costUsdTotal);
   }
   metrics.phases = phases;
   metrics.totals = totals;

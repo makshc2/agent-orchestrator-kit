@@ -4,7 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **`costUsdTotal` — one USD figure per change, phase, platform, model, and session.** Each session contributes its billed `costUsd` when present, otherwise its `costUsdEstimated`; sums are rounded to 4 decimals. A change that ran on Amp (billed `$14.48`) plus Claude (`~$5.16`) and Cursor (`~$1.43`) now carries `spend.costUsdTotal: 21.0779` instead of forcing a dashboard to pick `costUsd` and drop the estimated platforms. `costUsd` and `costUsdEstimated` stay separate fields and Amp credits stay out of every USD field. `metrics --summary-json` carries the field; the human `cost:` line prints `$21.08 ($14.48 billed + ~$6.60 est.)`.
+
 ### Fixed
+- **Billed sums are rounded like estimates.** `spendByModel[].costUsd`, `spendByPlatform.*.costUsd`, `phases.*.costUsd`, and `spend.costUsd` stored raw float sums such as `4.4399999999999995` and `0.009000000000000001`; they are now `Math.round(x * 10000) / 10000`, the same rule `costUsdEstimated` already had.
 - **Cache-split cost estimates survive the session recompute.** `applyCollectedSessionFields` recomputed `byModel[].costUsdEstimated` from `inputTokens` + `outputTokens` alone and overwrote the value the adapters had already produced. Since `inputTokens` includes `cache_read_*` / `cache_creation_*`, every cached token was billed at the full input rate: a real Claude change with 3.5M tokens estimated `$30.11` instead of `$5.16`, and Cursor rows lost their own rate table to the Claude `$3/$15` fallback. The recompute now only fills rows that have no adapter estimate, so ESTIMATE-ALL still covers Amp rows without `Cost:` while `claude-opus-5` with 100k input + 900k cache read + 10k output stays at `$1.20`.
 
 ## [0.14.1] - 2026-09-08

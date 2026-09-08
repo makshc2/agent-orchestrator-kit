@@ -1710,12 +1710,18 @@ function roundUsd4(x) {
   return Math.round(Number(x) * 10000) / 10000;
 }
 
+function costUsdTotalOf(obj) {
+  const billed = numOrNull(obj && obj.costUsd);
+  if (billed != null) return billed;
+  return numOrNull(obj && obj.costUsdEstimated);
+}
+
 function metricsFilePath(projectDir, changeName) {
   return join(projectDir, 'openspec', 'changes', changeName, 'metrics.json');
 }
 
 function emptySpendTotals() {
-  return { inputTokens: null, outputTokens: null, totalTokens: null, costUsd: null, costUsdEstimated: null };
+  return { inputTokens: null, outputTokens: null, totalTokens: null, costUsd: null, costUsdEstimated: null, costUsdTotal: null };
 }
 
 function emptyPlatformSpend(source = 'none') {
@@ -1726,6 +1732,7 @@ function emptyPlatformSpend(source = 'none') {
     costUsd: null,
     ampCredits: null,
     costUsdEstimated: null,
+    costUsdTotal: null,
     source,
   };
 }
@@ -2549,6 +2556,7 @@ function spendTuple(obj) {
     costUsd: numOrNull(obj && obj.costUsd),
     ampCredits: numOrNull(obj && obj.ampCredits),
     costUsdEstimated: numOrNull(obj && obj.costUsdEstimated),
+    costUsdTotal: numOrNull(obj && obj.costUsdTotal) ?? costUsdTotalOf(obj),
   };
 }
 
@@ -2568,6 +2576,7 @@ function addSpendNums(target, nums) {
   target.costUsd = addNullable(target.costUsd, nums.costUsd);
   target.ampCredits = addNullable(target.ampCredits, nums.ampCredits);
   target.costUsdEstimated = addNullable(target.costUsdEstimated, nums.costUsdEstimated);
+  target.costUsdTotal = addNullable(target.costUsdTotal, nums.costUsdTotal);
 }
 
 function recomputeSpendMaps(metrics) {
@@ -2586,6 +2595,7 @@ function recomputeSpendMaps(metrics) {
       costUsd: null,
       ampCredits: null,
       costUsdEstimated: null,
+      costUsdTotal: null,
     };
     addSpendNums(row, nums);
     byModel.set(key, row);
@@ -2606,10 +2616,14 @@ function recomputeSpendMaps(metrics) {
     }
   }
   for (const key of Object.keys(byPlatform)) {
+    byPlatform[key].costUsd = roundUsd4(byPlatform[key].costUsd);
     byPlatform[key].costUsdEstimated = roundUsd4(byPlatform[key].costUsdEstimated);
+    byPlatform[key].costUsdTotal = roundUsd4(byPlatform[key].costUsdTotal);
   }
   for (const row of byModel.values()) {
+    row.costUsd = roundUsd4(row.costUsd);
     row.costUsdEstimated = roundUsd4(row.costUsdEstimated);
+    row.costUsdTotal = roundUsd4(row.costUsdTotal);
   }
   metrics.spendByPlatform = byPlatform;
   metrics.spendByModel = [...byModel.values()];
@@ -2661,6 +2675,13 @@ function recomputeMetricsAggregates(metrics) {
       phase[spendKey] = addNullable(phase[spendKey], value);
       spend[spendKey] = addNullable(spend[spendKey], value);
     }
+    const sessionCostUsdTotal = costUsdTotalOf({
+      costUsd: sessionFieldOrSources(session, 'costUsd'),
+      costUsdEstimated: sessionFieldOrSources(session, 'costUsdEstimated'),
+    });
+    session.costUsdTotal = roundUsd4(sessionCostUsdTotal);
+    phase.costUsdTotal = addNullable(phase.costUsdTotal, sessionCostUsdTotal);
+    spend.costUsdTotal = addNullable(spend.costUsdTotal, sessionCostUsdTotal);
     if (session.role && !phase.agents.includes(session.role)) phase.agents.push(session.role);
     if (session.model && !phase.models.includes(session.model)) phase.models.push(session.model);
     if (Array.isArray(session.models)) {
@@ -2679,9 +2700,13 @@ function recomputeMetricsAggregates(metrics) {
     phase.leadTimeMs = Number.isFinite(startMs) && Number.isFinite(endMs)
       ? Math.max(0, endMs - startMs)
       : null;
+    phase.costUsd = roundUsd4(phase.costUsd);
     phase.costUsdEstimated = roundUsd4(phase.costUsdEstimated);
+    phase.costUsdTotal = roundUsd4(phase.costUsdTotal);
   }
+  spend.costUsd = roundUsd4(spend.costUsd);
   spend.costUsdEstimated = roundUsd4(spend.costUsdEstimated);
+  spend.costUsdTotal = roundUsd4(spend.costUsdTotal);
   metrics.phases = phases;
   metrics.totals = totals;
   metrics.spend = spend;
@@ -2908,7 +2933,8 @@ function formatMetricsCostLine(spend) {
   const estimated = spend && spend.costUsdEstimated;
   if (billed == null && estimated == null) return '—';
   if (billed != null && estimated != null) {
-    return `${formatMetricsCost(billed)} billed + ~${formatMetricsCost(estimated)} est.`;
+    const total = spend.costUsdTotal != null ? spend.costUsdTotal : billed + estimated;
+    return `${formatMetricsCost(total)} (${formatMetricsCost(billed)} billed + ~${formatMetricsCost(estimated)} est.)`;
   }
   if (billed != null) return formatMetricsCost(billed);
   return `~${formatMetricsCost(estimated)} est.`;

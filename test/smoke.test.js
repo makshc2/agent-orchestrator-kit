@@ -1848,6 +1848,9 @@ test('metrics command prints a summary and raw --json', () => {
     assert.equal('sessions' in summary, false);
     assert.equal(JSON.stringify(summary).includes('commits'), false);
     assert.equal(summary.phases.spec.startedAt, raw.phases.spec.startedAt);
+    assert.equal(summary.spend.costUsdTotal, 0.1, 'costUsdTotal is the billed costUsd when there is no estimate');
+    assert.equal(raw.spend.costUsdTotal, 0.1);
+    assert.equal(raw.sessions[0].costUsdTotal, 0.1);
 
     assert.throws(
       () => cliExec(dir, 'metrics missing-change'),

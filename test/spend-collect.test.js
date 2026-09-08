@@ -734,6 +734,8 @@ test('cursor spend hook leftover attaches after stop without a separate collect'
     });
     const again = JSON.parse(readFileSync(join(root, 'openspec/changes/add-thing/metrics.json'), 'utf-8'));
     assert.equal(again.sessions.at(-1).sourceIds.filter((id) => id === 'hook-leftover-stop').length, 1);
+    assert.notEqual(again.spend.costUsdTotal, undefined, 'sessionEnd leftover recompute writes costUsdTotal');
+    assert.equal(again.spend.costUsdTotal, again.spend.costUsd ?? again.spend.costUsdEstimated);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

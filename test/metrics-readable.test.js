@@ -168,7 +168,11 @@ test('firstSpawnName only accepts backticks or canonical role mapping', () => {
 });
 
 test('formatMetricsCostLine shows billed and estimate without mixing credits', () => {
-  assert.equal(formatMetricsCostLine({ costUsd: 1.3, costUsdEstimated: 8.98 }), '$1.30 billed + ~$8.98 est.');
+  assert.equal(formatMetricsCostLine({ costUsd: 1.3, costUsdEstimated: 8.98 }), '$10.28 ($1.30 billed + ~$8.98 est.)');
+  assert.equal(
+    formatMetricsCostLine({ costUsd: 14.48, costUsdEstimated: 6.5979, costUsdTotal: 21.0779 }),
+    '$21.08 ($14.48 billed + ~$6.60 est.)',
+  );
   assert.equal(formatMetricsCostLine({ costUsd: 1.3, costUsdEstimated: null }), '$1.30');
   assert.equal(formatMetricsCostLine({ costUsd: null, costUsdEstimated: 8.98 }), '~$8.98 est.');
   assert.equal(formatMetricsCostLine({ costUsd: null, costUsdEstimated: null }), '—');
@@ -229,4 +233,58 @@ test('recomputeMetricsAggregates sums Cost fallback across three Amp sessions', 
 
   assert.equal(metrics.spend.costUsd, 25.92);
   assert.equal(metrics.spendByPlatform.amp.costUsd, 25.92);
+});
+
+test('recomputeMetricsAggregates derives costUsdTotal per session (billed, else estimate) and rounds billed sums', () => {
+  const ampSession = (phase, costUsd, astra, sol) => ({
+    phase,
+    platform: 'amp',
+    model: 'gpt-6-astra',
+    costUsd,
+    costUsdEstimated: null,
+    byModel: [
+      { model: 'gpt-6-astra', platform: 'amp', costUsd: astra, costUsdEstimated: null },
+      { model: 'GPT-5.6 Sol', platform: 'amp', costUsd: sol, costUsdEstimated: null },
+    ],
+  });
+  const metrics = {
+    sessions: [
+      { phase: 'explore', platform: 'cursor', model: 'cursor-grok-4.6', costUsd: null, costUsdEstimated: 1.4344 },
+      ampSession('spec', 3.96, 3.1, 0.87),
+      { phase: 'review', platform: 'claude', model: 'claude-fable-5-1', costUsd: null, costUsdEstimated: 3.9108 },
+      ampSession('spec', 2.51, 2.26, 0.25),
+      ampSession('apply', 8.01, 4.59, 3.32),
+      { phase: 'apply', platform: 'claude', model: 'claude-opus-5', costUsd: null, costUsdEstimated: 0.9276 },
+      { phase: 'archive', platform: 'claude', model: 'claude-opus-5', costUsd: null, costUsdEstimated: 0.3251 },
+    ],
+  };
+
+  recomputeMetricsAggregates(metrics);
+
+  assert.equal(metrics.spend.costUsd, 14.48, 'billed stays Amp-only');
+  assert.equal(metrics.spend.costUsdEstimated, 6.5979, 'estimate stays Cursor + Claude');
+  assert.equal(metrics.spend.costUsdTotal, 21.0779, 'total = billed Amp + estimated Cursor + estimated Claude');
+  assert.equal(metrics.spendByPlatform.amp.costUsdTotal, 14.48);
+  assert.equal(metrics.spendByPlatform.claude.costUsdTotal, 5.1635);
+  assert.equal(metrics.spendByPlatform.cursor.costUsdTotal, 1.4344);
+  assert.equal(metrics.phases.spec.costUsdTotal, 6.47);
+  assert.equal(metrics.phases.review.costUsdTotal, 3.9108);
+  assert.equal(metrics.phases.apply.costUsdTotal, 8.9376, 'a mixed phase adds billed Amp and estimated Claude');
+  assert.equal(metrics.sessions[1].costUsdTotal, 3.96);
+  assert.equal(metrics.sessions[5].costUsdTotal, 0.9276);
+  const sol = metrics.spendByModel.find((row) => row.model === 'GPT-5.6 Sol');
+  assert.equal(sol.costUsd, 4.44, 'billed model sum is rounded, not 4.4399999999999995');
+  assert.equal(sol.costUsdTotal, 4.44);
+  const opus = metrics.spendByModel.find((row) => row.model === 'claude-opus-5');
+  assert.equal(opus.costUsd, null);
+  assert.equal(opus.costUsdTotal, 1.2527);
+});
+
+test('recomputeMetricsAggregates keeps costUsdTotal null when nothing was reported', () => {
+  const metrics = { sessions: [{ phase: 'spec', platform: 'claude', costUsd: null, costUsdEstimated: null }] };
+  recomputeMetricsAggregates(metrics);
+  assert.equal(metrics.spend.costUsdTotal, null);
+  assert.equal(metrics.phases.spec.costUsdTotal, null);
+  assert.equal(metrics.spendByPlatform.claude.costUsdTotal, null);
+  assert.equal(metrics.sessions[0].costUsdTotal, null);
 });

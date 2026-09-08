@@ -2,7 +2,7 @@
   "version": 2,
   "change": "fix-cursor-leftover-race-and-multiroot",
   "createdAt": "2026-09-02T16:40:29.977Z",
-  "updatedAt": "2026-09-07T20:22:18.491Z",
+  "updatedAt": "2026-09-08T02:37:46.311Z",
   "archivedAt": "2026-09-02T19:48:28.542Z",
   "spend": {
     "inputTokens": 1619064,
@@ -154,7 +154,8 @@
       "spendSource": "adapter",
       "sourceIds": [],
       "sourceTotals": {},
-      "byModel": []
+      "byModel": [],
+      "sources": []
     },
     {
       "startedAt": "2026-09-02T18:36:10.246Z",
@@ -177,7 +178,8 @@
       "spendSource": "adapter",
       "sourceIds": [],
       "sourceTotals": {},
-      "byModel": []
+      "byModel": [],
+      "sources": []
     },
     {
       "startedAt": "2026-09-02T19:00:45.796Z",
@@ -200,7 +202,8 @@
       "spendSource": "adapter",
       "sourceIds": [],
       "sourceTotals": {},
-      "byModel": []
+      "byModel": [],
+      "sources": []
     },
     {
       "startedAt": "2026-09-02T19:44:16.389Z",
@@ -235,6 +238,22 @@
           "outputTokens": 20098,
           "totalTokens": 1639162,
           "costUsd": null,
+          "costUsdEstimated": 4.3717,
+          "costSource": "api-estimate"
+        }
+      ],
+      "sources": [
+        {
+          "id": "d05ba640-d242-4922-b731-54dd9e1e3084",
+          "platform": "cursor",
+          "model": "cursor-grok-4.6-xhigh-fast",
+          "inputTokens": 1619064,
+          "outputTokens": 20098,
+          "totalTokens": 1639162,
+          "costUsd": null,
+          "ampCredits": null,
+          "at": "2026-09-02T19:49:11.742Z",
+          "cacheReadTokens": 1510528,
           "costUsdEstimated": 4.3717,
           "costSource": "api-estimate"
         }

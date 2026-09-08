@@ -2,7 +2,7 @@
   "version": 2,
   "change": "surface-estimated-spend",
   "createdAt": "2026-08-31T11:36:56.160Z",
-  "updatedAt": "2026-09-07T20:22:18.489Z",
+  "updatedAt": "2026-09-08T02:37:46.310Z",
   "archivedAt": "2026-08-31T12:04:05.901Z",
   "spend": {
     "inputTokens": 517451,
@@ -41,16 +41,6 @@
     }
   },
   "spendByModel": [
-    {
-      "model": "cursor-grok-4.6",
-      "platform": "cursor",
-      "inputTokens": null,
-      "outputTokens": null,
-      "totalTokens": null,
-      "costUsd": null,
-      "ampCredits": null,
-      "costUsdEstimated": null
-    },
     {
       "model": "cursor-grok-4.6-xhigh-fast",
       "platform": "cursor",
@@ -182,7 +172,8 @@
       "spendSource": "unreported",
       "sourceIds": [],
       "sourceTotals": {},
-      "byModel": []
+      "byModel": [],
+      "sources": []
     },
     {
       "startedAt": "2026-08-31T11:40:02.049Z",
@@ -205,7 +196,8 @@
       "spendSource": "adapter",
       "sourceIds": [],
       "sourceTotals": {},
-      "byModel": []
+      "byModel": [],
+      "sources": []
     },
     {
       "startedAt": "2026-08-31T11:42:45.045Z",
@@ -228,7 +220,8 @@
       "spendSource": "adapter",
       "sourceIds": [],
       "sourceTotals": {},
-      "byModel": []
+      "byModel": [],
+      "sources": []
     },
     {
       "startedAt": "2026-08-31T11:47:41.133Z",
@@ -251,7 +244,8 @@
       "spendSource": "adapter",
       "sourceIds": [],
       "sourceTotals": {},
-      "byModel": []
+      "byModel": [],
+      "sources": []
     },
     {
       "startedAt": "2026-08-31T11:53:11.411Z",
@@ -274,7 +268,8 @@
       "spendSource": "adapter",
       "sourceIds": [],
       "sourceTotals": {},
-      "byModel": []
+      "byModel": [],
+      "sources": []
     },
     {
       "startedAt": "2026-08-31T12:04:05.901Z",
@@ -309,6 +304,22 @@
           "outputTokens": 8135,
           "totalTokens": 525586,
           "costUsd": null,
+          "costUsdEstimated": 1.6526,
+          "costSource": "api-estimate"
+        }
+      ],
+      "sources": [
+        {
+          "id": "74bd7a14-6b08-4ed1-8493-54a934c88fe0",
+          "platform": "cursor",
+          "model": "cursor-grok-4.6-xhigh-fast",
+          "inputTokens": 517451,
+          "outputTokens": 8135,
+          "totalTokens": 525586,
+          "costUsd": null,
+          "ampCredits": null,
+          "at": "2026-08-31T12:04:40.854Z",
+          "cacheReadTokens": 447040,
           "costUsdEstimated": 1.6526,
           "costSource": "api-estimate"
         }
