@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-09-25
+
 ### Added
 - **Stack-neutral `openspec/config.yaml.example` for the `node` and `generic` profiles.** New `templates/openspec-config.yaml.example` (English, `{{PROJECT_NAME}}` / `{{LANG}}`) is the fallback `init` installs when a profile has no own file: `rules.proposal` requires the exact `## Non-goals` and `## Acceptance criteria` headings, `rules.tasks` carries the Files/Do/Done-when contract and the Done-when quality rules, and every rule is double-quoted so OpenSpec does not drop the list. `update` and `init` without `--force` never touch an existing `openspec/config.yaml`: add the rule by hand (README → Update). Note: `init --force --profile node|generic` now overwrites an existing `openspec/config.yaml` with this template, as `init --force` already did for `vue3` / `mvp`.
 

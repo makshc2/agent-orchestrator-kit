@@ -74,7 +74,7 @@ npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-veri
 
 See [Installation](#installation) for profile/CI options.
 
-**🔄 Already have the kit installed? Upgrade to latest (v0.15.0 adds `costUsdTotal`, one USD figure per change / phase / platform / model that sums billed Amp with estimated Cursor and Claude, rounds billed sums like estimates, and keeps cache-split Claude estimates from being re-billed at the full input rate):**
+**🔄 Already have the kit installed? Upgrade to latest (v0.16.0 makes `/opsx:propose` run the `gate-check --review` Tier 1 pre-gate before it hands off to review, teaches `spec-architect` the mandatory `## Non-goals` / `## Acceptance criteria` headings and the Done-when quality rules, and adds a stack-neutral `openspec/config.yaml.example` for the `node` / `generic` profiles):**
 
 ```bash
 npx agent-orchestrator-kit@latest update
@@ -1027,6 +1027,13 @@ The kit moves toward an Agentic Factory in four phases. **One phase = one OpenSp
 Phase bounds and non-goals: [`openspec/specs/agentic-factory-roadmap/spec.md`](openspec/specs/agentic-factory-roadmap/spec.md).
 
 ## Changelog
+
+### 0.16.0
+- **Tier 1 pre-gate in `/opsx:propose`**: after the `spec-architect` report the conductor runs `npx agent-orchestrator-kit gate-check --review <name>`. On exit ≠ 0 it re-spawns the architect once with the full error list; if the gate still fails it closes with `## Blocked` and next command `/opsx:propose <name>`. Handoff to `/opsx:review` requires exit 0 for the first propose, re-propose, and structure-only re-propose.
+- `spec-architect` requires the exact `## Non-goals` and `## Acceptance criteria` headings. Under `/opsx:propose` it runs `gate-check --review` itself and reports `**Gate:** gate-check --review exit <code>`; under `/opsx:quick` it writes `**Gate:** not run (/opsx:quick)`. Done-when must check the new state, keep counts consistent with `Do:`, and avoid volatile repo values.
+- `openspec-guide` routes a change that has `proposal.md` and no `review.md` by `gate-check --review`: exit 0 → `/opsx:review`, exit ≠ 0 → `/opsx:propose`.
+- New `templates/openspec-config.yaml.example` is the stack-neutral fallback that `init` installs for `node` / `generic`. Every rule is double-quoted so OpenSpec keeps the lists. `init --force --profile node|generic` now overwrites an existing `openspec/config.yaml`.
+- Upgrade: `update` refreshes the commands, skills, and subagents. It does not touch `AGENTS.md`, `CLAUDE.md`, or an existing `openspec/config.yaml`, so add the proposal rule by hand (see [Update](#update)).
 
 ### 0.15.0
 - **`costUsdTotal`** on `spend`, `phases.*`, `spendByPlatform.*`, `spendByModel[]`, and sessions — billed `costUsd` when present, otherwise `costUsdEstimated`, per session; a change that ran on Amp (billed) plus Cursor and Claude (estimated) now sums all three platforms instead of showing only the billed part; the human `cost:` line prints `$21.08 ($14.48 billed + ~$6.60 est.)` and `--summary-json` carries the field
