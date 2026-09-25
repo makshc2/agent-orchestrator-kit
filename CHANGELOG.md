@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Stack-neutral `openspec/config.yaml.example` for the `node` and `generic` profiles.** New `templates/openspec-config.yaml.example` (English, `{{PROJECT_NAME}}` / `{{LANG}}`) is the fallback `init` installs when a profile has no own file: `rules.proposal` requires the exact `## Non-goals` and `## Acceptance criteria` headings, `rules.tasks` carries the Files/Do/Done-when contract and the Done-when quality rules, and every rule is double-quoted so OpenSpec does not drop the list. `update` and `init` without `--force` never touch an existing `openspec/config.yaml`: add the rule by hand (README → Update). Note: `init --force --profile node|generic` now overwrites an existing `openspec/config.yaml` with this template, as `init --force` already did for `vue3` / `mvp`.
+
+### Changed
+- **`/opsx:propose` runs the Tier 1 pre-gate.** After the `spec-architect` report the conductor runs `npx agent-orchestrator-kit gate-check --review <name>`; on exit ≠ 0 it re-spawns `spec-architect` once with the full error list, and if the gate still fails it closes with `## Blocked` and next command `/opsx:propose <name>`. Handoff to `/opsx:review` requires exit 0 for the first propose, re-propose, and structure-only re-propose; the `/opsx:review` prompt in Output and Session Exit is conditional on it. Review still runs Tier 1 itself; `gate-check` is unchanged.
+- **`spec-architect` knows the mandatory proposal headings and Done-when quality rules.** It requires `## Non-goals` and `## Acceptance criteria`; when spawned by `/opsx:propose` it runs `gate-check --review` before its report and adds `**Gate:** gate-check --review exit <code>` (under `/opsx:quick` it writes `**Gate:** not run (/opsx:quick)`; a spawn prompt that does not mention quick counts as `/opsx:propose`). Done-when must check the new state, keep counts consistent with `Do:`, and avoid volatile repo values. The same rules are in the propose Task contract block.
+- **`openspec-guide` routes a failed propose pre-gate back to propose.** For a change with `proposal.md` and no `review.md` it runs `gate-check --review <name>`: exit 0 → `/opsx:review <name>`, exit ≠ 0 → `/opsx:propose <name>`.
+
 ## [0.15.0] - 2026-09-08
 
 ### Added

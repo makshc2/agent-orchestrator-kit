@@ -1,0 +1,26 @@
+schema: spec-driven
+
+context: |
+  Project: {{PROJECT_NAME}}.
+  Stack: describe the runtime, frameworks, package manager, and the build / lint / test commands here.
+  Agent language: {{LANG}} (prose in artifacts; code identifiers, paths, and CLI commands stay in English).
+  Kit gates: npx agent-orchestrator-kit gate-check --review <name> (Tier 1) and npx agent-orchestrator-kit gate-check --tasks <name> (task contract).
+
+rules:
+  proposal:
+    - "Write prose in the agent language ({{LANG}}); keep the two mandatory section headings in English exactly as shown below."
+    - "Always include a Non-goals section with the exact level-2 heading '## Non-goals' at column 0."
+    - "Always include an Acceptance criteria section with the exact level-2 heading '## Acceptance criteria' at column 0: 3–7 numbered, verifiable items."
+    - "gate-check --review (Tier 1) rejects the proposal when either heading is missing, translated, or bold-only."
+  design:
+    - "Reference existing modules and patterns in the repository; describe changes at module, API, and data level."
+  tasks:
+    - "Split work into tasks of up to ~2 hours."
+    - "Task contract: every task carries indented fields Files: (real repo paths; new ones prefixed with new file:), Do: (concrete change in 1–3 lines), Done-when: (verifiable condition or command)."
+    - "Each task is self-contained for a blind implementer without design.md; no vague wording ('as needed', 'if necessary', 'as appropriate')."
+    - "Done-when checks that the new state is present, not only that the old state is gone."
+    - "A quantitative Done-when check (grep -c, 'exactly N lines') must be consistent with the code or text that Do: of the same task prescribes."
+    - "Do not hardcode volatile repo values (current version number, dates, 'top entry'); describe them as the current value plus a rule evaluated at apply time."
+    - "Last task: build, lint, and tests pass."
+  specs:
+    - "Delta format: ADDED / MODIFIED / REMOVED Requirements; every requirement uses SHALL or MUST and has at least one '#### Scenario:'."

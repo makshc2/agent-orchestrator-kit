@@ -214,6 +214,61 @@ test('vue3 profile installs openspec config example', () => {
   }
 });
 
+test('templates/openspec-config.yaml.example is a stack-neutral fallback', () => {
+  const templatePath = join(KIT_ROOT, 'templates/openspec-config.yaml.example');
+  assert.ok(existsSync(templatePath), 'templates/openspec-config.yaml.example missing');
+  const example = readFileSync(templatePath, 'utf-8');
+  assert.match(example, /^rules:/m);
+  assert.match(example, /^ {2}proposal:/m);
+  assert.match(example, /^ {2}tasks:/m);
+  assert.match(example, /## Non-goals/);
+  assert.match(example, /## Acceptance criteria/);
+  assert.match(example, /Files:.*Do:.*Done-when:/);
+  assert.match(example, /new state is present/);
+  assert.match(example, /\{\{PROJECT_NAME\}\}/);
+  assert.match(example, /\{\{LANG\}\}/);
+  assert.doesNotMatch(example, /vue|pinia/i);
+  const ruleItems = example
+    .slice(example.indexOf('\nrules:'))
+    .split('\n')
+    .filter((line) => /^\s+- /.test(line));
+  assert.ok(ruleItems.length > 0, 'no rule items under rules:');
+  for (const line of ruleItems) {
+    assert.match(line, /^\s+- "/, `rule must be a double-quoted YAML string: ${line}`);
+  }
+});
+
+test('node and generic profiles install openspec config example with Acceptance criteria', () => {
+  for (const profile of ['node', 'generic']) {
+    const dir = mkdtempSync(join(tmpdir(), `aok-${profile}-cfg-`));
+    try {
+      runInit(dir, `--profile ${profile} --name NodeApp --lang uk`);
+      const examplePath = join(dir, 'openspec/config.yaml.example');
+      assert.ok(existsSync(examplePath), `${profile}: openspec/config.yaml.example missing`);
+      const example = readFileSync(examplePath, 'utf-8');
+      assert.match(example, /Acceptance criteria/);
+      assert.match(example, /Non-goals/);
+      assert.match(example, /NodeApp/);
+      assert.doesNotMatch(example, /\{\{/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test('init keeps an existing openspec/config.yaml for the node profile', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-node-keep-'));
+  const original = 'schema: spec-driven\n# consumer config\n';
+  try {
+    mkdirSync(join(dir, 'openspec'), { recursive: true });
+    writeFileSync(join(dir, 'openspec/config.yaml'), original);
+    runInit(dir, '--profile node --name NodeApp --lang uk');
+    assert.equal(readFileSync(join(dir, 'openspec/config.yaml'), 'utf-8'), original);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('detects yarn and patches orchestrator verifier commands', () => {
   const dir = mkdtempSync(join(tmpdir(), 'aok-yarn-'));
   try {
@@ -674,6 +729,43 @@ test('review punch-list templates route RC to propose', () => {
   assert.doesNotMatch(skill, /Spec review loops: ≤ 1/);
   assert.doesNotMatch(guide, /no `review\.md` with `Verdict: APPROVE`/);
   assert.ok(agents.length > 0);
+});
+
+test('propose runs Tier 1 pre-gate before review handoff', () => {
+  const propose = readFileSync(join(KIT_ROOT, 'templates/.agents/commands/opsx-propose.md'), 'utf-8');
+  const proposeSkill = readFileSync(join(KIT_ROOT, 'templates/.agents/skills/openspec-propose/SKILL.md'), 'utf-8');
+  const architect = readFileSync(join(KIT_ROOT, 'templates/.agents/subagents/spec-architect.md'), 'utf-8');
+  const skill = readFileSync(join(KIT_ROOT, 'templates/.agents/skills/agent-orchestration/SKILL.md'), 'utf-8');
+  const agents = readFileSync(join(KIT_ROOT, 'templates/AGENTS.md'), 'utf-8');
+  const guide = readFileSync(join(KIT_ROOT, 'templates/.agents/subagents/openspec-guide.md'), 'utf-8');
+
+  for (const text of [propose, proposeSkill]) {
+    assert.match(text, /gate-check --review/);
+    assert.match(text, /Tier 1 pre-gate/);
+    assert.match(text, /exit 0 is forbidden/);
+    assert.match(text, /If the pre-gate still fails after the one re-spawn, report `## Blocked`/);
+  }
+  assert.match(architect, /## Non-goals/);
+  assert.match(architect, /## Acceptance criteria/);
+  assert.match(architect, /\*\*Gate:\*\* gate-check --review exit <code>/);
+  assert.match(architect, /\*\*Gate:\*\* not run \(\/opsx:quick\)/);
+  assert.match(architect, /Default: a spawn prompt that does not mention `\/opsx:quick`/);
+  for (const text of [propose, proposeSkill, architect]) {
+    assert.match(text, /new state is present/);
+    assert.match(text, /consistent with the code/);
+    assert.match(text, /volatile repo values/);
+  }
+  const start = skill.indexOf('### propose → review');
+  const end = skill.indexOf('### review → apply');
+  assert.ok(start >= 0 && end > start, 'propose → review section not found');
+  const proposeToReview = skill.slice(start, end);
+  assert.match(proposeToReview, /gate-check --review/);
+  assert.match(proposeToReview, /## Blocked/);
+  assert.match(skill, /Spec review discovery loops: ≤ 2/);
+  assert.match(agents, /propose runs it as a pre-gate/);
+  assert.match(guide, /no `review\.md` → run `npx agent-orchestrator-kit gate-check --review <name>`/);
+  assert.match(guide, /exit ≠ 0 → `\/opsx:propose <name>`/);
+  assert.doesNotMatch(guide, /no `review\.md` → `\/opsx:review/);
 });
 
 function initGit(dir) {

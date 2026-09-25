@@ -1,0 +1,94 @@
+version: 1
+kit_version: "0.15.0"
+
+project:
+  name: "GenApp"
+  agent_language: "uk"
+
+package_manager: npm
+
+pipeline:
+  require_spec_review: true
+  require_design_brief: false
+  max_active_changes: 1
+  archive_after_merge: true
+  task_contract: warn
+  # Paths gate-check treats as product code. Widen it when code lives
+  # outside src/ (e.g. "{src,lib,app}/") or the review gate never fires.
+  src_glob: "src/"
+
+roles:
+  explorer:
+    command: /opsx:explore
+    mode: read-only
+    model_hint: fast
+  design_intake:
+    command: /opsx:design
+    mode: brief-only
+    model_hint: strong
+  architect:
+    command: /opsx:propose
+    mode: specs-only
+    model_hint: strong
+  spec_reviewer:
+    command: /opsx:review
+    mode: read-only
+    model_hint: medium
+  implementer:
+    command: /opsx:apply
+    mode: code
+    model_hint: strong
+  verifier:
+    type: ci
+    gates:
+      - openspec-validate-strict
+      - lint
+      - build
+
+handoff:
+  explore_to_propose: decision_brief
+  propose_to_review: validate_strict
+  review_to_apply: explicit_approve
+  apply_to_verify: all_tasks_checked
+  restore_on_start: true
+  persist_on_exit: true
+  emit_next_session_prompt: true
+  prompt_self_contained: true
+  spawn_handoff_subagent: false
+
+memory:
+  enabled: true
+  file: .cursor/memory.json
+  launcher: scripts/memory-mcp-launcher.cjs
+
+mcp:
+  baseline:
+    - memory
+  optional:
+    - figma
+    - github
+    - gitlab
+    - browser
+
+skills:
+  kit:
+    - agent-orchestration
+    - openspec-howto
+    - openspec-explore
+    - openspec-propose
+    - openspec-apply-change
+    - openspec-archive-change
+    - openspec-sync-specs
+    - spec-workflow-openspec
+  stack: []
+  external: ""
+
+figma:
+  env_file: .agents/figma.local.env
+  token_key: FIGMA_ACCESS_TOKEN
+  mcp_launcher: scripts/figma-mcp-launcher.cjs
+
+verifier:
+  lint_command: "npm run lint"
+  build_command: "npm run build"
+  test_command: "npm test"

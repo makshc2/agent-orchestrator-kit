@@ -1,0 +1,283 @@
+{
+  "version": 2,
+  "change": "propose-review-pregate",
+  "createdAt": "2026-09-25T11:00:16.795Z",
+  "updatedAt": "2026-09-25T12:50:37.640Z",
+  "archivedAt": null,
+  "spend": {
+    "inputTokens": 4816988,
+    "outputTokens": 74379,
+    "totalTokens": 4891367,
+    "costUsd": null,
+    "costUsdEstimated": 5.6863,
+    "costUsdTotal": 5.6863
+  },
+  "spendByPlatform": {
+    "cursor": {
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null,
+      "costUsdTotal": null,
+      "source": "none"
+    },
+    "claude": {
+      "inputTokens": 4816988,
+      "outputTokens": 74379,
+      "totalTokens": 4891367,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": 5.6863,
+      "costUsdTotal": 5.6863,
+      "source": "claude-jsonl"
+    },
+    "amp": {
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null,
+      "costUsdTotal": null,
+      "source": "none"
+    }
+  },
+  "spendByModel": [
+    {
+      "model": "claude-opus-5-5",
+      "platform": "claude",
+      "inputTokens": 4816988,
+      "outputTokens": 74379,
+      "totalTokens": 4891367,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": 5.6863,
+      "costUsdTotal": 5.6863
+    }
+  ],
+  "totals": {
+    "sessions": 2,
+    "durationMs": 8591710,
+    "leadTimeMs": 11416479,
+    "cloudSessions": 0
+  },
+  "phases": {
+    "spec": {
+      "sessions": 1,
+      "durationMs": 4968172,
+      "startedAt": "2026-09-25T09:37:28.623Z",
+      "endedAt": "2026-09-25T11:00:16.795Z",
+      "leadTimeMs": 4968172,
+      "inputTokens": 2900065,
+      "outputTokens": 44568,
+      "totalTokens": 2944633,
+      "costUsd": null,
+      "costUsdEstimated": 3.379,
+      "costUsdTotal": 3.379,
+      "agents": [
+        "Architect"
+      ],
+      "models": [
+        "claude-opus-5-5"
+      ]
+    },
+    "review": {
+      "sessions": 1,
+      "durationMs": 3623538,
+      "startedAt": "2026-09-25T11:47:21.564Z",
+      "endedAt": "2026-09-25T12:47:45.102Z",
+      "leadTimeMs": 3623538,
+      "inputTokens": 1916923,
+      "outputTokens": 29811,
+      "totalTokens": 1946734,
+      "costUsd": null,
+      "costUsdEstimated": 2.3073,
+      "costUsdTotal": 2.3073,
+      "agents": [
+        "Spec Reviewer"
+      ],
+      "models": [
+        "claude-opus-5-5"
+      ]
+    }
+  },
+  "sessions": [
+    {
+      "startedAt": "2026-09-25T09:37:28.623Z",
+      "endedAt": "2026-09-25T11:00:16.795Z",
+      "durationMs": 4968172,
+      "role": "Architect",
+      "phase": "spec",
+      "runtime": "local",
+      "agentId": "none",
+      "model": "claude-opus-5-5",
+      "platform": "claude",
+      "threadId": null,
+      "tasks": "0/13",
+      "sourceIds": [
+        "msg_011CfPwmhq8S1q349DKw2ABE",
+        "msg_011CfPwncAbbVJyewiuoarGQ",
+        "msg_011CfPwnvURJRDraU8ctGTiP",
+        "msg_011CfPwoMKAFNPsypgNdB7WH",
+        "msg_011CfPwovbteLfZV74tV792t",
+        "msg_011CfPwpD55zYNUDuBGuYxwr",
+        "msg_011CfPwpgNAVY2k9BhvEY76E",
+        "msg_011CfPwq6EbwaNPpQtj7jZgv",
+        "msg_011CfPwqw9SBGDeEZi9YjT34",
+        "msg_011CfPwrF3DSWbkrQK3MLSHG",
+        "msg_011CfPwrZMnTPCQvfa48FASm",
+        "msg_011CfPwrqn1QKTVvpGXLac5e",
+        "msg_011CfPwuJLV7fb6NKLwcuwBR",
+        "msg_011CfPwxBSLVdWSoFwAz7e7w",
+        "msg_011CfPxB8nwvcb45ovDoUfM8",
+        "msg_011CfQ1srhZpRwjvCGwUKhXu",
+        "msg_011CfQ1tQ8vsFeJLWq4UCadE",
+        "msg_011CfQ1tn2ouavvFfYdHJNi6",
+        "msg_011CfQ3HHV5RZovQoQKDdxeR",
+        "msg_011CfQ3HijNVGZVU9QbBqYgF",
+        "msg_011CfQ3JAmHqR6uefuaBbsoT",
+        "msg_011CfQ3KAPWNVn2i69rE3cjR",
+        "msg_011CfQ3Kk91e6QzGHHr2Cw92",
+        "msg_011CfQ3LhcVhN5dSN3tb5PDS",
+        "msg_011CfQ3MSMVf3K5XWBNzkpQV",
+        "msg_011CfQ3P29m5CMXK3mB7irCw",
+        "msg_011CfQ3PWnCWHEKhjdBsDNAQ"
+      ],
+      "sourceTotals": {
+        "msg_011CfPwmhq8S1q349DKw2ABE": 46317,
+        "msg_011CfPwncAbbVJyewiuoarGQ": 47617,
+        "msg_011CfPwnvURJRDraU8ctGTiP": 50175,
+        "msg_011CfPwoMKAFNPsypgNdB7WH": 54391,
+        "msg_011CfPwovbteLfZV74tV792t": 55722,
+        "msg_011CfPwpD55zYNUDuBGuYxwr": 62160,
+        "msg_011CfPwpgNAVY2k9BhvEY76E": 71144,
+        "msg_011CfPwq6EbwaNPpQtj7jZgv": 75272,
+        "msg_011CfPwqw9SBGDeEZi9YjT34": 81458,
+        "msg_011CfPwrF3DSWbkrQK3MLSHG": 82741,
+        "msg_011CfPwrZMnTPCQvfa48FASm": 86307,
+        "msg_011CfPwrqn1QKTVvpGXLac5e": 96108,
+        "msg_011CfPwuJLV7fb6NKLwcuwBR": 102283,
+        "msg_011CfPwxBSLVdWSoFwAz7e7w": 125008,
+        "msg_011CfPxB8nwvcb45ovDoUfM8": 125761,
+        "msg_011CfQ1srhZpRwjvCGwUKhXu": 126277,
+        "msg_011CfQ1tQ8vsFeJLWq4UCadE": 128416,
+        "msg_011CfQ1tn2ouavvFfYdHJNi6": 130025,
+        "msg_011CfQ3HHV5RZovQoQKDdxeR": 137561,
+        "msg_011CfQ3HijNVGZVU9QbBqYgF": 138108,
+        "msg_011CfQ3JAmHqR6uefuaBbsoT": 148799,
+        "msg_011CfQ3KAPWNVn2i69rE3cjR": 150167,
+        "msg_011CfQ3Kk91e6QzGHHr2Cw92": 157648,
+        "msg_011CfQ3LhcVhN5dSN3tb5PDS": 161381,
+        "msg_011CfQ3MSMVf3K5XWBNzkpQV": 163573,
+        "msg_011CfQ3P29m5CMXK3mB7irCw": 167401,
+        "msg_011CfQ3PWnCWHEKhjdBsDNAQ": 172813
+      },
+      "byModel": [
+        {
+          "model": "claude-opus-5-5",
+          "platform": "claude",
+          "inputTokens": 2900065,
+          "outputTokens": 44568,
+          "totalTokens": 2944633,
+          "costUsd": null,
+          "costUsdEstimated": 3.379,
+          "costSource": "api-estimate"
+        }
+      ],
+      "inputTokens": 2900065,
+      "outputTokens": 44568,
+      "totalTokens": 2944633,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": 3.379,
+      "spendSource": "adapter",
+      "costUsdTotal": 3.379
+    },
+    {
+      "startedAt": "2026-09-25T11:47:21.564Z",
+      "endedAt": "2026-09-25T12:47:45.102Z",
+      "durationMs": 3623538,
+      "role": "Spec Reviewer",
+      "phase": "review",
+      "runtime": "local",
+      "agentId": "none",
+      "model": "claude-opus-5-5",
+      "platform": "claude",
+      "threadId": null,
+      "tasks": "0/13",
+      "sourceIds": [
+        "msg_011CfQ6xHSnMo9qyL8r5HZ7d",
+        "msg_011CfQ6yDaQ584r2u21oW2LB",
+        "msg_011CfQ6yWaqt59mcwKB9ou6f",
+        "msg_011CfQ6ysJXpHtPhhTHCR7bM",
+        "msg_011CfQ6zAA42gbrMokWRcdai",
+        "msg_011CfQ714MpoP7zB5625m1Pf",
+        "msg_011CfQ71uVJBE7JhFqVKYv6R",
+        "msg_011CfQ7CR6YfQamCw1ti1jAt",
+        "msg_011CfQB8XKDTQ8Gs72877UkZ",
+        "msg_011CfQB9LsgNxVE494wTnzmQ",
+        "msg_011CfQBA1ozJXgavEzeWxKzA",
+        "msg_011CfQBTxe1CLgXCmUAbXdQr",
+        "msg_011CfQBUQaTYvU1nkaMu7UXb",
+        "msg_011CfQBV3Koe4RgxvSV37Y3w",
+        "msg_011CfQBW4bz7so8K528tanSi",
+        "msg_011CfQBWUEnBFuQAkNezkH9d",
+        "msg_011CfQBXS55gNGnEBSNycu9F",
+        "msg_011CfQBXooJSfhS7Q8fXZUBb",
+        "msg_011CfQBZCWKbUwPNCFQQriMp",
+        "msg_011CfQBZUENYqDThMjghhpFK"
+      ],
+      "sourceTotals": {
+        "msg_011CfQ6xHSnMo9qyL8r5HZ7d": 47133,
+        "msg_011CfQ6yDaQ584r2u21oW2LB": 50420,
+        "msg_011CfQ6yWaqt59mcwKB9ou6f": 55883,
+        "msg_011CfQ6ysJXpHtPhhTHCR7bM": 61608,
+        "msg_011CfQ6zAA42gbrMokWRcdai": 68882,
+        "msg_011CfQ714MpoP7zB5625m1Pf": 70049,
+        "msg_011CfQ71uVJBE7JhFqVKYv6R": 87202,
+        "msg_011CfQ7CR6YfQamCw1ti1jAt": 88038,
+        "msg_011CfQB8XKDTQ8Gs72877UkZ": 89003,
+        "msg_011CfQB9LsgNxVE494wTnzmQ": 103404,
+        "msg_011CfQBA1ozJXgavEzeWxKzA": 104520,
+        "msg_011CfQBTxe1CLgXCmUAbXdQr": 109396,
+        "msg_011CfQBUQaTYvU1nkaMu7UXb": 111254,
+        "msg_011CfQBV3Koe4RgxvSV37Y3w": 121609,
+        "msg_011CfQBW4bz7so8K528tanSi": 124063,
+        "msg_011CfQBWUEnBFuQAkNezkH9d": 128369,
+        "msg_011CfQBXS55gNGnEBSNycu9F": 128879,
+        "msg_011CfQBXooJSfhS7Q8fXZUBb": 131657,
+        "msg_011CfQBZCWKbUwPNCFQQriMp": 131966,
+        "msg_011CfQBZUENYqDThMjghhpFK": 133399
+      },
+      "byModel": [
+        {
+          "model": "claude-opus-5-5",
+          "platform": "claude",
+          "inputTokens": 1916923,
+          "outputTokens": 29811,
+          "totalTokens": 1946734,
+          "costUsd": null,
+          "costUsdEstimated": 2.3073,
+          "costSource": "api-estimate"
+        }
+      ],
+      "inputTokens": 1916923,
+      "outputTokens": 29811,
+      "totalTokens": 1946734,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": 2.3073,
+      "spendSource": "adapter",
+      "costUsdTotal": 2.3073
+    }
+  ],
+  "pending": {
+    "startedAt": "2026-09-25T12:50:37.640Z",
+    "role": "Implementer",
+    "platform": "claude",
+    "threadId": null,
+    "clientSource": "claude-env"
+  }
+}

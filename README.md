@@ -340,6 +340,7 @@ The conductor spawns `spec-architect`; it does not write artifacts in the parent
 **Exit gate:**
 ```bash
 npx openspec validate <name> --strict --type change  # must be ✓
+npx agent-orchestrator-kit gate-check --review <name>  # Tier 1 pre-gate: exit 0 before /opsx:review
 ```
 
 ```
@@ -638,6 +639,16 @@ npx agent-orchestrator-kit update
 - `openspec/specs/`
 - `openspec/changes/`
 - Any project-conventions skills
+
+**Existing `openspec/config.yaml`:** `update` never touches it, and `init` skips `openspec/config.yaml.example` when `openspec/config.yaml` already exists (for example after `npx openspec init`). Add the proposal rule by hand, under `rules.proposal`, so `openspec instructions proposal` tells the architect about the Tier 1 headings:
+
+```yaml
+rules:
+  proposal:
+    - "Always include the exact level-2 headings '## Non-goals' and '## Acceptance criteria' (gate-check --review Tier 1 rejects the proposal without them)."
+```
+
+Double-quote every rule: an unquoted item that contains `: ` makes OpenSpec drop the whole list for that artifact, and an unquoted ` #` silently cuts the rule short (YAML reads the rest as a comment). A fresh `init --profile node` or `init --profile generic` installs `openspec/config.yaml.example` with these rules from `templates/openspec-config.yaml.example`; `init --force` overwrites an existing `openspec/config.yaml`.
 
 ### Upgrading an existing project to v0.1.7 (status / gate-check / GitHub Spec Verifier)
 

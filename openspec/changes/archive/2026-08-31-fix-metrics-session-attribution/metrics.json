@@ -2,14 +2,15 @@
   "version": 2,
   "change": "fix-metrics-session-attribution",
   "createdAt": "2026-08-31T17:01:43.390Z",
-  "updatedAt": "2026-09-08T02:37:46.308Z",
+  "updatedAt": "2026-09-25T09:36:51.457Z",
   "archivedAt": "2026-08-31T20:46:27.221Z",
   "spend": {
     "inputTokens": 104655,
     "outputTokens": 862,
     "totalTokens": 105517,
     "costUsd": null,
-    "costUsdEstimated": 0.1083
+    "costUsdEstimated": 0.1083,
+    "costUsdTotal": 0.1083
   },
   "spendByPlatform": {
     "cursor": {
@@ -19,6 +20,7 @@
       "costUsd": null,
       "ampCredits": null,
       "costUsdEstimated": 0.1083,
+      "costUsdTotal": 0.1083,
       "source": "cursor-hook"
     },
     "claude": {
@@ -28,6 +30,7 @@
       "costUsd": null,
       "ampCredits": null,
       "costUsdEstimated": null,
+      "costUsdTotal": null,
       "source": "none"
     },
     "amp": {
@@ -37,10 +40,22 @@
       "costUsd": null,
       "ampCredits": null,
       "costUsdEstimated": null,
+      "costUsdTotal": null,
       "source": "none"
     }
   },
   "spendByModel": [
+    {
+      "model": "cursor-grok-4.6",
+      "platform": "cursor",
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null,
+      "costUsdTotal": null
+    },
     {
       "model": "cursor-grok-4.6-low",
       "platform": "cursor",
@@ -49,7 +64,8 @@
       "totalTokens": 105517,
       "costUsd": null,
       "ampCredits": null,
-      "costUsdEstimated": 0.1083
+      "costUsdEstimated": 0.1083,
+      "costUsdTotal": 0.1083
     }
   ],
   "totals": {
@@ -70,6 +86,7 @@
       "totalTokens": null,
       "costUsd": null,
       "costUsdEstimated": null,
+      "costUsdTotal": null,
       "agents": [
         "Architect — propose complete, artifacts validated"
       ],
@@ -88,6 +105,7 @@
       "totalTokens": null,
       "costUsd": null,
       "costUsdEstimated": null,
+      "costUsdTotal": null,
       "agents": [
         "Spec Reviewer — REQUEST CHANGES",
         "Architect — propose complete, ready for Spec Reviewer",
@@ -108,6 +126,7 @@
       "totalTokens": null,
       "costUsd": null,
       "costUsdEstimated": null,
+      "costUsdTotal": null,
       "agents": [
         "Implementer"
       ],
@@ -126,6 +145,7 @@
       "totalTokens": 105517,
       "costUsd": null,
       "costUsdEstimated": 0.1083,
+      "costUsdTotal": 0.1083,
       "agents": [
         "Archiver"
       ],
@@ -158,7 +178,7 @@
       "sourceIds": [],
       "sourceTotals": {},
       "byModel": [],
-      "sources": []
+      "costUsdTotal": null
     },
     {
       "startedAt": "2026-08-31T17:02:25.354Z",
@@ -182,7 +202,7 @@
       "sourceIds": [],
       "sourceTotals": {},
       "byModel": [],
-      "sources": []
+      "costUsdTotal": null
     },
     {
       "startedAt": "2026-08-31T17:09:06.856Z",
@@ -206,7 +226,7 @@
       "sourceIds": [],
       "sourceTotals": {},
       "byModel": [],
-      "sources": []
+      "costUsdTotal": null
     },
     {
       "startedAt": "2026-08-31T17:22:44.625Z",
@@ -230,7 +250,7 @@
       "sourceIds": [],
       "sourceTotals": {},
       "byModel": [],
-      "sources": []
+      "costUsdTotal": null
     },
     {
       "startedAt": "2026-08-31T17:28:19.293Z",
@@ -254,7 +274,7 @@
       "sourceIds": [],
       "sourceTotals": {},
       "byModel": [],
-      "sources": []
+      "costUsdTotal": null
     },
     {
       "startedAt": "2026-08-31T20:18:05.087Z",
@@ -278,7 +298,7 @@
       "sourceIds": [],
       "sourceTotals": {},
       "byModel": [],
-      "sources": []
+      "costUsdTotal": null
     },
     {
       "startedAt": "2026-08-31T20:33:54.590Z",
@@ -302,7 +322,7 @@
       "sourceIds": [],
       "sourceTotals": {},
       "byModel": [],
-      "sources": []
+      "costUsdTotal": null
     },
     {
       "startedAt": "2026-08-31T20:41:14.367Z",
@@ -326,7 +346,7 @@
       "sourceIds": [],
       "sourceTotals": {},
       "byModel": [],
-      "sources": []
+      "costUsdTotal": null
     },
     {
       "startedAt": "2026-08-31T20:46:25.841Z",
@@ -365,22 +385,7 @@
           "costSource": "api-estimate"
         }
       ],
-      "sources": [
-        {
-          "id": "84743a83-7bb5-4855-a518-4904e29c91d8",
-          "platform": "cursor",
-          "model": "cursor-grok-4.6-low",
-          "inputTokens": 104655,
-          "outputTokens": 862,
-          "totalTokens": 105517,
-          "costUsd": null,
-          "ampCredits": null,
-          "at": "2026-08-31T20:46:32.498Z",
-          "cacheReadTokens": 70784,
-          "costUsdEstimated": 0.1083,
-          "costSource": "api-estimate"
-        }
-      ]
+      "costUsdTotal": 0.1083
     }
   ],
   "pending": null
