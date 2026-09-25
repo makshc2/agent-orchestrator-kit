@@ -2,15 +2,15 @@
   "version": 2,
   "change": "propose-review-pregate",
   "createdAt": "2026-09-25T11:00:16.795Z",
-  "updatedAt": "2026-09-25T13:45:56.547Z",
-  "archivedAt": null,
+  "updatedAt": "2026-09-25T13:54:23.562Z",
+  "archivedAt": "2026-09-25T13:54:23.562Z",
   "spend": {
-    "inputTokens": 10521152,
-    "outputTokens": 135584,
-    "totalTokens": 10656736,
+    "inputTokens": 14372813,
+    "outputTokens": 154665,
+    "totalTokens": 14527478,
     "costUsd": null,
-    "costUsdEstimated": 10.959,
-    "costUsdTotal": 10.959
+    "costUsdEstimated": 13.6454,
+    "costUsdTotal": 13.6454
   },
   "spendByPlatform": {
     "cursor": {
@@ -24,13 +24,13 @@
       "source": "none"
     },
     "claude": {
-      "inputTokens": 10521152,
-      "outputTokens": 135584,
-      "totalTokens": 10656736,
+      "inputTokens": 14372813,
+      "outputTokens": 154665,
+      "totalTokens": 14527478,
       "costUsd": null,
       "ampCredits": null,
-      "costUsdEstimated": 10.959,
-      "costUsdTotal": 10.959,
+      "costUsdEstimated": 13.6454,
+      "costUsdTotal": 13.6454,
       "source": "claude-jsonl"
     },
     "amp": {
@@ -48,19 +48,19 @@
     {
       "model": "claude-opus-5-5",
       "platform": "claude",
-      "inputTokens": 10521152,
-      "outputTokens": 135584,
-      "totalTokens": 10656736,
+      "inputTokens": 14372813,
+      "outputTokens": 154665,
+      "totalTokens": 14527478,
       "costUsd": null,
       "ampCredits": null,
-      "costUsdEstimated": 10.959,
-      "costUsdTotal": 10.959
+      "costUsdEstimated": 13.6454,
+      "costUsdTotal": 13.6454
     }
   ],
   "totals": {
-    "sessions": 3,
-    "durationMs": 11910617,
-    "leadTimeMs": 14907924,
+    "sessions": 4,
+    "durationMs": 11949017,
+    "leadTimeMs": 15414939,
     "cloudSessions": 0
   },
   "phases": {
@@ -108,14 +108,33 @@
       "startedAt": "2026-09-25T12:50:37.640Z",
       "endedAt": "2026-09-25T13:45:56.547Z",
       "leadTimeMs": 3318907,
-      "inputTokens": 5289774,
-      "outputTokens": 55363,
-      "totalTokens": 5345137,
+      "inputTokens": 7188227,
+      "outputTokens": 64849,
+      "totalTokens": 7253076,
       "costUsd": null,
-      "costUsdEstimated": 4.8777,
-      "costUsdTotal": 4.8777,
+      "costUsdEstimated": 6.1702,
+      "costUsdTotal": 6.1702,
       "agents": [
         "Implementer"
+      ],
+      "models": [
+        "claude-opus-5-5"
+      ]
+    },
+    "archive": {
+      "sessions": 1,
+      "durationMs": 38400,
+      "startedAt": "2026-09-25T13:53:45.162Z",
+      "endedAt": "2026-09-25T13:54:23.562Z",
+      "leadTimeMs": 38400,
+      "inputTokens": 1953208,
+      "outputTokens": 9595,
+      "totalTokens": 1962803,
+      "costUsd": null,
+      "costUsdEstimated": 1.3939,
+      "costUsdTotal": 1.3939,
+      "agents": [
+        "Archiver"
       ],
       "models": [
         "claude-opus-5-5"
@@ -348,7 +367,17 @@
         "msg_011CfQFhEZnQcMKTvSP3yAt6",
         "msg_011CfQFuMS7V65LG8UnqmGiR",
         "msg_011CfQFuwpahzdaaDCD67vRt",
-        "msg_011CfQFyo4q8pbMpPuSWymzb"
+        "msg_011CfQFyo4q8pbMpPuSWymzb",
+        "msg_011CfQG1hFeFqjaQPDvqJ6FS",
+        "msg_011CfQG2SUBPKWi2wxYSuiwL",
+        "msg_011CfQG3BT4UcWLj9DqsJMXh",
+        "msg_011CfQG3RrVpaSxDCeMHvq1E",
+        "msg_011CfQG3wrnQFQJAMwjY8q59",
+        "msg_011CfQG4HroSjczBo3pRi33D",
+        "msg_011CfQG4SiMcxxXnMBmUkcMw",
+        "msg_011CfQG4xMpxnaXWwxADCQEn",
+        "msg_011CfQG5T2k3yQ6g7VvwB3Y7",
+        "msg_011CfQG5srEHNeHMSRH6pESq"
       ],
       "sourceTotals": {
         "msg_011CfQBnG2Wws68pDE664KAN": 47263,
@@ -389,28 +418,101 @@
         "msg_011CfQFhEZnQcMKTvSP3yAt6": 173216,
         "msg_011CfQFuMS7V65LG8UnqmGiR": 175422,
         "msg_011CfQFuwpahzdaaDCD67vRt": 176132,
-        "msg_011CfQFyo4q8pbMpPuSWymzb": 178540
+        "msg_011CfQFyo4q8pbMpPuSWymzb": 178540,
+        "msg_011CfQG1hFeFqjaQPDvqJ6FS": 181242,
+        "msg_011CfQG2SUBPKWi2wxYSuiwL": 187142,
+        "msg_011CfQG3BT4UcWLj9DqsJMXh": 187803,
+        "msg_011CfQG3RrVpaSxDCeMHvq1E": 189421,
+        "msg_011CfQG3wrnQFQJAMwjY8q59": 190872,
+        "msg_011CfQG4HroSjczBo3pRi33D": 191156,
+        "msg_011CfQG4SiMcxxXnMBmUkcMw": 191887,
+        "msg_011CfQG4xMpxnaXWwxADCQEn": 192479,
+        "msg_011CfQG5T2k3yQ6g7VvwB3Y7": 193323,
+        "msg_011CfQG5srEHNeHMSRH6pESq": 202614
       },
       "byModel": [
         {
           "model": "claude-opus-5-5",
           "platform": "claude",
-          "inputTokens": 5289774,
-          "outputTokens": 55363,
-          "totalTokens": 5345137,
+          "inputTokens": 7188227,
+          "outputTokens": 64849,
+          "totalTokens": 7253076,
           "costUsd": null,
-          "costUsdEstimated": 4.8777,
+          "costUsdEstimated": 6.1702,
           "costSource": "api-estimate"
         }
       ],
-      "inputTokens": 5289774,
-      "outputTokens": 55363,
-      "totalTokens": 5345137,
+      "inputTokens": 7188227,
+      "outputTokens": 64849,
+      "totalTokens": 7253076,
       "costUsd": null,
       "ampCredits": null,
-      "costUsdEstimated": 4.8777,
+      "costUsdEstimated": 6.1702,
       "spendSource": "adapter",
-      "costUsdTotal": 4.8777
+      "costUsdTotal": 6.1702
+    },
+    {
+      "startedAt": "2026-09-25T13:53:45.162Z",
+      "endedAt": "2026-09-25T13:54:23.562Z",
+      "durationMs": 38400,
+      "role": "Archiver",
+      "phase": "archive",
+      "runtime": "local",
+      "agentId": "none",
+      "model": "claude-opus-5-5",
+      "platform": "claude",
+      "threadId": null,
+      "tasks": "13/13",
+      "sourceIds": [
+        "msg_011CfQGaGEREXSzhieMRH8jn",
+        "msg_011CfQGasPGevSjvLLEMnf6s",
+        "msg_011CfQGb9BmryXfRHub7Jbv3",
+        "msg_011CfQGbRGudpmiPQTav4yes",
+        "msg_011CfQGbnoiaDffLbd21426i",
+        "msg_011CfQGT8TPtELZxyikJ1Gzr",
+        "msg_011CfQGUcTfg9pRDayKBRvni",
+        "msg_011CfQGV7YPWAMq91PQ9L2iZ",
+        "msg_011CfQGWcvWMnRyvHkqSf7Fr",
+        "msg_011CfQGWz2FdMU9tNYRXY2h3",
+        "msg_011CfQGXpNc4z6UDiYNtDhrW",
+        "msg_011CfQGamtNFpLAsxSRfM24S",
+        "msg_011CfQGbL7MHkKwwNoPnPLHH"
+      ],
+      "sourceTotals": {
+        "msg_011CfQGaGEREXSzhieMRH8jn": 41595,
+        "msg_011CfQGasPGevSjvLLEMnf6s": 42184,
+        "msg_011CfQGb9BmryXfRHub7Jbv3": 43283,
+        "msg_011CfQGbRGudpmiPQTav4yes": 43641,
+        "msg_011CfQGbnoiaDffLbd21426i": 44357,
+        "msg_011CfQGT8TPtELZxyikJ1Gzr": 212616,
+        "msg_011CfQGUcTfg9pRDayKBRvni": 215152,
+        "msg_011CfQGV7YPWAMq91PQ9L2iZ": 217813,
+        "msg_011CfQGWcvWMnRyvHkqSf7Fr": 218210,
+        "msg_011CfQGWz2FdMU9tNYRXY2h3": 219810,
+        "msg_011CfQGXpNc4z6UDiYNtDhrW": 220430,
+        "msg_011CfQGamtNFpLAsxSRfM24S": 221456,
+        "msg_011CfQGbL7MHkKwwNoPnPLHH": 222256
+      },
+      "byModel": [
+        {
+          "model": "claude-opus-5-5",
+          "platform": "claude",
+          "inputTokens": 1953208,
+          "outputTokens": 9595,
+          "totalTokens": 1962803,
+          "costUsd": null,
+          "costUsdEstimated": 1.3939,
+          "costSource": "api-estimate"
+        }
+      ],
+      "inputTokens": 1953208,
+      "outputTokens": 9595,
+      "totalTokens": 1962803,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": 1.3939,
+      "spendSource": "adapter",
+      "costUsdTotal": 1.3939
     }
   ],
   "pending": null
