@@ -22,3 +22,20 @@
 - 2026-09-25 The `npm test` baseline at HEAD 44a20e5 is 213/213, and 217/217 after apply. The Done-when of task 3.2 already holds before apply, so it is a regression gate. Check the non-goal guard with `git status --porcelain -- <paths>`, not `git diff --quiet`, which misses untracked files. This corrects the architect handoff claim that every Done-when fails before apply.
 - 2026-09-25 Follow-up, outside this change: the guide maps any RC `review.md` to `/opsx:propose`. That is pre-existing and wrong for a stale RC after a rejected Tier 2 file or a finished re-propose (F5).
 - 2026-09-25 Correction to the vue3/mvp follow-up: OpenSpec drops only the rule lists that contain unquoted `: ` items (vue3 proposal/tasks/specs; mvp proposal/tasks). vue3 `design` and mvp `specs` load today (F28).
+- 2026-09-25 Apply complete 13/13 with every Done-when verified by the conductor. The implementation matches `tasks.md` verbatim; no escape valve was triggered and no improvisation was needed.
+- 2026-09-25 Collateral from this apply session, not from the change:
+- 2026-09-25 At 2026-09-25 16:04:07 the workflow's read-only completeness critic ran `node bin/agent-orchestrator.js init --profile generic --name GenApp --lang uk` with the repo root as cwd.
+- 2026-09-25 That created 57 untracked kit-install files: root `AGENTS.md`/`CLAUDE.md`, `.agents/orchestrator.yaml`, `.agents/{commands,skills,subagents}/`, 4 `.agents/rules/*.mdc`, `.agents/{figma,github,gitlab}.local.env.example`, 7 `scripts/*`.
+- 2026-09-25 It also rewrote 6 tracked files with identical content (no git diff) and the gitignored `.amp/settings.json` (canonical memory entry).
+- 2026-09-25 The auto-mode classifier first denied deleting them. The owner's `git add -A` commit `72b5dc1` (pushed) then included them.
+- 2026-09-25 At the owner's request the conductor deleted exactly those 57 paths (list verified equal to the untracked set at 16:04) and committed only the deletions as local `ec7407a`. The owner pushes it.
+- 2026-09-25 The stray `.agents/orchestrator.yaml` (`agent_language: "uk"`, `name: "GenApp"`) would have changed the handoff CLI prompt language and the archive gates of this checkout; it is gone from the working tree, and from `main` once `ec7407a` is pushed.
+- 2026-09-25 Harness note: in this shell `grep` is a ugrep wrapper. A whole-line leftover check whose pattern starts with `-` needs `-e`. The Done-when commands in `tasks.md` are unaffected.
+- 2026-09-25 Known review Minors remain non-blocking follow-ups; the critic re-surfaced them with file:line evidence and found nothing new:
+- 2026-09-25 F6, C1, C2, F1, F27, F28;
+- 2026-09-25 F2: T1 does not assert the guide's `exit 0 → /opsx:review` branch;
+- 2026-09-25 F7: the `templates/AGENTS.md`/`templates/CLAUDE.md` edits reach consumers only via `init`, and CHANGELOG does not say so;
+- 2026-09-25 F8: the A4 contract line shows only the propose form;
+- 2026-09-25 F18: the volatile-values rule sits under the Done-when label.
+- 2026-09-25 Design-disclosed, out of scope: the `handoff.propose_to_review: validate_strict` key in `templates/orchestrator.yaml` / profiles, and the README `gate-check --review` CLI reference (Tier 1 of review), do not yet mention the propose pre-gate.
+- 2026-09-25 Next: the implementation is already on `main` (`72b5dc1`, pushed directly, no PR). The owner pushes `ec7407a`. After green CI on `main` → `/opsx:archive propose-review-pregate`. Use `--sync`: three capability deltas — tiered-review, task-contract, pipeline-subagents.
