@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Tier 1 review checks delta-spec headings against the main specs.** `gate-check --review` now reports the same `MODIFIED` / `REMOVED` not found and `ADDED` already exists conflicts that `archive --sync` enforces, so a mismatched requirement title fails in the propose/review phase instead of at archive. Delta specs may use `## RENAMED Requirements` with `FROM:` / `TO:` lines. (`openspec/changes/tier1-delta-heading-check`)
+- **Metrics ledger integrity.** Fail-open invariant warnings on persist and archive (stderr + `session.notes[]`), adapter notes printed to stderr, nullable `cacheReadTokens` / `cacheCreationTokens` on sessions, phases and `spendByModel` with a cache-hit line in the summaries, a contract test over newly archived `metrics.json`, `claude-opus-5-5` rates in the estimator and a 0.1× cache-read fallback for unknown models, `canonicalRole` maps `Spec Architect`. (`openspec/changes/metrics-ledger-integrity`)
+
+### Changed
+- **Next-session prompt follows the parent-driven protocol.** `handoff <name>` no longer tells the next session to read Memory MCP or to spawn `session-handoff`; those fallback lines appear only when `handoff.spawn_handoff_subagent: true` in `orchestrator.yaml` (the flag is now actually read). The prompt is ~1.5 KB instead of 3.3–4.3 KB; `handoff --restore` prints the `Attach` section and only the last 10 entries of `decisions.md` with a trailer naming the older ones. `session-handoff.mdc`, `agent-orchestration.mdc`, the `agent-orchestration` skill and the `session-handoff` subagent were aligned; the kit's own `.agents/rules/session-handoff.mdc` is a copy of the template again. (`openspec/changes/fix-next-session-prompt`)
+- **Dead `roles.*.model_hint` keys removed** from `templates/orchestrator.yaml` and `profiles/*/orchestrator.yaml` (never read by the CLI).
+
+### Fixed
+- **`gate-check` reads `pipeline.*` only inside the top-level `pipeline:` block** with comments stripped, so a commented-out `# require_spec_review: false` or the same key under another section no longer disables the review gate silently (files without a `pipeline:` block keep the old regex fallback). `pipeline.src_glob` / `--src-glob` accept a comma- or space-separated list passed to git as separate pathspecs. A byte-equality test keeps `scripts/*.cjs` in sync with `templates/scripts/`. (`openspec/changes/gate-check-config-parser-and-src-glob`)
+
 ## [0.16.0] - 2026-09-25
 
 ### Added

@@ -506,7 +506,7 @@ Lints the task contract in `tasks.md`: every task needs `Files:` / `Do:` / `Done
 npx agent-orchestrator-kit gate-check --review <change-name> [--json]
 ```
 
-Deterministic Tier 1 of the review phase: strict OpenSpec validation, the task-contract lint, `Non-goals` / `Acceptance criteria` sections in `proposal.md`, and non-empty ADDED/MODIFIED/REMOVED sections in delta specs. Human-readable stdout, or `--json` for a `{pass, errors[]}` report.
+Deterministic Tier 1 of the review phase: strict OpenSpec validation, the task-contract lint, `Non-goals` / `Acceptance criteria` sections in `proposal.md`, non-empty ADDED/MODIFIED/REMOVED sections in delta specs, and the same heading checks `archive --sync` enforces (a MODIFIED/REMOVED title must exist in the main spec, an ADDED title must not). Human-readable stdout, or `--json` for a `{pass, errors[]}` report.
 
 ### Pre-commit review gate (optional)
 
@@ -955,7 +955,8 @@ npx agent-orchestrator-kit status
   (warn-only; missing/stale skills do not fail the command)
 
 npx agent-orchestrator-kit gate-check [change-name] [options]
-  --src-glob <glob>  Source path filter used to detect code changes
+  --src-glob <glob>  Source path filter used to detect code changes; a comma- or
+                     space-separated list is passed to git as separate pathspecs
                      (default: pipeline.src_glob from orchestrator.yaml, else src/)
   --base <ref>       Git ref to diff against (default: HEAD~1)
   --staged           Check staged files (git diff --cached) instead of --base
