@@ -3293,12 +3293,17 @@ function runTier1Review(projectDir, name) {
     if (!/^#{2,}\s*Acceptance criteria\b/im.test(proposal)) errors.push('proposal.md: missing "Acceptance criteria" section');
   }
 
-  for (const deltaPath of listDeltaSpecFiles(changeDir)) {
+  const deltaSpecs = listDeltaSpecFiles(changeDir);
+  for (const deltaPath of deltaSpecs) {
     const rel = deltaPath.replace(`${projectDir}/`, '');
     const sections = parseDeltaSpec(readFileSync(deltaPath, 'utf-8'));
-    const total = sections.ADDED.length + sections.MODIFIED.length + sections.REMOVED.length;
-    if (total === 0) errors.push(`${rel}: no non-empty ADDED/MODIFIED/REMOVED Requirements section`);
+    if (deltaSpecEntryCount(sections) === 0) errors.push(`${rel}: no non-empty ADDED/MODIFIED/REMOVED/RENAMED Requirements section`);
   }
+
+  // Same heading-vs-main-spec check that `archive --sync` runs (planSpecSync),
+  // so a MODIFIED/REMOVED/RENAMED heading that does not byte-match the main
+  // spec, or an ADDED one that already exists, fails here instead of at archive.
+  errors.push(...planSpecSync(projectDir, deltaSpecs, name).conflicts);
 
   return { pass: errors.length === 0, errors, warnings: lint.warnings };
 }
@@ -3332,15 +3337,39 @@ function splitRequirementBlocks(sectionBody) {
     });
 }
 
+// `## RENAMED Requirements` lists pairs in the openspec FROM:/TO: form
+// (`- FROM: \`### Requirement: Old\`` / `- TO: \`### Requirement: New\``);
+// the line regexes mirror upstream openspec's change-parser.
+function splitRenamePairs(sectionBody) {
+  const pairs = [];
+  let from = null;
+  for (const line of String(sectionBody || '').split('\n')) {
+    const fromMatch = line.match(/^\s*-?\s*FROM:\s*`?###\s*Requirement:\s*(.+?)`?\s*$/);
+    const toMatch = line.match(/^\s*-?\s*TO:\s*`?###\s*Requirement:\s*(.+?)`?\s*$/);
+    if (fromMatch) {
+      from = fromMatch[1].trim();
+    } else if (toMatch && from) {
+      pairs.push({ from, to: toMatch[1].trim() });
+      from = null;
+    }
+  }
+  return pairs;
+}
+
+function deltaSpecEntryCount(sections) {
+  return sections.ADDED.length + sections.MODIFIED.length + sections.REMOVED.length + sections.RENAMED.length;
+}
+
 function parseDeltaSpec(content) {
-  const sections = { ADDED: [], MODIFIED: [], REMOVED: [] };
+  const sections = { ADDED: [], MODIFIED: [], REMOVED: [], RENAMED: [] };
   const parts = String(content || '').split(/^## /m);
   for (const part of parts.slice(1)) {
     const nl = part.indexOf('\n');
     const title = (nl === -1 ? part : part.slice(0, nl)).trim();
     const body = nl === -1 ? '' : part.slice(nl + 1);
-    const match = title.match(/^(ADDED|MODIFIED|REMOVED) Requirements$/);
-    if (match) sections[match[1]] = splitRequirementBlocks(body);
+    const match = title.match(/^(ADDED|MODIFIED|REMOVED|RENAMED) Requirements$/);
+    if (!match) continue;
+    sections[match[1]] = match[1] === 'RENAMED' ? splitRenamePairs(body) : splitRequirementBlocks(body);
   }
   return sections;
 }
@@ -3362,7 +3391,7 @@ function planSpecSync(projectDir, deltaSpecPaths, changeName) {
     const capability = basename(dirname(deltaPath));
     const mainPath = join(projectDir, 'openspec', 'specs', capability, 'spec.md');
     const delta = parseDeltaSpec(readFileSync(deltaPath, 'utf-8'));
-    if (delta.ADDED.length + delta.MODIFIED.length + delta.REMOVED.length === 0) continue;
+    if (deltaSpecEntryCount(delta) === 0) continue;
     const existed = existsSync(mainPath);
     const dirExisted = existsSync(dirname(mainPath));
     const oldContent = existed ? readFileSync(mainPath, 'utf-8') : null;
@@ -3370,6 +3399,20 @@ function planSpecSync(projectDir, deltaSpecPaths, changeName) {
       ? oldContent
       : `## Purpose\n\n${capability} — requirements merged from change ${changeName}.\n\n## Requirements\n`;
 
+    // Renames go first: openspec validate requires MODIFIED to use the new name.
+    for (const pair of delta.RENAMED) {
+      const span = findRequirementSpan(content, pair.from);
+      if (!span) {
+        conflicts.push(`${capability}: RENAMED requirement not found in main spec: "${pair.from}"`);
+        continue;
+      }
+      if (findRequirementSpan(content, pair.to)) {
+        conflicts.push(`${capability}: RENAMED target already exists in main spec: "${pair.to}"`);
+        continue;
+      }
+      const oldHeader = `### Requirement: ${pair.from}`;
+      content = `${content.slice(0, span[0])}### Requirement: ${pair.to}${content.slice(span[0] + oldHeader.length)}`;
+    }
     for (const req of delta.REMOVED) {
       const span = findRequirementSpan(content, req.name);
       if (!span) {
@@ -4933,4 +4976,6 @@ export {
   runCollectSpend,
   normalizeMetricsV2,
   firstSpawnName,
+  parseDeltaSpec,
+  planSpecSync,
 };

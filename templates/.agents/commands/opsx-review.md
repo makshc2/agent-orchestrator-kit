@@ -36,7 +36,7 @@ Announce: "Reviewing change: **<name>**"
 npx agent-orchestrator-kit gate-check --review <name>
 ```
 
-The script runs `openspec validate --strict --type change`, the task-contract lint (Files/Do/Done-when), the `Non-goals` / `Acceptance criteria` proposal sections check, and non-empty ADDED/MODIFIED/REMOVED delta-spec sections check. Add `--json` for a `{pass, errors[]}` report.
+The script runs `openspec validate --strict --type change`, the task-contract lint (Files/Do/Done-when), the `Non-goals` / `Acceptance criteria` proposal sections check, the non-empty ADDED/MODIFIED/REMOVED/RENAMED delta-spec sections check, and the delta-heading check against main specs (every MODIFIED/REMOVED/RENAMED `### Requirement:` heading byte-matches `openspec/specs/<capability>/spec.md`; no ADDED heading already exists there — the same check `archive --sync` runs). Add `--json` for a `{pass, errors[]}` report.
 
 **If Tier 1 fails (exit ≠ 0):** do NOT spawn `spec-reviewer` and do NOT read the artifacts. Write `openspec/changes/<name>/review.md` with `Verdict: REQUEST CHANGES` listing the gate-check errors. The T1 file MUST include this exact line:
 
@@ -50,7 +50,7 @@ Only after Tier 1 passes: spawn `spec-reviewer` with the complete change paths, 
 
 ### 4. Review checklist (Tier 2 — LLM-only)
 
-Do NOT re-check what Tier 1 already covered (strict validation, contract field presence, proposal sections, delta-spec section structure). Evaluate each item. Mark ✓ or ✗:
+Do NOT re-check what Tier 1 already covered (strict validation, contract field presence, proposal sections, delta-spec section structure, byte-exact MODIFIED/REMOVED/RENAMED headings present in main specs and ADDED headings absent from them). Evaluate each item. Mark ✓ or ✗:
 
 **Consistency**
 - [ ] proposal ↔ design ↔ tasks tell the same story — no contradictions or drift
