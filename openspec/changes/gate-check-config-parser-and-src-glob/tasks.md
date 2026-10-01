@@ -1,0 +1,32 @@
+## 1. Секційний reader pipeline.* в orchestrator.yaml
+
+- [x] 1.1 parsePipelineConfig: рядковий reader блоку pipeline: з legacy-fallback
+  Files: bin/agent-orchestrator.js
+  Do: Замінити тіло `readPipelineConfig` на виклик нової чистої функції `parsePipelineConfig(content)`, яка через `parsePipelineSection` приймає ключі лише як прямі дочірні рядки top-level блоку `pipeline:` (рядки-коментарі пропускаються на будь-якому відступі — рядок `#` у колонці 0 не закриває блок; хвіст `# …` зрізається функцією `readYamlScalar`, значення в лапках читається цілком), а за відсутності блоку `pipeline:` використовує `parsePipelineLegacy` з попередніми regex (для `src_glob` — значення в лапках або bare до кінця рядка мінус коментар); валідація значень (`true|false`, `^\d+$`, `warn|strict|off`) з тими самими дефолтами, що й раніше. Додати `parsePipelineConfig` до `export { … }`.
+  Done-when: `node --input-type=module -e "import { parsePipelineConfig as p } from './bin/agent-orchestrator.js'; const a=p('pipeline:\n  # require_spec_review: false\n  require_spec_review: true\nverifier:\n  require_spec_review: false\n'); const b=p('require_spec_review: false\n'); const c=p('pipeline:\n  require_spec_review: true\n# require_spec_review: false\n  src_glob: \"lib/\"\n  max_active_changes: 1\nroles: {}\n'); if (a.requireSpecReview!==true||b.requireSpecReview!==false||c.srcGlob!=='lib/'||c.maxActiveChanges!==1) process.exit(1)"` дає exit 0; `grep -c -F 'function parsePipelineSection' bin/agent-orchestrator.js` друкує 1
+
+## 2. Багато-шляховий src_glob
+
+- [x] 2.1 splitSrcGlob і окремі git pathspec у gitDiffTouchesGlob / gitStagedTouchesGlob
+  Files: bin/agent-orchestrator.js
+  Do: Додати експортовану `splitSrcGlob(value)` (split по `/[\s,]+/`, порожні елементи відкинути) і `gitNameOnlyTouches(projectDir, rangeArgs, srcGlob)`, яка викликає `execFileSync('git', ['diff', '--name-only', ...rangeArgs, '--', ...paths])` (порожній список → `null`); переписати `gitDiffTouchesGlob` і `gitStagedTouchesGlob` на неї; у команді `gate-check` нормалізувати `srcGlob` як `splitSrcGlob(opts.srcGlob || config.srcGlob).join(',') || 'src/'` і друкувати `log.warn`, якщо хоч один елемент містить `{` або `}` (brace expansion не підтримується); в описі опції `--src-glob` назвати список pathspec через коми/пробіли; додати `execFileSync` до імпорту з `child_process`.
+  Done-when: `node --input-type=module -e "import { splitSrcGlob as s } from './bin/agent-orchestrator.js'; if (JSON.stringify(s('bin/,scripts/ templates/'))!==JSON.stringify(['bin/','scripts/','templates/'])) process.exit(1)"` дає exit 0; `grep -c -F "execFileSync('git', ['diff', '--name-only'" bin/agent-orchestrator.js` друкує 1; `grep -c -F 'git diff --name-only ${base}' bin/agent-orchestrator.js` друкує 0
+
+- [x] 2.2 Коментар src_glob у шаблоні й профілях без нерозкриваного {src,lib,app}/
+  Files: templates/orchestrator.yaml, profiles/generic/orchestrator.yaml, profiles/mvp/orchestrator.yaml, profiles/node/orchestrator.yaml, profiles/vue3/orchestrator.yaml
+  Do: У кожному з п’яти файлів замінити дворядковий коментар над `src_glob: "src/"` на три рядки: `# Paths gate-check treats as product code: git pathspecs separated by`, `# commas or spaces. Widen it when code lives outside src/`, `# (e.g. "src/,lib/,app/") or the review gate never fires.`; значення `src_glob: "src/"` не чіпати.
+  Done-when: `grep -rn "src,lib,app" templates/orchestrator.yaml profiles/*/orchestrator.yaml | wc -l` друкує 0; `grep -l -F '(e.g. "src/,lib/,app/") or the review gate never fires.' templates/orchestrator.yaml profiles/generic/orchestrator.yaml profiles/mvp/orchestrator.yaml profiles/node/orchestrator.yaml profiles/vue3/orchestrator.yaml | wc -l` друкує 5; `grep -c -F 'src_glob: "src/"' templates/orchestrator.yaml` друкує 1
+
+## 3. Тести
+
+- [x] 3.1 Unit- і CLI-тести reader-а та src_glob, байтова рівність scripts/
+  Files: new file: test/gate-check-config-parser-and-src-glob.test.js
+  Do: Створити файл із тестами на `parsePipelineConfig` (закоментований ключ перед справжнім, ключ під `verifier:`, вкладений ключ під `pipeline:`, legacy-файл без `pipeline:`, шаблон і профілі), `splitSrcGlob`, CLI `gate-check` (коментар і `verifier:` → exit 1 `review gate failed`; коментар у колонці 0 всередині блоку не губить наступні ключі; legacy → `review not required`; `src_glob: "{src,lib}/"` → warn `src_glob entries with braces are not expanded` і exit 0; `src_glob: "bin/,templates/"` зі зміною `templates/a.js` → exit 1; `"bin/ scripts/ templates/"` зі зміною `scripts/x.cjs` → exit 1; зміна `docs/a.md` → `no changes under bin/,templates/ — nothing to gate`; `--staged --src-glob bin/,lib/` блокує staged `lib/a.js`) і байтову рівність `scripts/{cursor-spend-collect,cursor-spend-hook,memory-mcp-launcher}.cjs` з `templates/scripts/` через `fs.readFileSync` + `Buffer.equals`; CLI запускати через `spawnSync(process.execPath, [CLI, ...])` з temp-проєктом після `init --profile generic`, як у `test/smoke.test.js`.
+  Done-when: `node --test test/gate-check-config-parser-and-src-glob.test.js 2>&1 | grep -E '^# (pass|fail) '` друкує `# pass 16` і `# fail 0`; `grep -c "^test(" test/gate-check-config-parser-and-src-glob.test.js` друкує 16
+
+## 4. Специфікації
+
+- [x] 4.1 Delta specs orchestrator-cli-controls і commit-review-gate
+  Files: openspec/changes/gate-check-config-parser-and-src-glob/specs/orchestrator-cli-controls/spec.md, openspec/changes/gate-check-config-parser-and-src-glob/specs/commit-review-gate/spec.md
+  Do: У delta `orchestrator-cli-controls` подати `## MODIFIED Requirements` для «CLI команда gate-check» (повний текст вимоги з усіма наявними сценаріями плюс сценарії: коментар не вимикає гейт, коментар у колонці 0 не закриває блок, ключ під іншою секцією не вимикає гейт, legacy-файл без `pipeline:`, список `src_glob` через кому, фігурні дужки у `src_glob` дають warn, зміна поза списком); у delta `commit-review-gate` подати `## MODIFIED Requirements` для «Гейт блокує commit коду без APPROVE і є no-op у MVP-режимі» з повним текстом і новим сценарієм staged-зміни під другим елементом списку `--src-glob`.
+  Done-when: `npx openspec validate gate-check-config-parser-and-src-glob --strict --type change` дає exit 0; `grep -c -F '### Requirement: CLI команда gate-check' openspec/changes/gate-check-config-parser-and-src-glob/specs/orchestrator-cli-controls/spec.md` друкує 1; `grep -c -F '### Requirement: Гейт блокує commit коду без APPROVE і є no-op у MVP-режимі' openspec/changes/gate-check-config-parser-and-src-glob/specs/commit-review-gate/spec.md` друкує 1

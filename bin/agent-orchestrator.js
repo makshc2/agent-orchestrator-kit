@@ -4,7 +4,7 @@ import pc from 'picocolors';
 import { readFileSync, existsSync, mkdirSync, copyFileSync, readdirSync, statSync, writeFileSync, rmSync, renameSync, chmodSync, realpathSync } from 'fs';
 import { join, dirname, basename, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import { collectSpend } from './spend-collect.js';
 import { describeClaudeCostEstimate } from './claude-cost-estimate.js';
 import { resolveRestoreClient, ampThreadIdFromEnv } from './session-client.js';
@@ -3159,22 +3159,86 @@ function hasDesignOptOut(changeDir) {
   return /^Design:\s*none/mi.test(content);
 }
 
+// A YAML scalar as it appears after `key:` — quoted (the quotes are removed,
+// a trailing `# comment` after the closing quote is dropped) or bare (cut at
+// the first ` #` comment marker, then trimmed).
+function readYamlScalar(raw) {
+  const value = String(raw || '').trim();
+  const quoted = value.match(/^"([^"]*)"|^'([^']*)'/);
+  if (quoted) return quoted[1] !== undefined ? quoted[1] : quoted[2];
+  return value.replace(/(^|\s)#.*$/, '').trim();
+}
+
+// Line reader for the top-level `pipeline:` block (same approach as
+// parseSkillsInventory): only direct children of the block are read, comment
+// lines are skipped and `# …` tails are stripped, so a commented-out
+// `# require_spec_review: false` or the same key under another section
+// (e.g. `verifier:`) can no longer flip the review gate. Returns the raw
+// values keyed by name, plus `found` (whether a `pipeline:` block exists).
+function parsePipelineSection(content) {
+  const values = {};
+  let found = false;
+  let inPipeline = false;
+  let childIndent = null;
+  for (const line of String(content || '').split(/\r?\n/)) {
+    if (/^pipeline:\s*(#.*)?$/.test(line)) {
+      found = true;
+      inPipeline = true;
+      continue;
+    }
+    // A `#` at column 0 is a YAML comment, not the next top-level key: it
+    // must not close the block (editors often comment lines out that way).
+    if (inPipeline && /^#/.test(line)) continue;
+    if (inPipeline && /^\S/.test(line)) break;
+    if (!inPipeline) continue;
+    const entry = line.match(/^(\s+)([A-Za-z_][A-Za-z0-9_]*):(?:\s+(.*))?$/);
+    if (!entry) continue;
+    if (childIndent === null) childIndent = entry[1];
+    if (entry[1] !== childIndent) continue;
+    values[entry[2]] = readYamlScalar(entry[3]);
+  }
+  return { values, found };
+}
+
+// Legacy reader for hand-edited configs without a `pipeline:` block: the
+// first occurrence of each key anywhere in the file wins (the previous
+// whole-file regex behaviour, kept so such configs do not change meaning).
+function parsePipelineLegacy(content) {
+  const values = {};
+  const pick = (key, re) => {
+    const m = content.match(re);
+    if (m) values[key] = m[1];
+  };
+  pick('require_spec_review', /require_spec_review:\s*(true|false)/);
+  pick('require_design_brief', /require_design_brief:\s*(true|false)/);
+  pick('max_active_changes', /max_active_changes:\s*(\d+)/);
+  pick('task_contract', /task_contract:\s*(warn|strict|off)/);
+  // Quoted values may contain spaces or commas (multi-path lists); a bare
+  // value runs to the end of the line, minus a trailing `# comment`.
+  const srcGlob = content.match(/src_glob:[ \t]*("[^"\n]*"|'[^'\n]*'|[^\n]*)/);
+  if (srcGlob) values.src_glob = readYamlScalar(srcGlob[1]);
+  return values;
+}
+
+function parsePipelineConfig(content) {
+  const text = String(content || '');
+  const section = parsePipelineSection(text);
+  const values = section.found ? section.values : parsePipelineLegacy(text);
+  const bool = (raw, fallback) => (raw === 'true' ? true : raw === 'false' ? false : fallback);
+  const srcGlob = typeof values.src_glob === 'string' ? values.src_glob.trim() : '';
+  return {
+    requireSpecReview: bool(values.require_spec_review, true),
+    requireDesignBrief: bool(values.require_design_brief, false),
+    maxActiveChanges: /^\d+$/.test(values.max_active_changes || '') ? parseInt(values.max_active_changes, 10) : null,
+    taskContract: ['warn', 'strict', 'off'].includes(values.task_contract) ? values.task_contract : 'warn',
+    srcGlob: srcGlob || null,
+  };
+}
+
 function readPipelineConfig(projectDir) {
   const orchPath = join(projectDir, '.agents', 'orchestrator.yaml');
   if (!existsSync(orchPath)) return null;
-  const content = readFileSync(orchPath, 'utf-8');
-  const requireReviewMatch = content.match(/require_spec_review:\s*(true|false)/);
-  const requireBriefMatch = content.match(/require_design_brief:\s*(true|false)/);
-  const maxActiveMatch = content.match(/max_active_changes:\s*(\d+)/);
-  const taskContractMatch = content.match(/task_contract:\s*(warn|strict|off)/);
-  const srcGlobMatch = content.match(/src_glob:\s*["']?([^"'\s#]+)["']?/);
-  return {
-    requireSpecReview: requireReviewMatch ? requireReviewMatch[1] === 'true' : true,
-    requireDesignBrief: requireBriefMatch ? requireBriefMatch[1] === 'true' : false,
-    maxActiveChanges: maxActiveMatch ? parseInt(maxActiveMatch[1], 10) : null,
-    taskContract: taskContractMatch ? taskContractMatch[1] : 'warn',
-    srcGlob: srcGlobMatch ? srcGlobMatch[1] : null,
-  };
+  return parsePipelineConfig(readFileSync(orchPath, 'utf-8'));
 }
 
 // --- Task-contract lint (gate-check --tasks) ---
@@ -3442,17 +3506,35 @@ function planSpecSync(projectDir, deltaSpecPaths, changeName) {
   return { plan, conflicts };
 }
 
+// `pipeline.src_glob` / `--src-glob` is a list of git pathspecs separated by
+// commas and/or whitespace (`"bin/,scripts/,templates/"`, `"src/ lib/"`).
+// Each entry is passed to git on its own: a joined string is one literal
+// pathspec that matches nothing, which used to make the gate exit 0 with
+// "nothing to gate" for every multi-directory repo.
+function splitSrcGlob(srcGlob) {
+  return String(srcGlob || '')
+    .split(/[\s,]+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+}
+
+function gitNameOnlyTouches(projectDir, rangeArgs, srcGlob) {
+  const paths = splitSrcGlob(srcGlob);
+  if (!paths.length) return null;
+  const out = execFileSync('git', ['diff', '--name-only', ...rangeArgs, '--', ...paths], {
+    cwd: projectDir,
+    stdio: ['ignore', 'pipe', 'ignore'],
+    encoding: 'utf-8',
+  });
+  return out.trim().length > 0;
+}
+
 // Returns true/false when the diff is known, or null when it could not be
 // determined (no git repo, invalid base ref, shallow clone, etc.) — callers
 // must treat null as "skip gracefully", never as "block".
 function gitDiffTouchesGlob(projectDir, base, srcGlob) {
   try {
-    const out = execSync(`git diff --name-only ${base}...HEAD -- "${srcGlob}"`, {
-      cwd: projectDir,
-      stdio: ['ignore', 'pipe', 'ignore'],
-      encoding: 'utf-8',
-    });
-    return out.trim().length > 0;
+    return gitNameOnlyTouches(projectDir, [`${base}...HEAD`], srcGlob);
   } catch {
     return null;
   }
@@ -3460,12 +3542,7 @@ function gitDiffTouchesGlob(projectDir, base, srcGlob) {
 
 function gitStagedTouchesGlob(projectDir, srcGlob) {
   try {
-    const out = execSync(`git diff --cached --name-only -- "${srcGlob}"`, {
-      cwd: projectDir,
-      stdio: ['ignore', 'pipe', 'ignore'],
-      encoding: 'utf-8',
-    });
-    return out.trim().length > 0;
+    return gitNameOnlyTouches(projectDir, ['--cached'], srcGlob);
   } catch {
     return null;
   }
@@ -4140,7 +4217,7 @@ program
 program
   .command('gate-check [change-name]')
   .description('Deterministically check the review gate before apply/merge (exit non-zero if unmet)')
-  .option('--src-glob <glob>', 'source path filter used to detect code changes (default: pipeline.src_glob, else src/)')
+  .option('--src-glob <glob>', 'source paths used to detect code changes: git pathspecs separated by commas/spaces (default: pipeline.src_glob, else src/)')
   .option('--base <ref>', 'git ref to diff against', 'HEAD~1')
   .option('--staged', 'check staged files (git diff --cached) instead of --base...HEAD', false)
   .option('--tasks <name>', 'lint task contracts (Files/Do/Done-when) of a change')
@@ -4198,7 +4275,15 @@ program
 
     // A repo whose code does not live in src/ used to fall through to
     // "nothing to gate" on every run, silently disabling the review gate.
-    const srcGlob = opts.srcGlob || config.srcGlob || 'src/';
+    // A comma/space-separated list is normalised here and split into separate
+    // git pathspecs by gitDiffTouchesGlob / gitStagedTouchesGlob.
+    const srcGlobEntries = splitSrcGlob(opts.srcGlob || config.srcGlob);
+    const srcGlob = srcGlobEntries.join(',') || 'src/';
+    if (srcGlobEntries.some((p) => /[{}]/.test(p))) {
+      // Brace expansion is a shell feature, not a git pathspec: `{src,lib}/`
+      // is split on the comma into two literal entries that match nothing.
+      log.warn(`src_glob entries with braces are not expanded (${srcGlob}) — list the paths separated by commas or spaces instead`);
+    }
 
     const touchesSrc = opts.staged
       ? gitStagedTouchesGlob(projectDir, srcGlob)
@@ -4966,6 +5051,8 @@ if (isDirectCliRun()) {
 }
 
 export {
+  parsePipelineConfig,
+  splitSrcGlob,
   formatMetricsCostLine,
   resolveSessionSpend,
   canonicalRole,
