@@ -1449,7 +1449,8 @@ spec-reviewer
     assert.match(out, /Ти — conductor/);
     assert.match(out, /subagent-spec-reviewer/);
     assert.match(out, /HARD STOP/);
-    assert.match(out, /xlsx/);
+    // Decisions are not inlined in the prompt any more: restore prints them from decisions.md.
+    assert.doesNotMatch(out, /xlsx/);
     assert.doesNotMatch(out, /NEXT_SESSION_PROMPT/);
     assert.doesNotMatch(out, /handoff persist/);
 

@@ -12,10 +12,9 @@ When spawned, Amp runs this skill as an isolated subagent (`subagent-session-han
 Use when the parent's restore failed (CLI restore and handoff.md both unavailable).
 
 1. Run `npx agent-orchestrator-kit status`.
-2. Run `npx agent-orchestrator-kit handoff --restore` (add `<name>` when known). The briefing prints accumulated decisions from git-tracked `openspec/changes/<name>/decisions.md` (canon), not from Memory.
-3. If Memory MCP tools are available, read `Change:<name>`, `Handoff:<name>`, and `Decision:*` (the latter is a file→Memory mirror of `decisions.md`).
-4. If CLI restore fails, read `openspec/changes/<name>/handoff.md` when it exists.
-5. Return the restore report. Do not spawn the phase specialist yourself.
+2. Run `npx agent-orchestrator-kit handoff --restore` (add `<name>` when known). The briefing prints Done, Attach and the last 10 decisions from git-tracked `openspec/changes/<name>/decisions.md` (canon), not from Memory. No separate Memory MCP read step.
+3. If CLI restore fails, read `openspec/changes/<name>/handoff.md` when it exists.
+4. Return the restore report. Do not spawn the phase specialist yourself.
 
 ## Persist mode
 

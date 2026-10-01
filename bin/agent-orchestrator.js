@@ -981,12 +981,19 @@ function ensureMemoryMcpEntry(projectDir) {
   }
 }
 
+// `handoff.spawn_handoff_subagent` defaults to false (templates/orchestrator.yaml):
+// the next-session prompt names the `session-handoff` fallback spawn only when
+// the consumer opted in. A missing key or a missing file both read as false.
 function readOrchestratorMeta(projectDir) {
   const orchPath = join(projectDir, '.agents', 'orchestrator.yaml');
-  if (!existsSync(orchPath)) return { agentLanguage: 'en' };
+  if (!existsSync(orchPath)) return { agentLanguage: 'en', spawnHandoffSubagent: false };
   const content = readFileSync(orchPath, 'utf-8');
   const lang = content.match(/agent_language:\s*["']?([A-Za-z_-]+)/);
-  return { agentLanguage: lang ? lang[1] : 'en' };
+  const spawn = content.match(/spawn_handoff_subagent:\s*(true|false)/);
+  return {
+    agentLanguage: lang ? lang[1] : 'en',
+    spawnHandoffSubagent: Boolean(spawn && spawn[1] === 'true'),
+  };
 }
 
 function parseHandoffMarkdown(content) {
@@ -1425,44 +1432,54 @@ function isUkLang(lang) {
   return value === 'uk' || value.startsWith('uk');
 }
 
-function buildNextSessionPrompt(fields, agentLanguage) {
+// The prompt mirrors `.agents/rules/session-handoff.mdc`: one CLI call to
+// start, a two-line HARD STOP to exit. Decisions are not inlined — restore
+// prints them from decisions.md. `session-handoff` appears only when
+// `handoff.spawn_handoff_subagent: true` in orchestrator.yaml, and then only as
+// the fallback the rule allows.
+function buildNextSessionPrompt(fields, agentLanguage, meta = {}) {
   const name = fields.changeName;
   const cmd = firstLineCommand(fields.nextCommand);
   const spawnName = firstSpawnName(fields.spawn) || firstSpawnName(fields.nextRole);
   const ampWrapper = spawnName ? `subagent-${spawnName}` : 'subagent-<phase-specialist>';
   const uk = isUkLang(agentLanguage);
   const languageName = uk ? 'українська' : 'English';
+  const spawnFallback = Boolean(meta && meta.spawnHandoffSubagent);
+  const extra = [
+    fields.status ? `- status: ${fields.status}` : '',
+    fields.tasks ? `- tasks: ${fields.tasks}` : '',
+    fields.review ? `- review: ${fields.review}` : '',
+  ]
+    .filter(Boolean)
+    .map((line) => `\n${line}`)
+    .join('');
 
   if (uk) {
+    const restoreFallback = spawnFallback
+      ? ' Заспавни `session-handoff` у режимі restore лише якщо недоступні і CLI, і handoff.md (Amp: isolated `subagent-session-handoff`).'
+      : '';
+    const persistFallback = spawnFallback
+      ? ' Якщо CLI впав — заспавни `session-handoff` у режимі persist (Amp: isolated `subagent-session-handoff`).'
+      : '';
     return `${cmd}
 
 Ти — conductor наступної рольової сесії для зміни \`${name}\`.
-Мова відповіді: ${languageName} (\`project.agent_language: ${agentLanguage}\`).
-НЕ змішуй фази. НЕ починай наступну роль у цьому ж чаті, доки ця фаза не закрита за HARD STOP.
+Мова відповіді: ${languageName} (\`project.agent_language: ${agentLanguage}\`). НЕ змішуй фази: наступна роль починається в НОВОМУ чаті після HARD STOP.
 
-## Хто ти і що робити
-- Команда цієї сесії: \`${cmd}\`
+## Роль
 - Наступна роль / субагент фази: \`${spawnName || fields.nextRole || 'див. таблицю маршрутизації'}\`
-- Amp: заспавни isolated skill \`${ampWrapper}\` зі свіжим контекстом. Виконувати тіло спеціаліста в головному треді Amp — порушення протоколу.
+- Amp: заспавни isolated skill \`${ampWrapper}\` зі свіжим контекстом — тіло спеціаліста ніколи не виконується в головному треді Amp.
 - Cursor / Claude: заспавни \`.cursor/agents/${spawnName || '<name>'}.md\` / \`.claude/agents/${spawnName || '<name>'}.md\`.
 - Батьківська сесія — лише conductor: перевіряє звіт, не виконує роботу спеціаліста.
 
-## Обов'язковий старт (до будь-якої роботи спеціаліста)
-1. Виконай pasted-команду \`${cmd}\` і оголоси роль.
-2. \`npx agent-orchestrator-kit status\`
-3. \`npx agent-orchestrator-kit handoff ${name} --restore\`
-4. Прочитай Memory MCP: \`Change:${name}\`, \`Handoff:${name}\`, \`Decision:*\`.
-5. Якщо Memory порожнє або MCP недоступний — прочитай \`openspec/changes/${name}/handoff.md\`. Відсутність Memory НЕ блокує сесію, коли є файл.
-6. Заспавни \`session-handoff\` у режимі restore, якщо брифінг неповний (Amp: isolated \`subagent-session-handoff\`).
-7. Лише після цього заспавни субагента фази. Free-form «продовжуй» / «далі» при одній активній зміні = \`Handoff.next_command\`.
+## Старт
+\`npx agent-orchestrator-kit handoff ${name} --restore\` — канонічний брифінг (handoff.md, decisions.md, Attach). Читай \`openspec/changes/${name}/handoff.md\` лише якщо restore впав.${restoreFallback} Лише після цього заспавни субагента фази. Free-form «продовжуй» / «далі» при одній активній зміні = \`Handoff.next_command\`.
 
-## Повний контекст попередньої сесії (самодостатній — не покладайся лише на Memory)
+## Контекст (самодостатній)
 - Закрита роль: ${fields.closedRole || 'не вказано'}
 - Зміна: ${inlineChangeLabel(fields.change, name)}
 - Зроблено:
 ${fields.done || 'не вказано'}
-- Рішення:
-${fields.decisions || 'none'}
 - Блокери:
 ${fields.blocked || 'none'}
 - Attach:
@@ -1470,51 +1487,38 @@ ${fields.attach || `- \`openspec/changes/${name}/\``}
 - Субагенти цієї сесії:
 ${fields.spawn || `- \`${spawnName || 'phase specialist'}\``}
 - Обмеження:
-${fields.constraints || 'не змішувати фази; не писати поза дозволеними шляхами ролі'}
-${fields.status ? `- status: ${fields.status}` : ''}
-${fields.tasks ? `- tasks: ${fields.tasks}` : ''}
-${fields.review ? `- review: ${fields.review}` : ''}
+${fields.constraints || 'не змішувати фази; не писати поза дозволеними шляхами ролі'}${extra}
 
 ## HARD STOP на виході (ти НЕ закінчив, поки це не виконано)
-1. Заспавни \`session-handoff\` у режимі persist (Amp: isolated \`subagent-session-handoff\`). Якщо spawn недоступний — зроби persist сам, ніколи не пропускай.
-2. Запиши \`openspec/changes/${name}/handoff.md\` з усіма секціями шаблону.
-3. \`npx agent-orchestrator-kit handoff ${name}\` — exit 0 обов'язковий. CLI записує Memory JSON абсолютним шляхом і друкує розширений промпт у stdout.
-4. Якщо Memory MCP живий — онови \`Change:${name}\`, \`Handoff:${name}\`, \`Decision:*\` відповідно до файлу.
-5. Встав stdout CLI у чат одним fenced-блоком. Не скорочуй. Без службового ярлика. Перший рядок — \`/opsx:…\`.
-6. Зупинись. Наступна роль починається в НОВОМУ чаті з цим промптом.
-
-OpenSpec-файли — source of truth для вимог і тасків. Memory і handoff.md — індекс фази. Цей промпт — повний операційний бриф наступного треду, навіть якщо Amp проігнорує Memory MCP.`;
+Запиши \`openspec/changes/${name}/handoff.md\` → \`npx agent-orchestrator-kit handoff ${name}\` (exit 0) → встав stdout CLI одним fenced-блоком (перший рядок \`/opsx:…\`, без скорочень і ярлика) → зупинись.${persistFallback}
+Повний протокол: \`.agents/rules/session-handoff.mdc\`. OpenSpec-файли — source of truth.`;
   }
 
+  const restoreFallback = spawnFallback
+    ? ' Spawn `session-handoff` in restore mode only if both the CLI and handoff.md are unavailable (Amp: isolated `subagent-session-handoff`).'
+    : '';
+  const persistFallback = spawnFallback
+    ? ' If the CLI failed, spawn `session-handoff` in persist mode (Amp: isolated `subagent-session-handoff`).'
+    : '';
   return `${cmd}
 
 You are the conductor for the next role session of change \`${name}\`.
-Reply language: ${languageName} (\`project.agent_language: ${agentLanguage}\`).
-Do not mix phases. Do not start the following role in this chat until this phase is closed via HARD STOP.
+Reply language: ${languageName} (\`project.agent_language: ${agentLanguage}\`). Do not mix phases: the next role starts in a NEW chat after HARD STOP.
 
-## Who you are and what to do
-- This session command: \`${cmd}\`
+## Role
 - Next role / phase subagent: \`${spawnName || fields.nextRole || 'see routing table'}\`
-- Amp: spawn isolated skill \`${ampWrapper}\` with fresh context. Running the specialist body in Amp's main thread is a protocol violation.
+- Amp: spawn isolated skill \`${ampWrapper}\` with fresh context — the specialist body never runs in Amp's main thread.
 - Cursor / Claude: spawn \`.cursor/agents/${spawnName || '<name>'}.md\` / \`.claude/agents/${spawnName || '<name>'}.md\`.
-- The parent session is conductor-only: verify the report, do not do the specialist's work.
+- The parent is conductor-only: verify the report, do not do the specialist's work.
 
-## Mandatory start (before any specialist work)
-1. Honor the pasted \`${cmd}\` command and announce the role.
-2. \`npx agent-orchestrator-kit status\`
-3. \`npx agent-orchestrator-kit handoff ${name} --restore\`
-4. Read Memory MCP: \`Change:${name}\`, \`Handoff:${name}\`, \`Decision:*\`.
-5. If Memory is empty or MCP is down, read \`openspec/changes/${name}/handoff.md\`. Missing Memory does not block the session when the file exists.
-6. Spawn \`session-handoff\` in restore mode if the briefing is incomplete (Amp: isolated \`subagent-session-handoff\`).
-7. Only then spawn the phase specialist. Free-form "continue" / "next" with one active change means \`Handoff.next_command\`.
+## Start
+\`npx agent-orchestrator-kit handoff ${name} --restore\` is the canonical briefing (handoff.md, decisions.md, Attach). Read \`openspec/changes/${name}/handoff.md\` only if restore failed.${restoreFallback} Only then spawn the phase specialist. Free-form "continue" / "next" with one active change = \`Handoff.next_command\`.
 
-## Full previous-session context (self-contained — do not rely on Memory alone)
+## Context (self-contained)
 - Closed role: ${fields.closedRole || 'not set'}
 - Change: ${inlineChangeLabel(fields.change, name)}
 - Done:
 ${fields.done || 'not set'}
-- Decisions:
-${fields.decisions || 'none'}
 - Blocked:
 ${fields.blocked || 'none'}
 - Attach:
@@ -1522,20 +1526,11 @@ ${fields.attach || `- \`openspec/changes/${name}/\``}
 - Subagents for this session:
 ${fields.spawn || `- \`${spawnName || 'phase specialist'}\``}
 - Constraints:
-${fields.constraints || 'do not mix phases; do not write outside the role allowed paths'}
-${fields.status ? `- status: ${fields.status}` : ''}
-${fields.tasks ? `- tasks: ${fields.tasks}` : ''}
-${fields.review ? `- review: ${fields.review}` : ''}
+${fields.constraints || 'do not mix phases; do not write outside the role allowed paths'}${extra}
 
 ## Exit HARD STOP (you are NOT done until this succeeds)
-1. Spawn \`session-handoff\` in persist mode (Amp: isolated \`subagent-session-handoff\`). If spawn is unavailable, persist yourself — never skip.
-2. Write \`openspec/changes/${name}/handoff.md\` with every template section.
-3. \`npx agent-orchestrator-kit handoff ${name}\` — exit 0 is required. The CLI upserts Memory JSON with an absolute path and prints the expanded prompt on stdout.
-4. If Memory MCP tools work, also update \`Change:${name}\`, \`Handoff:${name}\`, \`Decision:*\` to match the file.
-5. Paste CLI stdout into chat as one fenced block. Do not shorten it. No service banner. First line is \`/opsx:…\`.
-6. Stop. The next role starts in a NEW chat with that prompt.
-
-OpenSpec files are the source of truth for requirements and tasks. Memory and handoff.md index the phase. This prompt is the next thread's full operating brief even if Amp ignores Memory MCP.`;
+Write \`openspec/changes/${name}/handoff.md\` → \`npx agent-orchestrator-kit handoff ${name}\` (exit 0) → paste CLI stdout as one fenced block (first line \`/opsx:…\`, not shortened, no banner) → stop.${persistFallback}
+Full protocol: \`.agents/rules/session-handoff.mdc\`. OpenSpec files are the source of truth.`;
 }
 
 function loadMemoryItems(filePath) {
@@ -1619,6 +1614,8 @@ function localIsoDate(now = new Date()) {
   const d = String(now.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
+
+const RESTORE_DECISIONS_LIMIT = 10;
 
 function decisionsFilePath(projectDir, changeName) {
   return join(projectDir, 'openspec', 'changes', changeName, 'decisions.md');
@@ -4954,7 +4951,8 @@ program
     }
 
     const name = resolved;
-    const { agentLanguage } = readOrchestratorMeta(projectDir);
+    const orchestratorMeta = readOrchestratorMeta(projectDir);
+    const { agentLanguage } = orchestratorMeta;
     const changeDir = join(projectDir, 'openspec', 'changes', name);
 
     if (opts.restore) {
@@ -4977,6 +4975,9 @@ program
         console.log(`closed_role: ${fields.closedRole || '(missing)'}`);
         console.log('');
         console.log(fields.done || '');
+        console.log('');
+        console.log('attach:');
+        console.log(fields.attach || '');
       } else {
         log.warn('handoff.md missing — using Memory JSON only');
       }
@@ -4984,8 +4985,15 @@ program
       if (existsSync(decisionsPath)) {
         log.ok(`decisions.md: ${decisionsPath}`);
         const entries = parseDecisionsFileEntries(readFileSync(decisionsPath, 'utf-8'));
-        for (const entry of entries) {
+        // The reviewer needs the full history for consistency checks, but the
+        // briefing is pasted into every session: print the newest entries and
+        // point at the file for the rest.
+        const older = Math.max(0, entries.length - RESTORE_DECISIONS_LIMIT);
+        for (const entry of entries.slice(older)) {
           console.log(`- ${entry.date} ${entry.text}`);
+        }
+        if (older > 0) {
+          console.log(`(${older} older entries in openspec/changes/${name}/decisions.md)`);
         }
       } else {
         console.log('decisions: none');
@@ -5088,7 +5096,7 @@ program
     printMetricsSectionWarnings(reported, Boolean(platformResult.warn));
     const resolvedModel = resolveModel(opts, process.env, reported);
 
-    const prompt = buildNextSessionPrompt(fields, agentLanguage).replace(/^\n+|\n+$/g, '');
+    const prompt = buildNextSessionPrompt(fields, agentLanguage, orchestratorMeta).replace(/^\n+|\n+$/g, '');
     fields.prompt = prompt;
     writeFileSync(existing.filePath, `${buildHandoffMarkdown(fields).trim()}\n`);
     console.error(pc.green('  ✓'), existing.filePath.replace(`${projectDir}/`, ''));
@@ -5248,4 +5256,6 @@ export {
   firstSpawnName,
   parseDeltaSpec,
   planSpecSync,
+  buildNextSessionPrompt,
+  readOrchestratorMeta,
 };
