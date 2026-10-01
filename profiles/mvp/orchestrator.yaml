@@ -25,25 +25,20 @@ roles:
   explorer:
     command: /opsx:explore
     mode: read-only
-    model_hint: fast
   design_intake:
     command: /opsx:design
     mode: brief-only
-    model_hint: strong
     notes: "In quick mode, the same session may create the brief before propose+apply"
   architect:
     command: /opsx:propose
     mode: specs-only
-    model_hint: strong
   quick:
     command: /opsx:quick
     mode: specs-and-code
-    model_hint: strong
     notes: "Propose + apply in one session for demos and spikes"
   implementer:
     command: /opsx:apply
     mode: code
-    model_hint: strong
   spec_reviewer:
     enabled: false
   verifier:

@@ -23,23 +23,18 @@ roles:
   explorer:
     command: /opsx:explore
     mode: read-only
-    model_hint: fast
   design_intake:
     command: /opsx:design
     mode: brief-only
-    model_hint: strong
   architect:
     command: /opsx:propose
     mode: specs-only
-    model_hint: strong
   spec_reviewer:
     command: /opsx:review
     mode: read-only
-    model_hint: medium
   implementer:
     command: /opsx:apply
     mode: code
-    model_hint: strong
   verifier:
     type: ci
     gates:

@@ -1702,7 +1702,13 @@ function readHandoffFields(projectDir, changeName) {
 }
 
 const METRICS_VERSION = 2;
-const METRICS_SPEND_KEYS = ['inputTokens', 'outputTokens', 'totalTokens', 'costUsd', 'costUsdEstimated'];
+const METRICS_CACHE_KEYS = ['cacheReadTokens', 'cacheCreationTokens'];
+const METRICS_SPEND_KEYS = ['inputTokens', 'outputTokens', 'totalTokens', 'costUsd', 'costUsdEstimated', ...METRICS_CACHE_KEYS];
+// Plausibility bounds for the invariant warnings (fail-open: stderr + session.notes only).
+const METRICS_MAX_SESSION_MS = 24 * 60 * 60 * 1000;
+// The propose chat legitimately starts before openspec/changes/<name>/ exists,
+// so startedAt may precede createdAt by hours — but not by days.
+const METRICS_START_BEFORE_CREATED_MS = 12 * 60 * 60 * 1000;
 const LEFTOVER_GRACE_MS = 120000;
 
 function roundUsd4(x) {
@@ -1721,7 +1727,16 @@ function metricsFilePath(projectDir, changeName) {
 }
 
 function emptySpendTotals() {
-  return { inputTokens: null, outputTokens: null, totalTokens: null, costUsd: null, costUsdEstimated: null, costUsdTotal: null };
+  return {
+    inputTokens: null,
+    outputTokens: null,
+    totalTokens: null,
+    costUsd: null,
+    costUsdEstimated: null,
+    costUsdTotal: null,
+    cacheReadTokens: null,
+    cacheCreationTokens: null,
+  };
 }
 
 function emptyPlatformSpend(source = 'none') {
@@ -1733,6 +1748,8 @@ function emptyPlatformSpend(source = 'none') {
     ampCredits: null,
     costUsdEstimated: null,
     costUsdTotal: null,
+    cacheReadTokens: null,
+    cacheCreationTokens: null,
     source,
   };
 }
@@ -1789,8 +1806,10 @@ function compactModelRows(sources) {
       totalTokens: null,
       costUsd: null,
       costUsdEstimated: null,
+      cacheReadTokens: null,
+      cacheCreationTokens: null,
     };
-    for (const field of ['inputTokens', 'outputTokens', 'totalTokens', 'costUsd']) {
+    for (const field of ['inputTokens', 'outputTokens', 'totalTokens', 'costUsd', ...METRICS_CACHE_KEYS]) {
       row[field] = addNullable(row[field], numOrNull(source[field]));
     }
     row.costUsdEstimated = roundUsd4(addNullable(row.costUsdEstimated, numOrNull(source.costUsdEstimated)));
@@ -1902,6 +1921,12 @@ function addNullable(a, b) {
   return (a ?? 0) + (b ?? 0);
 }
 
+const CANONICAL_ROLE_TOKENS = ['Explorer', 'Architect', 'Spec Reviewer', 'Implementer', 'Archiver', 'Design Intake'];
+
+function isCanonicalRole(role) {
+  return CANONICAL_ROLE_TOKENS.includes(String(role || '').trim());
+}
+
 function canonicalRole(role) {
   const raw = String(role || '').trim();
   if (!raw) return '';
@@ -1911,12 +1936,86 @@ function canonicalRole(role) {
     if (/^spec\s+reviewer\b/i.test(value)) return 'Spec Reviewer';
     if (/^design\s+intake\b/i.test(value)) return 'Design Intake';
     if (/^explorer\b/i.test(value)) return 'Explorer';
+    // `spec-architect` is the kit's own propose subagent; its report role is the Architect phase
+    if (/^spec\s+architect\b/i.test(value)) return 'Architect';
     if (/^architect\b/i.test(value)) return 'Architect';
     if (/^implementer\b/i.test(value)) return 'Implementer';
     if (/^archiver\b/i.test(value)) return 'Archiver';
     return '';
   };
   return known(segment) || known(raw) || segment;
+}
+
+// --- Ledger invariants (contract test + write-time warnings) ---
+// Fail-open by design: persist/archive never exit non-zero on these; they only
+// print `metrics: warning: …` to stderr and keep the issue in session.notes[].
+
+function metricsSessionInvariantIssues(session, metrics = {}) {
+  const issues = [];
+  if (!session || typeof session !== 'object') return issues;
+  const role = String(session.role || '').trim();
+  if (role && !isCanonicalRole(role)) issues.push(`role "${role}" is not a canonical Closed role token`);
+  const durationMs = numOrNull(session.durationMs);
+  if (durationMs != null && durationMs > METRICS_MAX_SESSION_MS) {
+    issues.push(`durationMs ${durationMs} exceeds 24h (${formatMetricsDuration(durationMs)})`);
+  }
+  const startedMs = parseFlexibleIso(session.startedAt);
+  const createdMs = parseFlexibleIso(metrics && metrics.createdAt);
+  if (Number.isFinite(startedMs) && Number.isFinite(createdMs) && startedMs < createdMs - METRICS_START_BEFORE_CREATED_MS) {
+    issues.push(`startedAt ${session.startedAt} is more than 12h before createdAt ${metrics.createdAt}`);
+  }
+  const endedMs = parseFlexibleIso(session.endedAt);
+  const archivedMs = parseFlexibleIso(metrics && metrics.archivedAt);
+  if (Number.isFinite(endedMs) && Number.isFinite(archivedMs) && endedMs > archivedMs) {
+    issues.push(`endedAt ${session.endedAt} is after archivedAt ${metrics.archivedAt}`);
+  }
+  if (session.spendSource === 'adapter') {
+    const hasSources = Array.isArray(session.sourceIds) && session.sourceIds.length > 0;
+    const hasTokens = ['inputTokens', 'outputTokens', 'totalTokens'].some((key) => numOrNull(session[key]) != null);
+    if (!hasSources && !hasTokens) issues.push('spendSource "adapter" without sourceIds and without tokens');
+  }
+  const expectedTotal = roundUsd4(costUsdTotalOf({
+    costUsd: sessionFieldOrSources(session, 'costUsd'),
+    costUsdEstimated: sessionFieldOrSources(session, 'costUsdEstimated'),
+  }));
+  const storedTotal = roundUsd4(numOrNull(session.costUsdTotal));
+  if (storedTotal !== expectedTotal) {
+    issues.push(`costUsdTotal ${storedTotal} does not equal round4(costUsd ?? costUsdEstimated) = ${expectedTotal}`);
+  }
+  return issues;
+}
+
+function metricsLedgerInvariantIssues(metrics) {
+  const issues = [];
+  if (!metrics || typeof metrics !== 'object') return ['metrics is not an object'];
+  if (metrics.version !== METRICS_VERSION) issues.push(`version ${metrics.version} is not ${METRICS_VERSION}`);
+  const sessions = Array.isArray(metrics.sessions) ? metrics.sessions : [];
+  let sum = null;
+  sessions.forEach((session, index) => {
+    for (const issue of metricsSessionInvariantIssues(session, metrics)) issues.push(`sessions[${index}]: ${issue}`);
+    sum = addNullable(sum, costUsdTotalOf({
+      costUsd: sessionFieldOrSources(session || {}, 'costUsd'),
+      costUsdEstimated: sessionFieldOrSources(session || {}, 'costUsdEstimated'),
+    }));
+  });
+  const expected = roundUsd4(sum);
+  const stored = roundUsd4(numOrNull(metrics.spend && metrics.spend.costUsdTotal));
+  if (stored !== expected) issues.push(`spend.costUsdTotal ${stored} does not equal round4(Σ session costUsdTotal) = ${expected}`);
+  return issues;
+}
+
+function warnMetricsIssues(issues) {
+  for (const issue of issues || []) console.error(`metrics: warning: ${issue}`);
+}
+
+// Keeps the raw values (no clamp) and records why they look implausible.
+function annotateSessionInvariants(session, metrics, { print = true } = {}) {
+  const issues = metricsSessionInvariantIssues(session, metrics)
+    .filter((issue) => !issue.startsWith('costUsdTotal '));
+  if (!issues.length) return issues;
+  session.notes = [...(Array.isArray(session.notes) ? session.notes : []), ...issues];
+  if (print) warnMetricsIssues(issues);
+  return issues;
 }
 
 function phaseForRole(role) {
@@ -2104,7 +2203,15 @@ function uniqueSourceModels(sources) {
 }
 
 function sessionTotalsFromModels(byModel) {
-  const totals = { inputTokens: null, outputTokens: null, totalTokens: null, costUsd: null, costUsdEstimated: null };
+  const totals = {
+    inputTokens: null,
+    outputTokens: null,
+    totalTokens: null,
+    costUsd: null,
+    costUsdEstimated: null,
+    cacheReadTokens: null,
+    cacheCreationTokens: null,
+  };
   for (const row of byModel || []) {
     for (const key of Object.keys(totals)) totals[key] = addNullable(totals[key], numOrNull(row[key]));
   }
@@ -2126,8 +2233,10 @@ function mergeModelRows(current, incoming) {
       totalTokens: null,
       costUsd: null,
       costUsdEstimated: null,
+      cacheReadTokens: null,
+      cacheCreationTokens: null,
     };
-    for (const field of ['inputTokens', 'outputTokens', 'totalTokens', 'costUsd']) {
+    for (const field of ['inputTokens', 'outputTokens', 'totalTokens', 'costUsd', ...METRICS_CACHE_KEYS]) {
       row[field] = addNullable(row[field], numOrNull(raw[field]));
     }
     row.costUsdEstimated = roundUsd4(addNullable(row.costUsdEstimated, numOrNull(raw.costUsdEstimated)));
@@ -2234,12 +2343,14 @@ function ampThreadTotals(threads) {
   let inputTokens = null;
   let outputTokens = null;
   let totalTokens = null;
+  let cacheReadTokens = null;
   for (const thread of list) {
     inputTokens = addNullable(inputTokens, numOrNull(thread && thread.inputTokens));
     outputTokens = addNullable(outputTokens, numOrNull(thread && thread.outputTokens));
     totalTokens = addNullable(totalTokens, numOrNull(thread && thread.totalTokens));
+    cacheReadTokens = addNullable(cacheReadTokens, numOrNull(thread && thread.cacheReadTokens));
   }
-  return { costUsd, agentMode, models, inputTokens, outputTokens, totalTokens };
+  return { costUsd, agentMode, models, inputTokens, outputTokens, totalTokens, cacheReadTokens };
 }
 
 function resolveSessionSpend(opts, reported, sources, extra = {}) {
@@ -2276,7 +2387,22 @@ function resolveSessionSpend(opts, reported, sources, extra = {}) {
   ) {
     spendSource = 'adapter';
   }
-  return { inputTokens, outputTokens, totalTokens, costUsd, ampCredits, costUsdEstimated, spendSource, agentMode: fromAmp.agentMode };
+  // cache split is additive and null-honest: inputTokens keeps including cache tokens (spec),
+  // the extra keys only say how much of it was served from / written to the cache
+  const cacheReadTokens = firstNonNull(fromAmp.cacheReadTokens, fromSources.cacheReadTokens);
+  const cacheCreationTokens = fromSources.cacheCreationTokens;
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    costUsd,
+    ampCredits,
+    costUsdEstimated,
+    cacheReadTokens,
+    cacheCreationTokens,
+    spendSource,
+    agentMode: fromAmp.agentMode,
+  };
 }
 
 function sessionTotalsFromFlags(opts) {
@@ -2299,18 +2425,28 @@ function sessionTotalsFromSources(sources) {
   let outputTokens = null;
   let totalTokens = null;
   let costUsd = null;
+  let cacheReadTokens = null;
+  let cacheCreationTokens = null;
   for (const src of sources || []) {
     inputTokens = addNullable(inputTokens, numOrNull(src.inputTokens));
     outputTokens = addNullable(outputTokens, numOrNull(src.outputTokens));
     totalTokens = addNullable(totalTokens, numOrNull(src.totalTokens));
     if (src.costUsd != null) costUsd = addNullable(costUsd, numOrNull(src.costUsd));
+    cacheReadTokens = addNullable(cacheReadTokens, numOrNull(src.cacheReadTokens));
+    cacheCreationTokens = addNullable(cacheCreationTokens, numOrNull(src.cacheCreationTokens));
   }
-  return { inputTokens, outputTokens, totalTokens, costUsd };
+  return { inputTokens, outputTokens, totalTokens, costUsd, cacheReadTokens, cacheCreationTokens };
+}
+
+function printCollectNotes(notes) {
+  // stdout stays prompt-only on persist; adapter notes are diagnostics for the operator
+  for (const note of notes || []) console.error(`metrics: ${note}`);
 }
 
 function runCollectSpend(metrics, windowStart, windowEnd, extra = {}) {
+  let collected;
   try {
-    return collectSpend({
+    collected = collectSpend({
       cwd: extra.cwd || process.cwd(),
       windowStart,
       windowEnd,
@@ -2330,9 +2466,19 @@ function runCollectSpend(metrics, windowStart, windowEnd, extra = {}) {
       existingThreadIds: existingSessionThreadIds(metrics),
       rebillThreadId: extra.rebillThreadId,
     });
-  } catch {
-    return { sources: [], ids: [], totals: {}, byPlatform: defaultSpendByPlatform(), byModel: [], notes: [] };
+  } catch (error) {
+    const reason = error && error.message ? error.message : String(error);
+    collected = {
+      sources: [],
+      ids: [],
+      totals: {},
+      byPlatform: defaultSpendByPlatform(),
+      byModel: [],
+      notes: [`collect: adapters failed: ${reason}`],
+    };
   }
+  printCollectNotes(collected.notes);
+  return collected;
 }
 
 function leftoverCollectPlatforms(session, collectAll, ampThreadId) {
@@ -2354,6 +2500,9 @@ function resyncLeftoverSessionSpend(session, priorCost, priorSource) {
     totalTokens = (fromSources.inputTokens ?? 0) + (fromSources.outputTokens ?? 0);
   }
   session.totalTokens = totalTokens;
+  for (const key of METRICS_CACHE_KEYS) {
+    if (fromSources[key] != null) session[key] = fromSources[key];
+  }
   if (fromSources.costUsd == null && priorCost != null) {
     session.costUsd = priorCost;
   }
@@ -2452,6 +2601,8 @@ function applyCollectedSessionFields(session, sources, resolvedModel, opts, repo
   session.costUsd = spend.costUsd;
   session.ampCredits = spend.ampCredits;
   session.costUsdEstimated = spend.costUsdEstimated;
+  session.cacheReadTokens = spend.cacheReadTokens;
+  session.cacheCreationTokens = spend.cacheCreationTokens;
   session.spendSource = spend.spendSource;
   if (spend.agentMode) session.agentMode = spend.agentMode;
   const usageModels = usageModelsForSession(session, extra.ampThreads);
@@ -2467,6 +2618,8 @@ function applyCollectedSessionFields(session, sources, resolvedModel, opts, repo
       totalTokens: numOrNull(row.totalTokens) ?? ((numOrNull(row.inputTokens) ?? 0) + (numOrNull(row.outputTokens) ?? 0)),
       costUsd: numOrNull(row.costUsd),
       costUsdEstimated: null,
+      cacheReadTokens: null,
+      cacheCreationTokens: null,
       ...(numOrNull(row.costUsd) != null ? { costSource: 'amp-usage' } : {}),
     }));
   }
@@ -2557,6 +2710,8 @@ function spendTuple(obj) {
     ampCredits: numOrNull(obj && obj.ampCredits),
     costUsdEstimated: numOrNull(obj && obj.costUsdEstimated),
     costUsdTotal: numOrNull(obj && obj.costUsdTotal) ?? costUsdTotalOf(obj),
+    cacheReadTokens: numOrNull(obj && obj.cacheReadTokens),
+    cacheCreationTokens: numOrNull(obj && obj.cacheCreationTokens),
   };
 }
 
@@ -2577,6 +2732,8 @@ function addSpendNums(target, nums) {
   target.ampCredits = addNullable(target.ampCredits, nums.ampCredits);
   target.costUsdEstimated = addNullable(target.costUsdEstimated, nums.costUsdEstimated);
   target.costUsdTotal = addNullable(target.costUsdTotal, nums.costUsdTotal);
+  target.cacheReadTokens = addNullable(target.cacheReadTokens, nums.cacheReadTokens);
+  target.cacheCreationTokens = addNullable(target.cacheCreationTokens, nums.cacheCreationTokens);
 }
 
 function recomputeSpendMaps(metrics) {
@@ -2596,6 +2753,8 @@ function recomputeSpendMaps(metrics) {
       ampCredits: null,
       costUsdEstimated: null,
       costUsdTotal: null,
+      cacheReadTokens: null,
+      cacheCreationTokens: null,
     };
     addSpendNums(row, nums);
     byModel.set(key, row);
@@ -2799,9 +2958,12 @@ function metricsRecordSessionEnd(projectDir, fields, opts = {}) {
     costUsd: null,
     ampCredits: null,
     costUsdEstimated: null,
+    cacheReadTokens: null,
+    cacheCreationTokens: null,
     spendSource: 'unreported',
   };
   applyCollectedSessionFields(session, collected.sources || [], resolvedModel, opts, reported, collected);
+  annotateSessionInvariants(session, metrics);
   metrics.sessions.push(session);
   metrics.pending = null;
   metrics.updatedAt = nowIso;
@@ -2866,17 +3028,22 @@ function metricsFinalizeArchive(targetDir, changeName, opts = {}) {
     costUsd: null,
     ampCredits: null,
     costUsdEstimated: null,
+    cacheReadTokens: null,
+    cacheCreationTokens: null,
     spendSource: 'unreported',
   };
   applyCollectedSessionFields(session, collected.sources || [], resolvedModel, opts, reported, collected);
-  metrics.sessions.push(session);
   metrics.archivedAt = nowIso;
+  annotateSessionInvariants(session, metrics, { print: false });
+  metrics.sessions.push(session);
   metrics.pending = null;
   metrics.updatedAt = nowIso;
   recomputeMetricsAggregates(metrics);
   saveMetricsFile(filePath, metrics);
   if (opts.collect === true) metricsBackfillFile(filePath, changeName);
   const latest = loadMetricsFile(filePath, changeName, nowIso);
+  // the archived ledger is final: say what looks implausible, never block the archive
+  warnMetricsIssues(metricsLedgerInvariantIssues(latest));
   const last = (latest.sessions || []).at(-1);
   if (last && last.spendSource === 'unreported') warnUnreportedSelfReport();
   if (!last || last.model == null) warnMissingModel();
@@ -2940,6 +3107,15 @@ function formatMetricsCostLine(spend) {
   return `~${formatMetricsCost(estimated)} est.`;
 }
 
+function formatCacheHitLine(spend) {
+  const cacheRead = numOrNull(spend && spend.cacheReadTokens);
+  if (cacheRead == null) return null;
+  const input = numOrNull(spend && spend.inputTokens);
+  if (input == null || input <= 0) return `${cacheRead} cache-read tokens`;
+  const pct = Math.min(100, (cacheRead / input) * 100);
+  return `${pct.toFixed(1)}% (${cacheRead} cache-read of ${input} input tokens)`;
+}
+
 function sessionSpendSourceLabel(session) {
   const raw = session && session.spendSource;
   if (raw == null || String(raw).trim() === '') return 'unreported';
@@ -2955,6 +3131,8 @@ function renderMetricsSummary(metrics) {
   lines.push(`lead time: ${formatMetricsDuration(metrics.totals.leadTimeMs)}`);
   lines.push(`tokens:    ${formatMetricsNumber(metrics.spend.totalTokens)} (in: ${formatMetricsNumber(metrics.spend.inputTokens)}, out: ${formatMetricsNumber(metrics.spend.outputTokens)})`);
   lines.push(`cost:      ${formatMetricsCostLine(metrics.spend)}`);
+  const cacheHit = formatCacheHitLine(metrics.spend);
+  if (cacheHit) lines.push(`cache hit: ${cacheHit}`);
   lines.push(`unreported: ${unreported}`);
   if (metrics.archivedAt) lines.push(`archived:  ${formatKyivDisplay(metrics.archivedAt)}`);
   if (metrics.pending) {
@@ -5056,6 +5234,11 @@ export {
   formatMetricsCostLine,
   resolveSessionSpend,
   canonicalRole,
+  isCanonicalRole,
+  CANONICAL_ROLE_TOKENS,
+  metricsSessionInvariantIssues,
+  metricsLedgerInvariantIssues,
+  renderMetricsSummary,
   phaseForRole,
   recomputeMetricsAggregates,
   sessionSpendIsFrozen,

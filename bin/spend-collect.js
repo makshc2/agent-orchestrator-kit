@@ -138,6 +138,7 @@ function sourceRecord({
   ampCredits,
   at,
   cacheReadTokens,
+  cacheCreationTokens,
   costUsdEstimated,
   costSource,
   agentMode,
@@ -159,6 +160,8 @@ function sourceRecord({
   };
   const cache = numOrNull(cacheReadTokens);
   if (cache != null) record.cacheReadTokens = cache;
+  const cacheWrite = numOrNull(cacheCreationTokens);
+  if (cacheWrite != null) record.cacheCreationTokens = cacheWrite;
   const estimated = numOrNull(costUsdEstimated);
   if (estimated != null) record.costUsdEstimated = estimated;
   if (costSource) record.costSource = String(costSource);
@@ -281,6 +284,7 @@ function collectClaude({ cwd, windowStart, windowEnd, existing, env, homedir, no
         ampCredits: null,
         at: row.timestamp,
         cacheReadTokens,
+        cacheCreationTokens,
         costUsdEstimated: described?.usd ?? null,
         costSource: described?.costSource ?? null,
       });
@@ -784,6 +788,7 @@ function collectCursor({ cwd, windowStart, windowEnd, existing, existingSources,
       ampCredits: null,
       at: row.at,
       cacheReadTokens,
+      cacheCreationTokens: numOrNull(row.cacheWriteTokens),
       costUsdEstimated: described?.usd ?? null,
       costSource: described?.costSource ?? null,
     });
