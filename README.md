@@ -15,9 +15,9 @@ explore → [design] → propose → review → apply → verify → archive
 
 Each role runs in a **separate agent session**. The parent `/opsx:*` session is a conductor: it restores state, spawns the routed specialist, verifies its report, and does not perform specialist work itself. OpenSpec files remain the requirements/tasks source of truth; Memory MCP and `openspec/changes/<name>/handoff.md` index phase state and the next command.
 
-**Figma PAT setup (v0.1.11+)** — local `.agents/figma.local.env` + MCP launcher (token never in chat / committed MCP JSON). See [Figma token](#figma-token-optional).
+**Figma PAT setup** — local `.agents/figma.local.env` + MCP launcher (token never in chat / committed MCP JSON). See [Figma token](#figma-token-optional).
 
-**Custom subagents (v0.1.10+)** ship with the kit and work in all three IDEs:
+**Custom subagents** ship with the kit and work in all three IDEs:
 
 | Subagent | Role |
 |----------|------|
@@ -68,8 +68,14 @@ The `AGENTS.md` / `CLAUDE.md` files tell each IDE exactly what the roles are, so
 
 ```bash
 npm i -D @fission-ai/openspec && npx openspec init
-npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-verify
+npx agent-orchestrator-kit@latest init --profile generic          # default: GitHub Actions CI
 ./scripts/sync-local-agent-skills.sh
+```
+
+GitLab-hosted project with the opt-in AI Spec Verifier (needs the Amp CLI, `AMP_API_KEY`, and a GitLab token in CI):
+
+```bash
+npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-verify
 ```
 
 See [Installation](#installation) for profile/CI options.
@@ -163,10 +169,12 @@ your-project/
 ├── .github/workflows/spec-verify.yml    # AI Spec Verifier (--ci github --spec-verify, opt-in)
 ├── .gitlab/agent-verify.yml             # CI fragment (--ci gitlab)
 ├── .gitlab/spec-verify.yml              # AI Spec Verifier (--ci gitlab --spec-verify, opt-in)
+├── openspec/config.yaml.example         # only when openspec/config.yaml does not exist yet
 ├── .agents/
 │   ├── orchestrator.yaml
-│   ├── mcp.json.example                 # Cursor MCP template
-│   ├── amp.settings.json.example        # Amp MCP template
+│   ├── mcp.json.example                 # Cursor / Claude Code MCP template (.mcp.json)
+│   ├── amp.settings.json.example        # Amp MCP template (.amp/settings.json)
+│   ├── figma.local.env.example          # + github/gitlab.local.env.example (token templates)
 │   ├── commands/                        # /opsx:* role commands
 │   ├── rules/                           # auto-applied orchestration rules
 │   ├── subagents/                       # 12 stage/custom subagents (Cursor/Claude/Amp)
@@ -180,21 +188,28 @@ your-project/
 │       ├── openspec-sync-specs/
 │       └── spec-workflow-openspec/
 ├── scripts/sync-local-agent-skills.sh
-└── scripts/verify-specs.sh + post-mr-verdict.sh / post-pr-verdict-github.sh   # (--spec-verify, opt-in)
+├── scripts/{memory,figma,github,gitlab,browser}-mcp-launcher.cjs   # stdio MCP launchers (always)
+├── scripts/cursor-spend-hook.cjs + cursor-spend-collect.cjs        # Cursor spend capture (always)
+├── scripts/pre-commit-gate-check.sh     # installed unconnected; wire with hooks-setup / --hooks
+├── scripts/post-pr-verdict-github.sh    # always copied; used only by the GitHub Spec Verifier
+├── scripts/verify-specs.sh + post-mr-verdict.sh   # (--spec-verify, opt-in)
+├── .mcp.json                            # seeded from mcp.json.example if missing (memory + figma; mcp-setup adds VCS/browser); no secrets, committing is fine
+├── .amp/settings.json                   # local only — seeded from amp.settings.json.example the same way
+└── .cursor/hooks.json + .cursor/memory.json       # local only — spend hook entries + Memory MCP store
 ```
 
 ### Included in kit
 
 | Category | Contents |
 |----------|----------|
-| Orchestration | 5-role pipeline, `AGENTS.md`, `orchestrator.yaml`, review command |
+| Orchestration | Role-separated pipeline (explore → design → propose → review → apply → verify → archive), `AGENTS.md`, `orchestrator.yaml`, review command |
 | OpenSpec skills | All 7 skills for `/opsx:*` workflow |
 | IDE sync | Cursor + Claude Code sync script (`--delete` semantics — removes stale skills/subagents/commands) |
 | Subagents | 12 exclusive routes: guide/setup/session-handoff, explore/design/propose/review/archive stage agents, and apply implementation/test/code-review agents — native in Cursor + Claude Code, isolated Amp `subagent-*` wrappers |
 | CLI gates | `npx agent-orchestrator-kit status` / `gate-check` / `archive` / `handoff` / `metrics` / `memory-setup` — deterministic review-gate, archive, session-handoff, and change metrics (always via `npx`; see `cli-via-npm.mdc`) |
 | CI | `agent-verify.yml` — GitHub (default) or GitLab fragment + `prebuild` hook, both run `gate-check` |
 | AI Spec Verifier | `spec-verify.yml` + verifier scripts — GitLab or GitHub, opt-in (`--spec-verify`) |
-| MCP templates | Memory MCP for Cursor and Amp |
+| MCP templates | `.agents/mcp.json.example` (Cursor / Claude Code `.mcp.json`) and `.agents/amp.settings.json.example` (Amp) — five stdio launchers: `memory`, `figma`, `github`, `gitlab`, `browser` |
 
 ### Not included (install separately)
 
@@ -236,6 +251,7 @@ Or run `./scripts/sync-local-agent-skills.sh` — it creates `.amp/settings.json
 /opsx:review add-feature-name
 /opsx:apply add-feature-name
 /opsx:archive
+/opsx:sync add-feature-name      # agent-driven merge of the change's delta specs into openspec/specs/ without archiving
 ```
 
 **Model hints per role** (Amp modes):
@@ -257,7 +273,8 @@ Switch modes in Amp CLI: `Ctrl+O` → `mode`.
    - `.claude/CLAUDE.md` — project context
    - `.claude/skills/` — all skills from `.agents/skills/` (excluding Amp `subagent-*` wrappers)
    - `.claude/agents/` — custom subagents from `.agents/subagents/` (native Claude Code subagents)
-3. Skills are auto-loaded by Claude Code from `.claude/skills/`.
+   - `.claude/commands/opsx/` — `/opsx:*` commands from `.agents/commands/`
+3. Skills are auto-loaded by Claude Code from `.claude/skills/`. The `.agents/rules/*.mdc` files are synced only to Cursor (`.cursor/rules/`); Claude Code reaches them through the references in `CLAUDE.md` / `AGENTS.md`.
 4. Invoke `/opsx:*` or the orchestration skill. The conductor delegates using the mandatory phase/signal routing table rather than relying on description-only selection.
 
 **CLAUDE.md tiers used:**
@@ -413,7 +430,7 @@ Optional: include `.gitlab/agent-verify.yml` in `.gitlab-ci.yml` for full lint/b
 
 Blocks merge if any gate fails.
 
-Every CI fragment (`agent-verify.yml`, GitHub and GitLab) also runs `npx agent-orchestrator-kit gate-check` — see [Deterministic gates](#deterministic-gates-status--gate-check) below. It never fails the pipeline for projects without `.agents/orchestrator.yaml`.
+Both consumer CI templates (`templates/.github/workflows/agent-verify.yml` and `templates/.gitlab/agent-verify.yml`, installed as `agent-verify.yml`) also run `npx agent-orchestrator-kit gate-check` — see [Deterministic gates](#deterministic-gates-status--gate-check) below. It never fails the pipeline for projects without `.agents/orchestrator.yaml`. (The kit's own repository CI runs only `openspec validate` + `npm test`.)
 
 #### AI Spec Verifier (GitLab or GitHub, opt-in)
 
@@ -477,7 +494,7 @@ Prints every active OpenSpec change with task progress (`N/M tasks`), review ver
 npx agent-orchestrator-kit gate-check [change-name] [--src-glob src/] [--base HEAD~1] [--staged]
 ```
 
-Fails (non-zero exit) when `pipeline.require_spec_review: true`, the diff against `--base` (or **staged** files with `--staged`) touches `--src-glob`, and the active change has no `review.md` with `Verdict: APPROVE`. When `pipeline.require_design_brief: true` and `src/` changed, it also requires `design-brief.md` (or a `Design: none` line in `proposal.md` for non-UI changes). It degrades gracefully to exit 0 (with a message, not silently) when: `.agents/orchestrator.yaml` is missing, neither review nor design brief is required, the diff can't be computed (e.g. shallow clone), or nothing under `--src-glob` changed. It also warns (never fails) when active changes exceed `pipeline.max_active_changes`. Both `agent-verify.yml` fragments (GitHub and GitLab) call `gate-check` automatically. Pre-commit uses `--staged` so it checks the index, not `HEAD~1`.
+Fails (non-zero exit) when `pipeline.require_spec_review: true`, the diff against `--base` (or **staged** files with `--staged`) touches `--src-glob`, and the active change has no `review.md` with `Verdict: APPROVE`. When `pipeline.require_design_brief: true` and `src/` changed, it also requires `design-brief.md` (or a `Design: none` line in `proposal.md` for non-UI changes). It degrades gracefully to exit 0 (with a message, not silently) when: `.agents/orchestrator.yaml` is missing, neither review nor design brief is required, the diff can't be computed (e.g. shallow clone), or nothing under `--src-glob` changed. It also warns (never fails) when active changes exceed `pipeline.max_active_changes`. Both consumer `agent-verify.yml` templates (GitHub and GitLab, installed by `init --ci`) call `gate-check` automatically. Pre-commit uses `--staged` so it checks the index, not `HEAD~1`.
 
 ```bash
 npx agent-orchestrator-kit gate-check --tasks <change-name>
@@ -617,6 +634,8 @@ pipeline:
   require_design_brief: false   # opt-in: require design-brief.md when src/ changed
   max_active_changes: 1
   archive_after_merge: true
+  task_contract: warn           # tasks.md lint mode for gate-check: warn | strict | off
+  src_glob: "src/"              # paths gate-check treats as product code (default for --src-glob)
 
 verifier:
   lint_command: "npm run lint"
@@ -650,36 +669,28 @@ rules:
 
 Double-quote every rule: an unquoted item that contains `: ` makes OpenSpec drop the whole list for that artifact, and an unquoted ` #` silently cuts the rule short (YAML reads the rest as a comment). A fresh `init --profile node` or `init --profile generic` installs `openspec/config.yaml.example` with these rules from `templates/openspec-config.yaml.example`; `init --force` overwrites an existing `openspec/config.yaml`.
 
-### Upgrading an existing project to v0.1.7 (status / gate-check / GitHub Spec Verifier)
+### Upgrading from older versions
 
-If the kit is already installed and you just want the new deterministic gates, no re-`init` needed:
+No re-`init` is needed — `update` + sync is the whole upgrade path:
 
 ```bash
 npx agent-orchestrator-kit@latest update
-./scripts/sync-local-agent-skills.sh
+npx agent-orchestrator-kit@latest sync   # or: ./scripts/sync-local-agent-skills.sh
+npx agent-orchestrator-kit@latest status
 ```
 
-What this gets you automatically:
-- `.github/workflows/agent-verify.yml` / `.gitlab/agent-verify.yml` refreshed with a `gate-check` step (fails CI if `src/` changed without an approved `review.md`)
-- `sync` (both the CLI command and the shell script) starts removing skills that no longer exist in `.agents/skills/`
-- `agent-orchestrator status` and `agent-orchestrator gate-check` are available immediately (they ship inside `bin/`, not as opt-in templates) — try `npx agent-orchestrator-kit@latest status` right away
-
-Two things `update` will **not** do for you (by design — opt-in, and it never touches your CI root file):
-
-1. **GitLab-only projects that already had `--spec-verify`** — `update` refreshes `.gitlab/spec-verify.yml` and the scripts automatically (only because they already exist in your project).
-2. **Adding GitHub Spec Verifier where you didn't have it before** — that's a new opt-in, run it once:
-   ```bash
-   npx agent-orchestrator-kit@latest init --ci github --spec-verify
-   ```
-   then add the `AMP_API_KEY` repo secret (Settings → Secrets and variables → Actions).
-
-Nothing about `update` retroactively edits your `.gitlab-ci.yml` / already-included workflows — if `gate-check` doesn't seem to run, check that your `.gitlab-ci.yml` still `include`s `.gitlab/agent-verify.yml` (GitHub Actions picks up `.github/workflows/*.yml` automatically, no include step needed).
+- CI files are refreshed only where they already exist: `update` rewrites `.github/workflows/agent-verify.yml` / `.gitlab/agent-verify.yml` and the opt-in `spec-verify.yml` + verifier scripts when the project has them, and never creates a workflow for a provider you did not choose.
+- Adding the AI Spec Verifier to a project that never had it is a separate opt-in — run it once, then add the `AMP_API_KEY` secret:
+  ```bash
+  npx agent-orchestrator-kit@latest init --ci github --spec-verify   # or --ci gitlab
+  ```
+- `update` never edits your CI root file. If `gate-check` does not seem to run on GitLab, check that `.gitlab-ci.yml` still `include`s `.gitlab/agent-verify.yml` (GitHub Actions picks up `.github/workflows/*.yml` automatically).
 
 ## Profiles
 
 | Profile | Stack | Extra (separate install) |
 |---------|-------|--------------------------|
-| `generic` | Any | Orchestration + OpenSpec skills only |
+| `generic` | Any | Orchestration + OpenSpec skills only. `init` still writes the detected JS package-manager commands (`npm`/`yarn`/`pnpm` `lint` / `build` / `test`) into `verifier.*` of `orchestrator.yaml` — non-Node projects edit those three commands after init |
 | `vue3` | Vue 3 + Vite + JS | + `npx frontend-agent-skills install` |
 | `node` | Node.js | + `npx frontend-agent-skills install --category javascript` |
 | `mvp` | Vue 3 demo/spike | + frontend-agent-skills; use `/opsx:quick`, no review gate |
@@ -715,7 +726,7 @@ npx agent-orchestrator-kit figma-setup
 npx agent-orchestrator-kit figma-status
 ```
 
-Then restart Cursor / Amp.
+Then restart Cursor / Claude Code / Amp.
 
 | Path | Purpose | Git |
 |------|---------|-----|
@@ -852,7 +863,7 @@ npx agent-orchestrator-kit metrics add-thing --migrate   # rewrite v1 → v2 wit
 npx agent-orchestrator-kit archive add-thing --sync      # finalize + the same tables as metrics
 ```
 
-#### Для дашбордів
+#### For dashboards
 
 Use only `phases.<phase>.startedAt`, `endedAt`, and `durationMs` for phase boundaries and duration. Use `totals.leadTimeMs` only for the whole change. Git log MUST NOT be used for phase boundaries; the kit does not provide per-phase commit counts. `metrics <name> --summary-json` returns only aggregate `totals`, `phases`, and spend maps, without sessions or commits. For the headline cost use `spend.costUsdTotal` (and `phases.<phase>.costUsdTotal`, `spendByPlatform.<platform>.costUsdTotal`, `spendByModel[].costUsdTotal`): `costUsd` alone is only the billed part and `costUsdEstimated` alone is only the estimated part, so picking one of them drops every platform that reported the other.
 
@@ -888,9 +899,9 @@ Amp is the **primary target** of this kit. It reads `.agents/skills/` and `AGENT
 
 | Feature | How the kit uses it |
 |---------|-------------------|
-| `AGENTS.md` subtree loading | Per-domain AGENTS.md in `openspec/` subtree |
+| `AGENTS.md` at the repo root | Roles, hard rules, and routing pointers (`.agents/rules/`) read on every session |
 | `.agents/skills/` | All orchestration + domain skills |
-| `mcp.json` in skill dir | Lazy MCP loading (Memory only when needed) |
+| `.amp/settings.json` (`amp.mcpServers`) | Memory MCP via `scripts/memory-mcp-launcher.cjs`; seeded from `.agents/amp.settings.json.example` by `init` / `sync` |
 | Subagents | Conductor routing + isolated `subagent-*` wrappers |
 | Amp modes (rush/smart/deep) | Per-role model hints in AGENTS.md |
 
@@ -933,14 +944,19 @@ npx agent-orchestrator-kit update
 npx agent-orchestrator-kit sync [options]
   --target <ide>     cursor | claude | amp | all (default: all)
   Copies .agents/ to local IDE directories, removing skills/rules no longer
-  present in .agents/ (does not touch memory.json, .mcp.json, CLAUDE.md, etc.)
+  present in .agents/. Also seeds local files it never overwrites: creates an
+  empty .cursor/memory.json, seeds .mcp.json / .amp/settings.json from the
+  .example files and upserts the memory server entry, writes the spend-hook
+  entries into .cursor/hooks.json, merges .gitignore, and copies CLAUDE.md to
+  .claude/CLAUDE.md. Existing user content in those files is kept.
 
 npx agent-orchestrator-kit status
   Show progress, review verdict, archive-readiness, MCP health, and Skill health
   (warn-only; missing/stale skills do not fail the command)
 
 npx agent-orchestrator-kit gate-check [change-name] [options]
-  --src-glob <glob>  Source path filter used to detect code changes (default: src/)
+  --src-glob <glob>  Source path filter used to detect code changes
+                     (default: pipeline.src_glob from orchestrator.yaml, else src/)
   --base <ref>       Git ref to diff against (default: HEAD~1)
   --staged           Check staged files (git diff --cached) instead of --base
   --tasks <name>     Lint task contracts (Files / Do / Done-when)
@@ -955,14 +971,53 @@ npx agent-orchestrator-kit hooks-setup
 npx agent-orchestrator-kit mcp-setup [--vcs github|gitlab] [--no-browser]
   Install GitHub/GitLab (from origin) and browser MCP launchers
 
-npx agent-orchestrator-kit archive <name> [--sync | --no-sync --force] [--collect]
+npx agent-orchestrator-kit figma-setup
+  Create local .agents/figma.local.env from the example, refresh the launcher,
+  and add the figma MCP entry to .mcp.json / .amp/settings.json (never prints the token)
+
+npx agent-orchestrator-kit figma-status
+  Report whether a local Figma token is configured (never prints the token)
+
+npx agent-orchestrator-kit figma-fetch [options]
+  --url <url>        Figma design URL (file key + optional node-id)
+  --file <key>       Figma file key
+  --nodes <ids>      Comma-separated node ids (1:2 or 1-2)
+  --depth <n>        Limit node tree depth (use for large frames; omit = full tree)
+  --out <path>       Output JSON path (default: figma-nodes.json)
+  Fetch Figma file/nodes JSON via the REST API using the local token
+
+npx agent-orchestrator-kit memory-setup
+  Install the memory MCP launcher and rewrite Cursor/Amp configs to use an
+  absolute MEMORY_FILE_PATH
+
+npx agent-orchestrator-kit archive <name> [--sync | --no-sync --force] [options]
+  --model <name>     LLM product id recorded on the Archiver session
+  --platform <id>    cursor | claude | amp
+  --input-tokens <n> / --output-tokens <n> / --total-tokens <n>
+                     Token spend for the Archiver session (total defaults to in+out)
+  --cost-usd <usd>   Cost of the Archiver session in USD
+  --collect          Collect all spend adapters (default: locked client only)
   Gate-check a completed change, optionally merge delta specs, move to
   openspec/changes/archive/YYYY-MM-DD-<name>, validate, write final handoff,
-  and print the change-wide metrics summary. --collect also runs adapters.
+  and print the change-wide metrics summary.
 
 npx agent-orchestrator-kit handoff [change-name] [options]
   --restore          Print the restore briefing instead of persisting
                      (also records the session start into metrics.json)
+  --closed-role <role>      Closed role for persist
+  --next-command <command>  Next /opsx:* command
+  --next-role <role>        Next role or subagent name
+  --summary <text>   Persisted summary (also fills Done when Done is empty)
+  --done <text>      Done section
+  --decisions <text> Decisions section
+  --blocked <text>   Blocked section
+  --attach <text>    Attach section
+  --spawn <text>     Subagents to spawn
+  --constraints <text>      Constraints section
+  --status <status>  Change status observation
+  --tasks <progress> Task progress n/m
+  --review <verdict> Review verdict
+  --session-count <n>       Handoff session_count
   --runtime <value>  local | cloud (invalid values exit non-zero)
   --agent-id <id>    Cloud agent identifier (default: none)
   --cloud-check      Verify change artifacts are committed and pushed
@@ -976,10 +1031,15 @@ npx agent-orchestrator-kit handoff [change-name] [options]
   --collect          Also run local spend adapters (off by default)
   --no-metrics       Skip recording this session into metrics.json
 
-npx agent-orchestrator-kit metrics [change-name] [--json] [--collect]
+npx agent-orchestrator-kit metrics [change-name] [options]
+  --json             Print raw metrics.json
+  --summary-json     Print compact aggregate JSON for dashboards
+  --migrate          Rewrite metrics.json using the current schema without
+                     recomputing numbers (v1 → v2)
+  --collect          Backfill the last session from local spend adapters
+                     without adding a new session
   Show recorded session metrics for a change (active or archived):
   time per phase, sessions, tokens, cost, roles, models, lead time.
-  --collect backfills the last session from adapters without adding a session.
 ```
 
 ## Directory Reference
@@ -1009,7 +1069,7 @@ npx agent-orchestrator-kit metrics [change-name] [--json] [--collect]
 .amp/                    # Local only — Amp config
   settings.json          # MCP servers (manual or via amp mcp add)
 
-AGENTS.md                # Committed — Amp + Claude (AGENT.md fallback)
+AGENTS.md                # Committed — read natively by Amp; CLAUDE.md is the Claude Code entry point
 CLAUDE.md                # Committed — synced to .claude/CLAUDE.md
 openspec/                # Committed — spec-driven workflow
   config.yaml            # Project context for AI
