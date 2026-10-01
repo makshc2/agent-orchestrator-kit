@@ -488,7 +488,7 @@ Orchestration hard rules (review approval, one active change) used to rely entir
 npx agent-orchestrator-kit status
 ```
 
-Prints every active OpenSpec change with task progress (`N/M tasks`), review verdict (`APPROVE` / `REQUEST CHANGES` / `none`), design brief (`brief: yes/no`), a `ready to archive` flag once all tasks are `[x]`, and an **MCP health** section (launcher / env / live config — never prints token values). VCS tools that do not match `git remote origin` show as `skipped (no origin match)`.
+Prints an `archive_after_merge: <true|false>` policy line under the title (when `.agents/orchestrator.yaml` exists), then every active OpenSpec change with task progress (`N/M tasks`), review verdict (`APPROVE` / `REQUEST CHANGES` / `none`), design brief (`brief: yes/no`), a `ready to archive` flag once all tasks are `[x]`, and an **MCP health** section (launcher / env / live config — never prints token values). VCS tools that do not match `git remote origin` show as `skipped (no origin match)`.
 
 ```bash
 npx agent-orchestrator-kit gate-check [change-name] [--src-glob src/] [--base HEAD~1] [--staged]
@@ -605,20 +605,37 @@ roles:
 
 ---
 
-### Archive — `/opsx:archive`
+### Archive — terminal first, `/opsx:archive` as fallback
 
-After PR merged + CI green:
+After the PR is merged and CI is green, archive from a terminal — no chat needed:
+
+```bash
+npx agent-orchestrator-kit archive add-bulk-camera-export --sync
 ```
-/opsx:archive add-bulk-camera-export
-```
+
+After a green apply (the Implementer closes, every task in `tasks.md` is `[x]`, `## Blocked` is `none`), `handoff <name>` prints exactly this line instead of a next-session prompt; run it once the PR is merged. `/opsx:archive <name>` stays as a fallback for when a terminal or CI was not available.
 
 Archive is a **deterministic CLI**, not an agent workflow:
 
 ```bash
-npx agent-orchestrator-kit archive <name> [--sync | --no-sync --force] [--collect]
+npx agent-orchestrator-kit archive <name> [--sync | --no-sync --force] [--if-ready] [--collect]
 ```
 
-It checks the gates (APPROVE in `review.md` when required, all tasks `[x]`, target folder free), merges delta specs into `openspec/specs/` (`--sync`: ADDED append, MODIFIED replace, REMOVED delete), moves the change to `openspec/changes/archive/YYYY-MM-DD-<name>`, and runs `npx openspec validate --all --strict` with a full rollback on failure (main specs restored, new spec files deleted, move reverted). With delta specs present you must decide: `--sync` merges, `--no-sync --force` archives without merging, and no flag refuses with exit 1. It finishes by writing the final `handoff.md` (`next_command: none`), updating memory, appending an Archiver session, and printing the same human metrics summary as `metrics <name>`. Archive collects the locked client (Cursor hook / Amp threads / Claude JSONL) in `[pending.startedAt, now]` plus leftover of the previous session — the same leftover-then-collect flow as persist. `--collect` still runs every adapter. Unique `## Metrics` in the change `handoff.md` still counts as Archiver self-report; leftover apply numbers that match the previous session are ignored. The `/opsx:archive` command is a thin wrapper that calls this CLI; the `spec-archiver` subagent remains only as a fallback when the CLI is unavailable.
+It first runs **Gate 0** and refuses a folder that already looks archived (`archivedAt` set in the change `metrics.json`, or `Next command: none` in `handoff.md`; for a re-opened copy clear the marker and re-run), then checks the gates (APPROVE in `review.md` when required, all tasks `[x]`, target folder free), merges delta specs into `openspec/specs/` (`--sync`: ADDED append, MODIFIED replace, REMOVED delete), moves the change to `openspec/changes/archive/YYYY-MM-DD-<name>`, and runs `npx openspec validate --all --strict` with a full rollback on failure (main specs restored, new spec files deleted, move reverted). With delta specs present you must decide: `--sync` merges, `--no-sync --force` archives without merging, and no flag refuses with exit 1. It finishes by writing the final `handoff.md` (`next_command: none`), updating memory, appending an Archiver session, and printing the same human metrics summary as `metrics <name>`. Archive collects the locked client (Cursor hook / Amp threads / Claude JSONL) in `[pending.startedAt, now]` plus leftover of the previous session — the same leftover-then-collect flow as persist. `--collect` still runs every adapter. Unique `## Metrics` in the change `handoff.md` still counts as Archiver self-report; leftover apply numbers that match the previous session are ignored. `/opsx:archive` is the chat fallback: a thin wrapper that calls this CLI, shows its output, and on a refusal prints it and stops; the `spec-archiver` subagent remains only as a fallback when the CLI is unavailable.
+
+**`--if-ready`** is the CI mode of the same command. It prints one `skip: <reason>` line, exits 0 and changes nothing when `pipeline.archive_after_merge` is `false`, the change already looks archived (Gate 0), or it is not ready — the same blockers `status` prints (`tasks incomplete`, `no review.md`, …; a missing `tasks.md` counts as not ready). Otherwise it archives like a normal run, and real failures (an existing target folder, a delta-spec sync conflict, a failed validation) still exit 1. Without `--if-ready` a manual archive ignores `archive_after_merge`.
+
+#### CI archive (opt-in)
+
+A terminal stays the default. The CI templates (`agent-verify.yml`: GitHub job `archive`, GitLab job `agent-archive`) also contain an archive job that is off until you opt in:
+
+1. Set the repository variable (GitLab: CI/CD variable) `AOK_ARCHIVE_ON_MERGE=true`. Without it the job is skipped.
+2. Add the secret (GitLab: masked CI/CD variable) `AOK_ARCHIVE_TOKEN` — a token whose user may push to the protected default branch (a branch-protection bypass). On GitHub the job falls back to the workflow token, which can push only to an unprotected branch.
+3. Keep `pipeline.archive_after_merge: true` in `.agents/orchestrator.yaml` (the `mvp` profile sets `false`).
+
+On a push to the default branch the job waits for `verify`, runs `archive <name> --sync --if-ready` for every `openspec/changes/<name>/`, and pushes one `chore(openspec): archive merged change [skip ci]` commit with the moved change and its finalized `metrics.json`; `[skip ci]` keeps that push from starting another run.
+
+Known caveats: a Cursor `sessionEnd` hook can append leftover usage to a *local* `metrics.json` after the last persist, which then conflicts with the CI commit (keep the archived copy when you resolve it); two merges in quick succession can make the first push fail as non-fast-forward (the next push to the default branch archives again, or archive from a terminal); the job runs the published `npx agent-orchestrator-kit`, so it needs a kit version that has `--if-ready`.
 
 ## Configuration
 
@@ -633,7 +650,7 @@ pipeline:
   require_spec_review: true
   require_design_brief: false   # opt-in: require design-brief.md when src/ changed
   max_active_changes: 1
-  archive_after_merge: true
+  archive_after_merge: true     # policy flag: `status` shows it; `archive --if-ready` and the opt-in CI job honour it; a manual archive ignores it
   task_contract: warn           # tasks.md lint mode for gate-check: warn | strict | off
   src_glob: "src/"              # paths gate-check treats as product code (default for --src-glob)
 
@@ -951,7 +968,7 @@ npx agent-orchestrator-kit sync [options]
   .claude/CLAUDE.md. Existing user content in those files is kept.
 
 npx agent-orchestrator-kit status
-  Show progress, review verdict, archive-readiness, MCP health, and Skill health
+  Show the archive_after_merge policy line, progress, review verdict, archive-readiness, MCP health, and Skill health
   (warn-only; missing/stale skills do not fail the command)
 
 npx agent-orchestrator-kit gate-check [change-name] [options]
@@ -998,7 +1015,10 @@ npx agent-orchestrator-kit archive <name> [--sync | --no-sync --force] [options]
                      Token spend for the Archiver session (total defaults to in+out)
   --cost-usd <usd>   Cost of the Archiver session in USD
   --collect          Collect all spend adapters (default: locked client only)
-  Gate-check a completed change, optionally merge delta specs, move to
+  --if-ready         CI mode: print "skip: <reason>" and exit 0 (nothing changed) when
+                     archive_after_merge is false, the change already looks archived
+                     (Gate 0) or is not ready; real failures still exit 1
+  Refuse an already archived folder (Gate 0), gate-check a completed change, optionally merge delta specs, move to
   openspec/changes/archive/YYYY-MM-DD-<name>, validate, write final handoff,
   and print the change-wide metrics summary.
 
@@ -1031,6 +1051,8 @@ npx agent-orchestrator-kit handoff [change-name] [options]
   --cost-usd <usd>   Session cost in USD
   --collect          Also run local spend adapters (off by default)
   --no-metrics       Skip recording this session into metrics.json
+  After a green apply (Implementer, every task [x], Blocked none) stdout is the
+  single archive command line instead of a next-session prompt.
 
 npx agent-orchestrator-kit metrics [change-name] [options]
   --json             Print raw metrics.json

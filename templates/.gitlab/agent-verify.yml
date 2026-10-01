@@ -37,3 +37,36 @@ agent-verify:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     - if: $CI_COMMIT_BRANCH == "develop"
+
+# Opt-in: archive merged changes from CI instead of a terminal (a terminal stays the default).
+# OFF unless the CI/CD variable AOK_ARCHIVE_ON_MERGE is "true". Pushing the archive commit needs
+# a masked CI/CD variable AOK_ARCHIVE_TOKEN: an access token with write_repository whose user may
+# push to the protected default branch (branch-protection bypass).
+# The commit message carries [skip ci], so the push does not start another pipeline.
+# `archive --if-ready` decides readiness (archive_after_merge: true, review APPROVE, all tasks
+# done, not already archived); a change that is not ready is skipped.
+agent-archive:
+  extends: .agent-verify-base
+  needs: ["agent-verify"]
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $AOK_ARCHIVE_ON_MERGE == "true"'
+  script:
+    - |
+      set -eu
+      for dir in openspec/changes/*/; do
+        [ -d "$dir" ] || continue
+        name=$(basename "$dir")
+        [ "$name" = "archive" ] && continue
+        npx agent-orchestrator-kit archive "$name" --sync --if-ready
+      done
+    - |
+      set -eu
+      git config user.name "agent-orchestrator-kit[bot]"
+      git config user.email "agent-orchestrator-kit@noreply.invalid"
+      git add -A openspec
+      if git diff --cached --quiet; then
+        echo "nothing archived"
+        exit 0
+      fi
+      git commit -m "chore(openspec): archive merged change [skip ci]"
+      git push "https://oauth2:${AOK_ARCHIVE_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "HEAD:${CI_DEFAULT_BRANCH}"

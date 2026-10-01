@@ -9,6 +9,7 @@ pipeline:
   require_spec_review: true
   require_design_brief: false
   max_active_changes: 1
+  # Policy: status prints it; "archive --if-ready" and the opt-in CI job honour it; a manual archive ignores it.
   archive_after_merge: true
   task_contract: warn
   # Paths gate-check treats as product code: git pathspecs separated by

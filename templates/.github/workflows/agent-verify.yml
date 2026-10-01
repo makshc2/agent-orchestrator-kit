@@ -85,3 +85,65 @@ jobs:
       - name: Test (pnpm)
         if: steps.pm.outputs.manager == 'pnpm'
         run: pnpm test
+
+  # Opt-in: archive merged changes from CI instead of a terminal (a terminal stays the default).
+  # OFF unless the repository variable AOK_ARCHIVE_ON_MERGE is "true"
+  # (Settings → Secrets and variables → Actions → Variables).
+  # Pushing the archive commit needs a token that may push to the protected default branch:
+  # store it as the secret AOK_ARCHIVE_TOKEN (branch-protection bypass); without it the
+  # workflow token is used and the push works only on an unprotected branch.
+  # The commit message carries [skip ci], so the push does not start another run.
+  # `archive --if-ready` decides readiness (archive_after_merge: true, review APPROVE,
+  # all tasks done, not already archived); a change that is not ready is skipped.
+  archive:
+    needs: verify
+    if: github.event_name == 'push' && github.ref_name == github.event.repository.default_branch && vars.AOK_ARCHIVE_ON_MERGE == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: agent-archive
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.AOK_ARCHIVE_TOKEN || github.token }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            corepack enable
+            pnpm install --frozen-lockfile
+          elif [ -f yarn.lock ]; then
+            yarn install --frozen-lockfile
+          else
+            npm ci
+          fi
+
+      - name: Archive ready changes
+        run: |
+          set -eu
+          for dir in openspec/changes/*/; do
+            [ -d "$dir" ] || continue
+            name=$(basename "$dir")
+            [ "$name" = "archive" ] && continue
+            npx agent-orchestrator-kit archive "$name" --sync --if-ready
+          done
+
+      - name: Commit and push the archive
+        run: |
+          set -eu
+          git config user.name "agent-orchestrator-kit[bot]"
+          git config user.email "agent-orchestrator-kit@users.noreply.github.com"
+          git add -A openspec
+          if git diff --cached --quiet; then
+            echo "nothing archived"
+            exit 0
+          fi
+          git commit -m "chore(openspec): archive merged change [skip ci]"
+          git push origin HEAD:"$GITHUB_REF_NAME"

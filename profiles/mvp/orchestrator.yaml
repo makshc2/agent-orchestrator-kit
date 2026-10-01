@@ -13,6 +13,7 @@ pipeline:
   require_spec_review: false
   require_design_brief: false
   max_active_changes: 3
+  # Policy: status prints it; "archive --if-ready" and the opt-in CI job honour it; a manual archive ignores it.
   archive_after_merge: false
   quick_mode_enabled: true
   task_contract: off

@@ -55,7 +55,7 @@ Implement tasks from an OpenSpec change.
 
    **Handle states:**
    - If `state: "blocked"` (missing artifacts): show message, suggest using `/opsx:continue`
-   - If `state: "all_done"`: congratulate, suggest archive
+   - If `state: "all_done"`: congratulate and give the archive command line (see Session Exit)
    - Otherwise: proceed to implementation
 
    **Workspace guard:** If status JSON reports `actionContext.mode: "workspace-planning"` and `allowedEditRoots` is empty, explain that full workspace apply is not supported in this slice. Treat linked repos and folders as read-only context, ask the user to select an affected area through an explicit implementation workflow, and STOP before editing files.
@@ -88,7 +88,7 @@ Implement tasks from an OpenSpec change.
    Display:
    - Tasks completed this session
    - Overall progress: "N/M tasks complete"
-   - If all done: suggest archive
+   - If all done: show the archive command line `npx agent-orchestrator-kit archive <name> --sync` (terminal, after merge)
    - If paused: explain why and wait for guidance
 
 **Output During Implementation**
@@ -115,7 +115,7 @@ Working on task 3/7: <task description>
 - [x] Task 2
 ...
 
-All tasks complete! You can archive this change with `/opsx:archive`.
+All tasks complete! After the PR is merged, archive from a terminal: `npx agent-orchestrator-kit archive <name> --sync`.
 ```
 
 **Output On Pause (Issue Encountered)**
@@ -141,6 +141,8 @@ What would you like to do?
 ## Session Exit (HARD STOP)
 
 Close via the canonical Session Exit protocol in `.agents/rules/session-handoff.mdc`. Include task and build/lint status in Done. Never start archive in this apply chat.
+
+**Green apply** (every task `[x]`, build/lint green): write `## Blocked` as `none`, `## Next command` as the literal line `npx agent-orchestrator-kit archive <name> --sync` and `## Next role` as `none`. `handoff <name>` then prints only that line instead of a prompt — paste it as the one fenced block; it is run in a terminal after the PR is merged, so no new chat is needed. Otherwise keep `/opsx:apply <name>` (tasks remain) or `/opsx:propose <name>` (escape valve — record the gap in `## Blocked`).
 
 **Guardrails**
 - Keep going through tasks until done or blocked

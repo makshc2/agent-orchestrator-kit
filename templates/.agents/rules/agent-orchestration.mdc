@@ -24,11 +24,11 @@ The parent `/opsx:*` session is the **conductor**. Delegation is differentiated 
 | Apply + design brief/Figma/image | `design-implementer` | mandatory on signal |
 | Apply: ≥ 2 independent tasks, no shared files, or explicit request | `code-writer` / `test-writer` | optional |
 | Apply pre-PR | `code-reviewer` | optional |
-| `/opsx:archive` | — use `npx agent-orchestrator-kit archive <name>` | CLI; subagent forbidden (`spec-archiver` = CLI-failure fallback only) |
+| `/opsx:archive` (fallback) | — terminal/CI: `npx agent-orchestrator-kit archive <name>` | CLI; subagent forbidden (`spec-archiver` = CLI-failure fallback only) |
 
 ## Session
 Start: honor pasted `/opsx:*` → `npx agent-orchestrator-kit handoff <name> --restore` (canonical briefing; `status` when you need gates). Read `handoff.md` only if the restore CLI failed; spawn `session-handoff` restore **only if** both are unavailable (Amp: isolated `subagent-session-handoff`). Then spawn the phase specialist isolated. Free-form continue → `Handoff.next_command`.
 
-Exit HARD STOP: parent writes `handoff.md` → `npx agent-orchestrator-kit handoff <name>` (exit 0) → paste CLI stdout as one fenced `/opsx:*` prompt. `session-handoff` persist only if the CLI failed. Do not start the next phase here.
+Exit HARD STOP: parent writes `handoff.md` → `npx agent-orchestrator-kit handoff <name>` (exit 0) → paste CLI stdout as one fenced `/opsx:*` prompt (green apply: the single archive line for a terminal). `session-handoff` persist only if the CLI failed. Do not start the next phase here.
 
 Never mix propose+apply (except `/opsx:quick`). No `src/` in explore/design/review. Skip live Figma during apply when a brief exists.

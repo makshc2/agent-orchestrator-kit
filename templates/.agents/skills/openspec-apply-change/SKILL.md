@@ -51,7 +51,7 @@ Implement tasks from an OpenSpec change.
 
    **Handle states:**
    - If `state: "blocked"` (missing artifacts): show message, suggest using openspec-continue-change
-   - If `state: "all_done"`: congratulate, suggest archive
+   - If `state: "all_done"`: congratulate and give the archive command line
    - Otherwise: proceed to implementation
 
    **Workspace guard:** If status JSON reports `actionContext.mode: "workspace-planning"` and `allowedEditRoots` is empty, explain that full workspace apply is not supported in this slice. Treat linked repos and folders as read-only context, ask the user to select an affected area through an explicit implementation workflow, and STOP before editing files.
@@ -87,7 +87,7 @@ Implement tasks from an OpenSpec change.
    Display:
    - Tasks completed this session
    - Overall progress: "N/M tasks complete"
-   - If all done: suggest archive
+   - If all done: show the archive command line `npx agent-orchestrator-kit archive <name> --sync` (terminal, after merge). At Session Exit write it as `## Next command` with `## Blocked` `none` and `## Next role` `none`; `handoff <name>` then prints only that line instead of a prompt
    - If paused: explain why and wait for guidance
 
 **Output During Implementation**
@@ -118,7 +118,7 @@ Working on task 4/7: <task description>
 - [x] Task 2
 ...
 
-All tasks complete! Ready to archive this change.
+All tasks complete! After the PR is merged, archive from a terminal: `npx agent-orchestrator-kit archive <name> --sync`.
 ```
 
 **Output On Pause (Issue Encountered)**

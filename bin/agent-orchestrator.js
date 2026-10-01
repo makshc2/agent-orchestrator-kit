@@ -1419,6 +1419,34 @@ function fieldsFromSections(changeName, sections, extra = {}) {
   };
 }
 
+// Green apply: the Implementer closes with every task done and nothing blocked, so
+// the next step is a terminal command after merge, not a new chat.
+function archiveCommandLine(name) {
+  return `npx agent-orchestrator-kit archive ${name} --sync`;
+}
+
+// `## Blocked` counts as empty only for these exact values (case-insensitive,
+// one optional list bullet and trailing dot ignored); any other text means blocked.
+function isBlockedEmpty(value) {
+  const text = String(value || '')
+    .trim()
+    .replace(/^[-*]\s+/, '')
+    .replace(/\.$/, '')
+    .trim()
+    .toLowerCase();
+  return ['', 'none', '-', '—', 'n/a', 'немає'].includes(text);
+}
+
+function isGreenApplyExit(fields, progress) {
+  return (
+    canonicalRole(fields.closedRole) === 'Implementer' &&
+    Boolean(progress) &&
+    progress.total > 0 &&
+    progress.done === progress.total &&
+    isBlockedEmpty(fields.blocked)
+  );
+}
+
 function missingHandoffFields(fields) {
   const missing = [];
   if (!fields.closedRole) missing.push('Closed role');
@@ -3334,6 +3362,27 @@ function hasDesignOptOut(changeDir) {
   return /^Design:\s*none/mi.test(content);
 }
 
+// The single definition of "ready to archive": `status` prints these blockers and
+// `archive --if-ready` skips on them. `config` is the readPipelineConfig result
+// (null without .agents/orchestrator.yaml: review required, brief not).
+function archiveReadinessBlockers(changeDir, config) {
+  const requireReview = config ? config.requireSpecReview : true;
+  const requireBrief = config ? config.requireDesignBrief : false;
+  const progress = parseTasksProgress(changeDir);
+  const verdict = parseReviewVerdict(changeDir);
+  const blockers = [];
+  if (!(progress && progress.total > 0 && progress.done === progress.total)) {
+    blockers.push('tasks incomplete');
+  }
+  if (requireReview && !(verdict && /^APPROVE/i.test(verdict))) {
+    blockers.push(verdict ? `review verdict "${verdict}" (need APPROVE)` : 'no review.md');
+  }
+  if (requireBrief && !parseDesignBrief(changeDir) && !hasDesignOptOut(changeDir)) {
+    blockers.push('no design-brief.md');
+  }
+  return blockers;
+}
+
 // A YAML scalar as it appears after `key:` — quoted (the quotes are removed,
 // a trailing `# comment` after the closing quote is dropped) or bare (cut at
 // the first ` #` comment marker, then trimmed).
@@ -3388,6 +3437,7 @@ function parsePipelineLegacy(content) {
   pick('require_design_brief', /require_design_brief:\s*(true|false)/);
   pick('max_active_changes', /max_active_changes:\s*(\d+)/);
   pick('task_contract', /task_contract:\s*(warn|strict|off)/);
+  pick('archive_after_merge', /archive_after_merge:\s*(true|false)/);
   // Quoted values may contain spaces or commas (multi-path lists); a bare
   // value runs to the end of the line, minus a trailing `# comment`.
   const srcGlob = content.match(/src_glob:[ \t]*("[^"\n]*"|'[^'\n]*'|[^\n]*)/);
@@ -3407,6 +3457,8 @@ function parsePipelineConfig(content) {
     maxActiveChanges: /^\d+$/.test(values.max_active_changes || '') ? parseInt(values.max_active_changes, 10) : null,
     taskContract: ['warn', 'strict', 'off'].includes(values.task_contract) ? values.task_contract : 'warn',
     srcGlob: srcGlob || null,
+    // Policy flag, default true (the shipped templates). Read by `status` and `archive --if-ready`.
+    archiveAfterMerge: bool(values.archive_after_merge, true),
   };
 }
 
@@ -3414,6 +3466,29 @@ function readPipelineConfig(projectDir) {
   const orchPath = join(projectDir, '.agents', 'orchestrator.yaml');
   if (!existsSync(orchPath)) return null;
   return parsePipelineConfig(readFileSync(orchPath, 'utf-8'));
+}
+
+// Gate 0 of `archive`: positive evidence that this ACTIVE change folder is already
+// archived (a copied or re-opened archive folder). Returns the marker text, or
+// null. Missing, unreadable or invalid files are never evidence (fail-open).
+function findArchivedMarker(changeRoot) {
+  try {
+    const parsed = JSON.parse(readFileSync(join(changeRoot, 'metrics.json'), 'utf-8'));
+    if (parsed && typeof parsed.archivedAt === 'string' && parsed.archivedAt.trim()) {
+      return `metrics.json archivedAt is set (${parsed.archivedAt.trim()})`;
+    }
+  } catch {
+    // absent or invalid metrics.json: no evidence
+  }
+  try {
+    const sections = parseHandoffMarkdown(readFileSync(join(changeRoot, 'handoff.md'), 'utf-8'));
+    if (firstLineCommand(sectionOr(sections, 'Next command')).toLowerCase() === 'none') {
+      return 'handoff.md Next command is none';
+    }
+  } catch {
+    // absent handoff.md: no evidence
+  }
+  return null;
 }
 
 // --- Task-contract lint (gate-check --tasks) ---
@@ -4344,17 +4419,13 @@ program
     const projectDir = process.cwd();
     log.title('agent-orchestrator status');
 
+    const config = readPipelineConfig(projectDir);
+    if (config) log.info(`archive_after_merge: ${config.archiveAfterMerge}`);
+
     const changes = listActiveChanges(projectDir);
     if (changes.length === 0) {
       log.info('No active changes');
     } else {
-      // Readiness must mirror the gates `archive` actually enforces — reporting
-      // "ready" on task count alone told the conductor to archive a change the
-      // CLI would then refuse.
-      const config = readPipelineConfig(projectDir);
-      const requireReview = config ? config.requireSpecReview : true;
-      const requireBrief = config ? config.requireDesignBrief : false;
-
       for (const name of changes) {
         const changeDir = join(projectDir, 'openspec', 'changes', name);
         const progress = parseTasksProgress(changeDir);
@@ -4363,16 +4434,10 @@ program
         const progressStr = progress ? `${progress.done}/${progress.total} tasks` : 'no tasks.md';
         const verdictStr = verdict || 'none';
 
-        const blockers = [];
-        if (!(progress && progress.total > 0 && progress.done === progress.total)) {
-          blockers.push('tasks incomplete');
-        }
-        if (requireReview && !(verdict && /^APPROVE/i.test(verdict))) {
-          blockers.push(verdict ? `review verdict "${verdict}" (need APPROVE)` : 'no review.md');
-        }
-        if (requireBrief && !hasBrief && !hasDesignOptOut(changeDir)) {
-          blockers.push('no design-brief.md');
-        }
+        // Readiness must mirror the gates `archive` actually enforces — reporting
+        // "ready" on task count alone told the conductor to archive a change the
+        // CLI would then refuse. One shared definition, also used by `archive --if-ready`.
+        const blockers = archiveReadinessBlockers(changeDir, config);
 
         console.log(`\n${pc.bold(name)}`);
         console.log(`  tasks:  ${progressStr}`);
@@ -4527,6 +4592,7 @@ program
   .option('--sync', 'merge delta specs into openspec/specs/ before archiving')
   .option('--no-sync', 'skip delta-spec merge (requires --force when delta specs exist)')
   .option('--force', 'confirm archiving without merge when delta specs exist', false)
+  .option('--if-ready', 'CI mode: print `skip: <reason>` and exit 0 (nothing changed) when archive_after_merge is false, the change already looks archived, or it is not ready; real failures still exit 1', false)
   .option('--model <name>', 'LLM product id recorded on the Archiver session')
   .option('--platform <platform>', 'Session platform: cursor | claude | amp')
   .option('--input-tokens <n>', 'Input tokens spent in the Archiver session')
@@ -4570,8 +4636,27 @@ program
     const changesDir = (status.planningHome && status.planningHome.changesDir) || join(projectDir, 'openspec', 'changes');
     if (!existsSync(changeRoot)) return fail(`change not found: ${changeRoot}`);
 
-    // Gate 1: review verdict (only when required by pipeline config)
     const config = readPipelineConfig(projectDir);
+    // --if-ready (CI): "nothing to archive" is a skip, not a failure. Everything
+    // below runs before any write, so a skip leaves the tree untouched.
+    const skip = (reason) => console.log(`skip: ${reason}`);
+    if (opts.ifReady && config && config.archiveAfterMerge === false) return skip('archive_after_merge is false');
+
+    // Gate 0: positive evidence that this ACTIVE folder is already archived.
+    const archivedMarker = findArchivedMarker(changeRoot);
+    if (archivedMarker) {
+      if (opts.ifReady) return skip(`already archived — ${archivedMarker}`);
+      return fail(
+        `already-archived gate failed — change "${name}" is marked as archived (${archivedMarker}). If this folder is a re-opened copy, clear "archivedAt" in metrics.json or set a real "## Next command" in handoff.md, then re-run archive.`,
+      );
+    }
+
+    if (opts.ifReady) {
+      const blockers = archiveReadinessBlockers(changeRoot, config);
+      if (blockers.length) return skip(`not ready — ${blockers.join('; ')}`);
+    }
+
+    // Gate 1: review verdict (only when required by pipeline config)
     const requireReview = config ? config.requireSpecReview : true;
     if (requireReview) {
       const verdict = parseReviewVerdict(changeRoot);
@@ -5096,7 +5181,21 @@ program
     printMetricsSectionWarnings(reported, Boolean(platformResult.warn));
     const resolvedModel = resolveModel(opts, process.env, reported);
 
-    const prompt = buildNextSessionPrompt(fields, agentLanguage, orchestratorMeta).replace(/^\n+|\n+$/g, '');
+    // Green apply prints the archive command instead of a next-session prompt;
+    // the Next command the agent wrote is replaced (with a stderr note when it differed).
+    const greenApply = isGreenApplyExit(fields, progress);
+    let prompt;
+    if (greenApply) {
+      const archiveLine = archiveCommandLine(name);
+      if (firstLineCommand(fields.nextCommand) !== archiveLine) {
+        console.error(`handoff: green apply — Next command replaced with the archive command (was: ${firstLineCommand(fields.nextCommand)})`);
+      }
+      fields.nextCommand = archiveLine;
+      fields.nextRole = 'none';
+      prompt = archiveLine;
+    } else {
+      prompt = buildNextSessionPrompt(fields, agentLanguage, orchestratorMeta).replace(/^\n+|\n+$/g, '');
+    }
     fields.prompt = prompt;
     writeFileSync(existing.filePath, `${buildHandoffMarkdown(fields).trim()}\n`);
     console.error(pc.green('  ✓'), existing.filePath.replace(`${projectDir}/`, ''));
@@ -5123,7 +5222,13 @@ program
 
     if (fields.runtime === 'cloud') printCloudPersistNextSteps(name);
 
-    console.error(pc.dim('Copy the prompt below into the next chat as one fenced block. Do not include this line.'));
+    console.error(
+      pc.dim(
+        greenApply
+          ? 'Run the line below in a terminal after the PR is merged — no new chat needed (/opsx:archive is the fallback).'
+          : 'Copy the prompt below into the next chat as one fenced block. Do not include this line.',
+      ),
+    );
     process.stdout.write(`${prompt}\n`);
   });
 
@@ -5258,4 +5363,8 @@ export {
   planSpecSync,
   buildNextSessionPrompt,
   readOrchestratorMeta,
+  archiveReadinessBlockers,
+  findArchivedMarker,
+  archiveCommandLine,
+  isGreenApplyExit,
 };

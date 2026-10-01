@@ -2,7 +2,7 @@
 
 > Powered by [agent-orchestrator-kit](https://github.com/makshc2/agent-orchestrator-kit) v{{KIT_VERSION}}
 
-Spec-driven OpenSpec pipeline. Each phase is a **separate chat**. Delegation is differentiated (lean model): explore/design/propose/review spawn a mandatory specialist; **apply is parent-driven** — the parent implements from `tasks.md` + `apply-notes.md`, subagents are optional (≥ 2 independent tasks or explicit request; `design-implementer` for design-brief/Figma); **archive is a CLI** (`npx agent-orchestrator-kit archive <name> [--sync]`), no subagent.
+Spec-driven OpenSpec pipeline. Each phase is a **separate chat**. Delegation is differentiated (lean model): explore/design/propose/review spawn a mandatory specialist; **apply is parent-driven** — the parent implements from `tasks.md` + `apply-notes.md`, subagents are optional (≥ 2 independent tasks or explicit request; `design-implementer` for design-brief/Figma); **archive is a CLI** run from a terminal or opted-in CI (`npx agent-orchestrator-kit archive <name> --sync`; `/opsx:archive` is the fallback), no subagent.
 
 ```
 explore → [design] → propose → review → apply → verify → archive
@@ -21,9 +21,9 @@ Routing table, HARD STOP, and CLI forms: `.agents/rules/` (`agent-orchestration`
 | Spec Reviewer | `/opsx:review <name>` |
 | Implementer | `/opsx:apply <name>` |
 | Quick (MVP) | `/opsx:quick <name>` |
-| Archive | `/opsx:archive` |
+| Archive | terminal/CI: `npx agent-orchestrator-kit archive <name> --sync` (fallback `/opsx:archive`) |
 
-Session Start / Exit are **parent-driven** — canonical protocol in `.agents/rules/session-handoff.mdc`. Start: `status` → `handoff --restore` → `handoff.md` fallback. Exit HARD STOP: parent writes `handoff.md` including `## Metrics` (use `unknown` when a value is missing) → `npx agent-orchestrator-kit handoff <name>` (exit 0; optional `--collect`) → paste the CLI `/opsx:*` prompt. `session-handoff` subagent = fallback only. Do not start the next phase here.
+Session Start / Exit are **parent-driven** — canonical protocol in `.agents/rules/session-handoff.mdc`. Start: `status` → `handoff --restore` → `handoff.md` fallback. Exit HARD STOP: parent writes `handoff.md` including `## Metrics` (use `unknown` when a value is missing) → `npx agent-orchestrator-kit handoff <name>` (exit 0; optional `--collect`) → paste the CLI `/opsx:*` prompt (after a green apply the CLI prints one archive line for a terminal instead). `session-handoff` subagent = fallback only. Do not start the next phase here.
 
 Quality gates: `gate-check --tasks <name>` lints the task contract (Files/Do/Done-when, `pipeline.task_contract: warn|strict|off`); `gate-check --review <name>` is deterministic Tier 1 — propose runs it as a pre-gate and hands off to review only on exit 0 (one `spec-architect` re-spawn, then `## Blocked`); review runs it again, and spec-reviewer (Tier 2) is spawned only after it passes and writes `apply-notes.md` on APPROVE. Spec review discovery loops ≤ 2 (optional Tier 1 structural RC plus one semantic Tier 2 RC; a confirmation APPROVE after an exhaustive propose does not count). Anti-pattern: one-finding review loop — fragments defects across many propose/review sessions.
 
@@ -31,7 +31,7 @@ Quality gates: `gate-check --tasks <name>` lints the task contract (Files/Do/Don
 - One active change (unless mvp profile).
 - No apply without explicit Approve when `require_spec_review: true`.
 - No `src/` in explore, design, or review.
-- Archive after merge. Build/lint before PR.
+- Archive after merge — from a terminal or CI (`/opsx:archive` is the fallback). Build/lint before PR.
 - Memory MCP: `node scripts/memory-mcp-launcher.cjs` (never relative `MEMORY_FILE_PATH`).
 
 Pin only the files for the current role (`tasks.md`, the change folder, relevant `src/` subtree) — not entire `openspec/specs/`.

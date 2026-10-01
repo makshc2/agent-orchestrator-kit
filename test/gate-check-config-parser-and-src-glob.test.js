@@ -96,6 +96,7 @@ test('parsePipelineConfig reads only direct children of pipeline: and strips com
     maxActiveChanges: 2,
     taskContract: 'strict',
     srcGlob: 'bin/, scripts/ templates/',
+    archiveAfterMerge: true,
   });
 });
 
@@ -119,6 +120,7 @@ test('parsePipelineConfig does not close the pipeline: block on a column-0 comme
     maxActiveChanges: 1,
     taskContract: 'warn',
     srcGlob: 'lib/',
+    archiveAfterMerge: true,
   });
 });
 
@@ -132,6 +134,7 @@ test('parsePipelineConfig falls back to the legacy whole-file regex when no pipe
     maxActiveChanges: 3,
     taskContract: 'off',
     srcGlob: 'lib/ app/',
+    archiveAfterMerge: true,
   });
   const defaults = parsePipelineConfig('version: 1\nroles: {}\n');
   assert.deepEqual(defaults, {
@@ -140,6 +143,7 @@ test('parsePipelineConfig falls back to the legacy whole-file regex when no pipe
     maxActiveChanges: null,
     taskContract: 'warn',
     srcGlob: null,
+    archiveAfterMerge: true,
   });
 });
 
@@ -151,6 +155,7 @@ test('parsePipelineConfig reads the shipped template and every profile the same 
     maxActiveChanges: 1,
     taskContract: 'warn',
     srcGlob: 'src/',
+    archiveAfterMerge: true,
   });
   const mvp = parsePipelineConfig(readFileSync(join(KIT_ROOT, 'profiles/mvp/orchestrator.yaml'), 'utf-8'));
   assert.equal(mvp.requireSpecReview, false);

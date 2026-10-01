@@ -2,27 +2,14 @@
 name: /opsx-archive
 id: opsx-archive
 category: Workflow
-description: Archive a completed change via the agent-orchestrator-kit CLI
+description: Fallback — archive a completed change via the agent-orchestrator-kit CLI when a terminal or CI could not
 ---
 
-Session Start / Exit: `.agents/rules/session-handoff.mdc`. Announce Archiver.
+Normal path: run `npx agent-orchestrator-kit archive <name> --sync` in a terminal after the PR is merged (or let the opted-in CI job do it). Use this command only when that was impossible or the CLI refused. Protocol: `.agents/rules/session-handoff.mdc` — `archive` writes its own final `handoff.md`, so there is no Session Exit here.
 
-Archive is one CLI call, no phase subagents.
+1. Resolve the name: the argument after `/opsx:archive`, else `npx openspec list --json` + AskUserQuestion. Never guess.
+2. If delta specs exist, ask: merge (`--sync`) or skip (`--no-sync --force`).
+3. Run `npx agent-orchestrator-kit archive <name> [--sync | --no-sync --force]` and show stdout as-is.
+4. On exit ≠ 0, print the refusal from stderr and STOP — no manual merge/move.
 
-**Steps**
-
-1. **Resolve the name.** After `/opsx:archive`, or `npx openspec list --json` + AskUserQuestion. Never guess.
-
-2. **Sync decision.** If delta specs exist, ask: merge (`--sync`) or skip (`--no-sync --force`).
-
-3. **Run the CLI:**
-
-   ```bash
-   npx agent-orchestrator-kit archive <name> [--sync | --no-sync --force]
-   ```
-
-   Gates, optional `--sync`, move to `archive/YYYY-MM-DD-<name>`, validate+rollback, final `handoff.md` (`next_command: none`) + memory. A successful `archive` always creates or updates `metrics.json` (`archivedAt`, Archiver session), collects the locked client into that session (Cursor hook / Amp usage / Claude JSONL; `--collect` = all adapters), and prints the change-wide metrics summary. If `spend.costUsd` is `null` — stderr warning, not a gate.
-
-4. **Show stdout as-is.** On exit ≠ 0, report the gate from stderr and stop — no manual merge/move.
-
-No next-thread prompt after a successful archive.
+No phase subagents. No next-thread prompt after a successful archive.

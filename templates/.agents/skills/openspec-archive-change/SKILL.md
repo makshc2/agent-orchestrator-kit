@@ -9,7 +9,7 @@ metadata:
   generatedBy: "1.4.1"
 ---
 
-Archive a completed change. The phase is fully deterministic — one CLI call, no phase subagents.
+Archive a completed change. The phase is fully deterministic — one CLI call, no phase subagents. The normal path is a terminal after the PR is merged (`npx agent-orchestrator-kit archive <name> --sync`) or an opted-in CI job; use this skill when that was impossible or the CLI refused.
 
 **Input**: Optionally specify a change name. If omitted or ambiguous, run `npx openspec list --json` and use the **AskUserQuestion tool** to let the user pick an active change. Never guess or auto-select.
 
@@ -25,7 +25,7 @@ Archive a completed change. The phase is fully deterministic — one CLI call, n
    npx agent-orchestrator-kit archive <name> [--sync | --no-sync --force]
    ```
 
-   The CLI checks gates (review APPROVE when `require_spec_review: true`, all tasks `[x]`, no existing target archive), merges delta specs on `--sync` (ADDED append, MODIFIED replace, REMOVED delete), moves the change to `openspec/changes/archive/YYYY-MM-DD-<name>`, runs `npx openspec validate --all --strict` with full rollback on failure, and writes the final `handoff.md` (`next_command: none`) plus memory upsert.
+   The CLI first refuses a folder that already looks archived (Gate 0: `archivedAt` in `metrics.json` or `Next command: none`), then checks gates (review APPROVE when `require_spec_review: true`, all tasks `[x]`, no existing target archive), merges delta specs on `--sync` (ADDED append, MODIFIED replace, REMOVED delete), moves the change to `openspec/changes/archive/YYYY-MM-DD-<name>`, runs `npx openspec validate --all --strict` with full rollback on failure, and writes the final `handoff.md` (`next_command: none`) plus memory upsert.
 
 4. **Show the CLI stdout as-is.** On exit ≠ 0, report the failed gate from stderr and stop.
 
