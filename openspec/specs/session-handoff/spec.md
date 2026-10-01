@@ -21,7 +21,7 @@
 
 ### Requirement: Persist Memory and handoff on session exit
 
-Агент MUST NOT оголошувати фазу закритою, поки не виконає кроки **в цьому порядку в батьківській сесії**: (1) записати `openspec/changes/<name>/handoff.md`, включно із заповненою секцією `## Metrics`, (2) виконати `npx agent-orchestrator-kit handoff <name>` з exit 0 (CLI upsert memory.json абсолютним шляхом, записує сесію в `metrics.json` і друкує розширений промпт у stdout), (3) вставити stdout CLI у чат як один fenced промпт. Спавн `session-handoff` у режимі persist дозволений ЛИШЕ як fallback, коли крок (2) повернув помилку. Оновлення Memory MCP entities — опційне дзеркало (одним викликом, якщо tools доступні); його відсутність MUST NOT блокувати закриття. Вимоги до змісту промпта не змінюються: перший рядок `/opsx:<command>`, самодостатній, без службового ярлика.
+Агент MUST NOT оголошувати фазу закритою, поки не виконає кроки **в цьому порядку в батьківській сесії**: (1) записати `openspec/changes/<name>/handoff.md`, включно із заповненою секцією `## Metrics`, (2) виконати `npx agent-orchestrator-kit handoff <name>` з exit 0 (CLI upsert memory.json абсолютним шляхом, записує сесію в `metrics.json` і друкує розширений промпт у stdout), (3) вставити stdout CLI у чат як один fenced промпт. Спавн `session-handoff` у режимі persist дозволений ЛИШЕ як fallback, коли крок (2) повернув помилку. Оновлення Memory MCP entities — опційне дзеркало (одним викликом, якщо tools доступні); його відсутність MUST NOT блокувати закриття. Вимоги до змісту промпта не змінюються: перший рядок `/opsx:<command>`, самодостатній, без службового ярлика; єдиний виняток — зелений apply, коли замість промпту CLI друкує один рядок `npx agent-orchestrator-kit archive <name> --sync` (вимога «Зелений apply друкує команду archive замість промпту»).
 
 #### Scenario: Exit без субагента
 
@@ -51,7 +51,7 @@
 
 - **WHEN** `.agents/orchestrator.yaml` має `project.agent_language: uk`
 - **AND** агент виводить промпт наступної сесії
-- **THEN** інструктивне тіло (починаю сесію, прочитай Memory, conductor) написане українською
+- **THEN** інструктивне тіло (починаю сесію, запусти restore, conductor, HARD STOP) написане українською
 - **AND** перший рядок лишається `/opsx:<command> <name>`
 
 #### Scenario: English project keeps English body
@@ -61,9 +61,10 @@
 
 #### Scenario: Apply exit does not start archive in the same chat
 
-- **WHEN** усі таски `[x]` і apply-сесія закривається
-- **THEN** агент виводить prompt на наступну роль (verify/archive)
-- **AND** інструкція забороняє запускати `/opsx:archive` у цій же сесії
+- **GIVEN** усі таски `[x]`, канонічна Closed role `Implementer` і порожня секція `## Blocked`
+- **WHEN** apply-сесія закривається через `handoff <name>`
+- **THEN** CLI друкує замість next-role промпта один рядок `npx agent-orchestrator-kit archive <name> --sync` (його запускають у терміналі після merge)
+- **AND** інструкція забороняє запускати archive (CLI чи `/opsx:archive`) у цьому ж apply-чаті
 
 #### Scenario: Вільний текст Next role не стає ім'ям субагента
 
@@ -267,9 +268,11 @@ Kit SHALL постачати команду `npx agent-orchestrator-kit handoff 
 
 #### Scenario: Archiver самозвітує так само
 
-- **WHEN** після `init`/`update` читається субагент `spec-archiver` або команда `/opsx:archive`
+- **WHEN** після `init`/`update` читається субагент `spec-archiver` (fallback без CLI)
 - **THEN** текст вимагає заповнити `## Metrics` перед `npx agent-orchestrator-kit archive <name>`
 - **AND** описує фінальну зводку archive як завершення пайплайна
+- **WHEN** читається команда `/opsx:archive` (fallback над CLI)
+- **THEN** вона не містить кроку самозвіту `## Metrics` і блоку Session Start / Exit: лише викликає CLI, показує stdout, а на exit ≠ 0 друкує відмову і зупиняється
 
 #### Scenario: Правило забороняє повторний persist і ручний decisions.md
 
@@ -280,3 +283,50 @@ Kit SHALL постачати команду `npx agent-orchestrator-kit handoff 
 - **AND** вимагає новий чат для хотфіксу поза OpenSpec після persist
 - **AND** позначає `platform` і `model` як обов'язкові (не `unknown`)
 
+### Requirement: Зелений apply друкує команду archive замість промпту
+
+Коли `npx agent-orchestrator-kit handoff <name>` (persist, не `--restore`) закриває сесію, CLI SHALL після перевірки обов'язкових секцій `handoff.md` і підрахунку progress у `tasks.md`, але **до** побудови next-session промпта, визначити «зелений apply»: канонічна Closed role — `Implementer` (`Implementer — …` теж), `tasks.md` має хоча б один таск і всі таски `[x]`, а секція `## Blocked` порожня — рівно `none`, `none.`, `-`, `—`, `n/a` або `немає` (без урахування регістру, з необов'язковим маркером списку); будь-який інший текст не вважається порожнім. У зеленому apply CLI MUST: виставити Next command = `npx agent-orchestrator-kit archive <name> --sync` і Next role = `none` (Next command, вказаний агентом через `--next-command` чи в `handoff.md`, MUST бути замінений, а коли він відрізнявся — stderr-нотатка `green apply — Next command replaced with the archive command (was: …)`); записати `handoff.md` із цими полями та блоком `## Prompt`, що містить той самий рядок; надрукувати в stdout РІВНО цей рядок і `\n` — жодних інших рядків (решта повідомлень persist лишається в stderr, плюс один рядок-підказка: запустити в терміналі після merge, новий чат не потрібен, `/opsx:archive` — fallback). У решті станів (інша роль, незакритий таск, відсутній `tasks.md` або `tasks.md` без тасків, непорожній `## Blocked`) поведінка MUST лишатися незмінною, включно з промптом, чий перший рядок — `/opsx:…`. Тригер MUST NOT залежати від `pipeline.archive_after_merge` і від мови `project.agent_language`; повторний `handoff <name> --no-metrics` MUST давати той самий stdout і той самий `handoff.md`; `handoff <name> --restore` MUST лишатися без змін (без підказки про archive). Це єдиний виняток із вимоги, що перший рядок stdout persist — `/opsx:…`. Шаблон `/opsx:apply` і skill `openspec-apply-change` SHALL вимагати на виході зеленого apply записати `## Blocked` = `none`, `## Next command` = буквальний рядок `npx agent-orchestrator-kit archive <name> --sync` і `## Next role` = `none`, а інакше лишати `/opsx:apply <name>` (є таски) або `/opsx:propose <name>` (escape valve із записом прогалини в `## Blocked`).
+
+#### Scenario: Зелений apply друкує один рядок
+
+- **GIVEN** `tasks.md` з усіма тасками `[x]`, `handoff.md` із Closed role `Implementer — all tasks done` і `## Blocked` = `none`
+- **WHEN** виконується `npx agent-orchestrator-kit handoff <name>` з exit 0
+- **THEN** stdout дорівнює рівно `npx agent-orchestrator-kit archive <name> --sync` плюс `\n`
+- **AND** `handoff.md` має `## Next command` = `` `npx agent-orchestrator-kit archive <name> --sync` ``, `## Next role` = `none` і блок `## Prompt` з тим самим рядком
+- **AND** stderr містить підказку запустити рядок у терміналі після merge і не містить «Copy the prompt below»
+- **AND** сесія `Implementer` записана в `metrics.json`, як і раніше
+
+#### Scenario: Інші ролі й стани не змінюються
+
+- **WHEN** Closed role — `Architect`, а всі таски `[x]` і `## Next command` = `/opsx:review <name>`
+- **THEN** stdout, як і раніше, починається з `/opsx:review <name>` і містить `HARD STOP`
+- **WHEN** Closed role — `Implementer`, але є незакритий таск, або `## Blocked` = `waiting for CI on the PR`, або `tasks.md` відсутній чи без тасків
+- **THEN** stdout — звичайний промпт, чий перший рядок — Next command із `handoff.md`, і містить `HARD STOP`
+- **AND** stderr не містить підказки про запуск archive у терміналі
+
+#### Scenario: Next command агента замінюється з нотаткою
+
+- **GIVEN** зелений apply, де агент записав `## Next command` = `/opsx:archive <name>`
+- **WHEN** виконується `handoff <name>`
+- **THEN** stdout дорівнює рядку `npx agent-orchestrator-kit archive <name> --sync`
+- **AND** stderr містить `green apply — Next command replaced with the archive command (was: /opsx:archive <name>)`, а `handoff.md` має команду archive
+
+#### Scenario: Повторна генерація і мова не міняють результат
+
+- **GIVEN** зелений apply, що вже пройшов persist
+- **WHEN** виконується `handoff <name> --no-metrics`
+- **THEN** stdout і `handoff.md` байт-у-байт збігаються з попереднім результатом
+- **AND** у проєкті з `project.agent_language: uk` або з `pipeline.archive_after_merge: false` stdout той самий один рядок
+
+#### Scenario: Restore не змінюється
+
+- **GIVEN** `handoff.md` після зеленого apply
+- **WHEN** виконується `handoff <name> --restore`
+- **THEN** брифінг друкує `next_command: npx agent-orchestrator-kit archive <name> --sync` і `next_role: none`
+- **AND** жодна підказка про archive не додається
+
+#### Scenario: Шаблони apply вимагають буквальний рядок
+
+- **WHEN** після `init`/`update` читаються `.agents/commands/opsx-apply.md` і `.agents/skills/openspec-apply-change/SKILL.md`
+- **THEN** обидва містять буквальний рядок `npx agent-orchestrator-kit archive <name> --sync`
+- **AND** `opsx-apply.md` на виході вимагає `## Blocked` = `none`, `## Next role` = `none` і забороняє запускати archive у цьому apply-чаті

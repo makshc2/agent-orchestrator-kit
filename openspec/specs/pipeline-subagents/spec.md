@@ -6,7 +6,7 @@
 
 ### Requirement: Conductor must delegate specialist work
 
-Делегування conductor-а SHALL бути диференційованим за фазою. Для `/opsx:propose` і `/opsx:review` батьківська сесія MUST запускати відповідного спеціаліста (`spec-architect`, `spec-reviewer`) і MUST NOT сама писати артефакти чи вердикт. Для `/opsx:apply` батьківська сесія MAY писати код і тести сама, керуючись `tasks.md` і `apply-notes.md`; спавн `code-writer`/`test-writer` дозволений для паралельних незалежних тасків або на явний запит користувача; `design-implementer` лишається обов'язковим для тасків із design-brief/Figma сигналом. Для `/opsx:archive` спавн phase-субагентів заборонений — фаза виконується CLI-командою `agent-orchestrator-kit archive`.
+Делегування conductor-а SHALL бути диференційованим за фазою. Для `/opsx:propose` і `/opsx:review` батьківська сесія MUST запускати відповідного спеціаліста (`spec-architect`, `spec-reviewer`) і MUST NOT сама писати артефакти чи вердикт. Для `/opsx:apply` батьківська сесія MAY писати код і тести сама, керуючись `tasks.md` і `apply-notes.md`; спавн `code-writer`/`test-writer` дозволений для паралельних незалежних тасків або на явний запит користувача; `design-implementer` лишається обов'язковим для тасків із design-brief/Figma сигналом. Для archive спавн phase-субагентів заборонений — фаза виконується CLI-командою `agent-orchestrator-kit archive`, за замовчуванням людиною з терміналу (або opt-in CI); `/opsx:archive` — fallback, у якому батьківська сесія лише викликає цю CLI-команду, показує stdout, а на exit ≠ 0 друкує відмову зі stderr і зупиняється.
 
 #### Scenario: Apply пише код у батькові по готовому плану
 
@@ -23,8 +23,9 @@
 
 #### Scenario: Archive без субагентів
 
-- **WHEN** агент виконує `/opsx:archive <name>`
+- **WHEN** агент виконує `/opsx:archive <name>` (fallback, коли термінал чи CI були недоступні)
 - **THEN** він MUST викликати `npx agent-orchestrator-kit archive <name>` і показати stdout
+- **AND** на exit ≠ 0 MUST надрукувати відмову зі stderr і зупинитись
 - **AND** MUST NOT спавнити `spec-archiver` чи виконувати merge/move вручну
 
 ### Requirement: Exclusive routing table in always-apply and commands
