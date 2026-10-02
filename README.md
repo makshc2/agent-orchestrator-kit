@@ -80,7 +80,7 @@ npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-veri
 
 See [Installation](#installation) for profile/CI options.
 
-**🔄 Already have the kit installed? Upgrade to latest (v0.16.0 makes `/opsx:propose` run the `gate-check --review` Tier 1 pre-gate before it hands off to review, teaches `spec-architect` the mandatory `## Non-goals` / `## Acceptance criteria` headings and the Done-when quality rules, and adds a stack-neutral `openspec/config.yaml.example` for the `node` / `generic` profiles):**
+**🔄 Already have the kit installed? Upgrade to latest (v0.17.0 archives from a terminal instead of a chat — after a green apply `handoff` prints the single `archive` line, `archive` refuses an already-archived folder and gains `--if-ready` plus an opt-in CI job — and also makes `gate-check --review` check delta-spec headings against the main specs, trims the next-session prompt to the parent-driven protocol, and adds metrics ledger invariants):**
 
 ```bash
 npx agent-orchestrator-kit@latest update
@@ -1110,6 +1110,17 @@ The kit moves toward an Agentic Factory in four phases. **One phase = one OpenSp
 Phase bounds and non-goals: [`openspec/specs/agentic-factory-roadmap/spec.md`](openspec/specs/agentic-factory-roadmap/spec.md).
 
 ## Changelog
+
+### 0.17.0
+- **Archive from a terminal, not a chat**: when the Implementer closes with every task `[x]` and `## Blocked` empty, `handoff <name>` prints exactly `npx agent-orchestrator-kit archive <name> --sync` (run it after the PR is merged) and sets `## Next role` to `none`; every other exit is unchanged. `/opsx:archive` is now a fallback that calls the same CLI and stops on a refusal.
+- **Gate 0 in `archive`**: a folder whose `metrics.json` has `archivedAt`, or whose `handoff.md` has `Next command: none`, is refused before anything is written (absent or invalid files never refuse).
+- **`archive --if-ready`** (CI mode): prints one `skip: <reason>` line and exits 0 without touching anything when `archive_after_merge` is `false`, the change already looks archived, or it is not ready (the same blockers `status` prints); real failures still exit 1. `pipeline.archive_after_merge` is now read (default `true`) and `status` prints it.
+- **Opt-in CI archive job** in the CI templates (GitHub `archive`, GitLab `agent-archive`): off until the variable `AOK_ARCHIVE_ON_MERGE` is `true`; it pushes with the secret `AOK_ARCHIVE_TOKEN` and a `[skip ci]` commit. A terminal stays the default (see Archive → CI archive (opt-in)).
+- **`gate-check --review` checks delta-spec headings** against the main specs (`MODIFIED` / `REMOVED` not found, `ADDED` already exists), and delta specs may use `## RENAMED Requirements`.
+- **Metrics ledger integrity**: fail-open invariant warnings on persist and archive, adapter notes on stderr, nullable `cacheReadTokens` / `cacheCreationTokens`, `claude-opus-5-5` rates, and a contract test over newly archived `metrics.json`.
+- **Next-session prompt follows the parent-driven protocol**: no Memory MCP read and no `session-handoff` spawn unless `handoff.spawn_handoff_subagent: true`; the prompt is ~1.5 KB instead of 3.3–4.3 KB, and `handoff --restore` prints only the last 10 `decisions.md` entries.
+- **`gate-check` reads `pipeline.*` only inside the top-level `pipeline:` block** (comments stripped) and accepts a comma- or space-separated `src_glob`. Dead `roles.*.model_hint` keys are gone from the shipped `orchestrator.yaml` files.
+- Upgrade: `update` refreshes the commands, rules, skills and subagents, and rewrites `.github/workflows/agent-verify.yml` / `.gitlab/agent-verify.yml` where they already exist (the new archive job stays off until `AOK_ARCHIVE_ON_MERGE=true`). It does not touch `AGENTS.md`, `CLAUDE.md` or `orchestrator.yaml`: the terminal-first wording and the policy comment above `archive_after_merge` reach new `init`s only, and a missing `archive_after_merge` reads as `true`.
 
 ### 0.16.0
 - **Tier 1 pre-gate in `/opsx:propose`**: after the `spec-architect` report the conductor runs `npx agent-orchestrator-kit gate-check --review <name>`. On exit ≠ 0 it re-spawns the architect once with the full error list; if the gate still fails it closes with `## Blocked` and next command `/opsx:propose <name>`. Handoff to `/opsx:review` requires exit 0 for the first propose, re-propose, and structure-only re-propose.

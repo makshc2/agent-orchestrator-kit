@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-10-02
+
 ### Added
 - **Archive from a terminal or opt-in CI, with an already-archived gate.** `archive <name>` first refuses a folder that already looks archived (Gate 0: `archivedAt` in the active `metrics.json`, or `Next command: none` in `handoff.md`; absent or invalid files never refuse). New `archive <name> --if-ready` is the CI mode: it prints `skip: <reason>` and exits 0 without touching anything when `archive_after_merge` is `false`, the change is already archived, or it is not ready (the same blockers `status` prints, now one shared helper); real failures still exit 1. `pipeline.archive_after_merge` is finally read (default `true`) and `status` prints it. The CI templates gain an opt-in archive job (GitHub `archive`, GitLab `agent-archive`, enabled by `AOK_ARCHIVE_ON_MERGE=true`, pushing with `AOK_ARCHIVE_TOKEN`, commit message `[skip ci]`); a terminal stays the default.
 - **Tier 1 review checks delta-spec headings against the main specs.** `gate-check --review` now reports the same `MODIFIED` / `REMOVED` not found and `ADDED` already exists conflicts that `archive --sync` enforces, so a mismatched requirement title fails in the propose/review phase instead of at archive. Delta specs may use `## RENAMED Requirements` with `FROM:` / `TO:` lines. (`openspec/changes/tier1-delta-heading-check`)
