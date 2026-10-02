@@ -1,0 +1,112 @@
+{
+  "version": 2,
+  "change": "gate-check-config-parser-and-src-glob",
+  "createdAt": "2026-10-02T07:56:23.003Z",
+  "updatedAt": "2026-10-02T07:56:23.003Z",
+  "archivedAt": "2026-10-02T07:56:23.003Z",
+  "spend": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "totalTokens": null,
+    "costUsd": null,
+    "costUsdEstimated": null,
+    "costUsdTotal": null,
+    "cacheReadTokens": null,
+    "cacheCreationTokens": null
+  },
+  "spendByPlatform": {
+    "cursor": {
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null,
+      "costUsdTotal": null,
+      "cacheReadTokens": null,
+      "cacheCreationTokens": null,
+      "source": "none"
+    },
+    "claude": {
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null,
+      "costUsdTotal": null,
+      "cacheReadTokens": null,
+      "cacheCreationTokens": null,
+      "source": "none"
+    },
+    "amp": {
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null,
+      "costUsdTotal": null,
+      "cacheReadTokens": null,
+      "cacheCreationTokens": null,
+      "source": "none"
+    }
+  },
+  "spendByModel": [],
+  "totals": {
+    "sessions": 1,
+    "durationMs": 0,
+    "leadTimeMs": 0,
+    "cloudSessions": 0
+  },
+  "phases": {
+    "archive": {
+      "sessions": 1,
+      "durationMs": 0,
+      "startedAt": "2026-10-02T07:56:23.003Z",
+      "endedAt": "2026-10-02T07:56:23.003Z",
+      "leadTimeMs": 0,
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "costUsdEstimated": null,
+      "costUsdTotal": null,
+      "cacheReadTokens": null,
+      "cacheCreationTokens": null,
+      "agents": [
+        "Archiver"
+      ],
+      "models": []
+    }
+  },
+  "sessions": [
+    {
+      "startedAt": "2026-10-02T07:56:23.003Z",
+      "endedAt": "2026-10-02T07:56:23.003Z",
+      "durationMs": 0,
+      "role": "Archiver",
+      "phase": "archive",
+      "runtime": "local",
+      "agentId": "none",
+      "model": null,
+      "platform": "claude",
+      "threadId": null,
+      "tasks": "5/5",
+      "sourceIds": [],
+      "sourceTotals": {},
+      "byModel": [],
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null,
+      "cacheReadTokens": null,
+      "cacheCreationTokens": null,
+      "spendSource": "unreported",
+      "costUsdTotal": null
+    }
+  ],
+  "pending": null
+}

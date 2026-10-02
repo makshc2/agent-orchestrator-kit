@@ -1,0 +1,57 @@
+# Spec Review
+
+**Change:** lean-conductor-protocol
+**Date:** 2026-10-02
+**Verdict:** APPROVE
+
+Cycle 2 of 2 (confirmation pass after the architect's re-propose). Tier 1 was re-run read-only in the repo: `gate-check --review lean-conductor-protocol` exit 0, `gate-check --tasks lean-conductor-protocol` exit 0, `openspec validate lean-conductor-protocol --strict --type change` valid, `openspec validate --all --strict` 19/19 exit 0.
+Method: all 11 tasks applied literally and in order to a scratch clone of the working tree (prose-described code and the three test files written from their `Do:` text only). Every anchor matched exactly once and every Done-when printed the expected value. The repo itself was not modified.
+
+## Checklist summary
+- proposal ↔ design ↔ tasks tell the same story: ✓ — counts, names and numbers agree (11 tasks, 4 requirements, 19 scenarios; 8/10/4 tests; 60 000/150 000 B; 5 and 3 tool calls; 20 KB and ± 40 lines; 17 of 20 archived `review.md` exempt); the fixture quadruples and sums, the archive median 47.6 KB and "tasks.md over 60 KB only in R4 (next 40 679 B)" recompute from `openspec/changes/archive`; only cosmetic drift (Note 7).
+- Delta specs cover all changed/added behavior in design: ✓ — D1-D10 each map to a requirement or scenario: re-propose exception `specs/pipeline-subagents/spec.md:5,28-33`, reader behaviour of the new key `specs/tiered-review/spec.md:5,26-31`, APPROVE example `:42,50-54`, narrow-read scope `specs/pipeline-subagents/spec.md:43,52-57`, verdict comparison and re-spawn payload `specs/tiered-review/spec.md:42,75-80`.
+- No conflicts with existing `openspec/specs/` requirements: ✓ — the re-propose MUST (`openspec/specs/pipeline-subagents/spec.md:110-112`) is carved out explicitly; "1 shell call + persist ≤ 3" matches the persist order (`openspec/specs/session-handoff/spec.md:24`: Write handoff.md, then the CLI); the one residual overlap (bucket names, Note 1) is non-blocking.
+- No scope creep vs proposal Non-goals: ✓ — only the files named in Impact change; hooks, handoff, `--review --json`, always-apply rules, `templates/AGENTS.md`, profiles, README, CHANGELOG and package.json stay untouched (task 4.4 guards them).
+- Task self-sufficiency (Files/Do/Done-when alone): ✓ — all 11 tasks executed blind; the 17 exemptions of 4.2(10) are derivable (20 archived `review.md` minus the 3 named).
+- Vue 3 items: n/a — `project.stack` is not `vue3`.
+
+Same-class rescan over the new text (LLM-only classes): no other task whose `Do:` needs design.md; no design behaviour without a delta requirement; no new proposal ↔ design ↔ tasks drift beyond Note 7; every referenced path, heading and anchor exists exactly once (scripted check of all backticked paths plus the clone run); every paragraph the re-propose added or rewrote was re-read and executed (re-propose exception, `## Previous findings` in the APPROVE example, reader sentence and scenario, narrow-read scope, verdict comparison and re-spawn payload).
+
+## Notes
+
+Independent verification (scratch clone only):
+- Done-when values: 1.1 `strict warn off`, 5, 1, node test exit 0; 1.2 2, `function`, 0; 2.1 1, 1, `true false`; 2.2 JSON with `change not found: no-such-change` and exit 1, help count 1; 3.1 six `1`; 3.2 `1 0 2 1 1 1`; 3.3 four `1`, then 1 and 1; 4.1 `# pass 8`; 4.2 `# pass 10`; 4.3 `# pass 4`; 4.4 `ls` exit 0, `openspec validate --all --strict` exit 0, `gate-check --review` prints no `artifact budget`.
+- Full `npm test` in the clone: 311/311 with default concurrency, and 311/311 with `--test-concurrency=1` (the old suite plus 8 + 10 + 4 new tests); the smoke pins pass. The Thin conductor paragraph is byte-identical in both files (sha256 compared).
+- Archive contract prototype built from the text of task 2.1: exactly 3 of 20 archived `review.md` pass (exhaustive-review-findings, propose-review-pregate, archive-from-terminal); the other 17 fail only on `Previous findings` or `apply-notes.md` (add-factory-gates-and-mcp: 24 lines), as D6 says. The cycle-1 `review.md` also passes the script.
+- Behaviour with 1.1-2.2 applied: R4, dedup-window, pregate and tier1-delta-heading-check fixtures give the exact strings and exit codes of the spec; 60 000 and 150 000 B are silent, 60 001 and 150 001 B warn; `strict` puts both lines in `--json` errors; `off` is silent; `--review-md` handles `../x`, a missing change and conforming files.
+- Sizes: proposal 7 923, design 9 899, tasks 24 971, delta 7 668 + 10 127 = 17 795, total 60 588 B; `gate-check --review lean-conductor-protocol` prints no `artifact budget` (tasks.md is 41.6% of the 60 000 B threshold, the total 40.4% of 150 000 B).
+
+Judgement of the points the architect left open (none is blocking, so none is in Required Before Apply):
+1. Bucket names (a): `specs/tiered-review/spec.md:42` requires the buckets Blocker, Major, Minor, while `openspec/specs/tiered-review/spec.md:70` allows «або еквівалентні іменовані відра». The gate narrows an allowance no template uses (`templates/.agents/commands/opsx-review.md:121` and the new bullet `tasks.md:39` name the three buckets, all three conforming archived files use them) and a rejection costs one re-spawn. Optional fix that needs no capped bytes (delta specs are uncapped): one clause in the requirement «review.md schema gate», e.g. "лише ці імена; еквівалентні відра зі схеми review.md цей режим не приймає".
+2. Verdict mismatch (b): `tasks.md:34` and `specs/tiered-review/spec.md:42` say the conductor compares the `Verdict:` line with the reported verdict but not what a mismatch means; the replaced paragraph (`templates/.agents/commands/opsx-review.md:127`) had the same gap and a mismatch is rare. Optional fix within the 29 B headroom: append « (a mismatch is a rejection)» after `matches the reported verdict` in 3.2 (+28 B; the Done-when substring still matches).
+3. Headroom (c): tasks.md 24 971 of 25 000 B (29 B), proposal.md 7 923 of 8 000 B (77 B), design.md 9 899 of 10 000 B (101 B). Apply only ticks boxes (`[ ]` to `[x]` keeps the size). The optional edits cannot all fit in tasks.md: 2 (+28 B) and 5 (+24 B) together need 52 B, so one of them would have to trade a phrase.
+4. Delta growth (d): 12 094 to 17 795 B (total 53 623 to 60 588 B) is the 19 scenarios, each tied to one of the 4 requirements (cap 6); acceptance criterion 6 caps proposal, design, tasks, tasks count and requirements, not the delta bytes, and the total stays far below the 150 000 B threshold.
+5. Done-when shapes (e): the `for … do … done` loops of 3.1-3.3 are plain POSIX, print the stated number of lines and fail on the unchanged tree, so they meet `openspec/specs/task-contract/spec.md:94-101` (new state present, counts consistent with `Do:`, no volatile values; the archive directory names in 2.1 are immutable). The brace expansion in 4.4 (`ls test/{…}.test.js`, `tasks.md:62`) works in bash and zsh but not in POSIX `sh`; an explicit three-path `ls` costs +24 B. Cosmetic.
+6. Test run (f): the architect's 168 smoke tests are covered by my full run (311/311).
+7. Other cosmetics: D7 (`design.md:25`) lists five pins while 3.1 and 4.3 (`tasks.md:30,56`) pin a sixth, `on a re-propose after Verdict REQUEST CHANGES`; the RC chat example in `templates/.agents/commands/opsx-review.md:133-162` (pre-apply lines) has no `Verdict:` line, so copied verbatim as a file it fails the gate, while the prose at `:121` and the new bullet `tasks.md:39` both require the line; the warn-mode architect rule (`specs/pipeline-subagents/spec.md:43`) has requirement text but no scenario (only strict has one).
+
+## Previous findings
+
+Cycle 1 (REQUEST CHANGES, 11 911 B): Blocker 1, Major 1-3, Minor 1-7 and the five Required Before Apply items, each mapped below.
+
+- Blocker 1 (thin-conductor rule vs the duty to read `review.md` on re-propose): resolved — `specs/pipeline-subagents/spec.md:5` reads `review.md` on re-propose inside the same 5 calls (scenario `:28-33`); same text in `tasks.md:29` (3.1 paragraph), `design.md:25` (D7) and `proposal.md:11`.
+- Major 1 (APPROVE example without `## Previous findings`): resolved — `tasks.md:34` adds it to the example, `tasks.md:56` (4.3) asserts the example passes `checkReviewMd`, scenario `specs/tiered-review/spec.md:50-54`; confirmed in the clone.
+- Major 2 (reader behaviour of `pipeline.artifact_budget`, D10): resolved — reader sentence `specs/tiered-review/spec.md:5` and scenario `:26-31`; D10 corrected at `design.md:31`; test 4.1(1) at `tasks.md:46` matches.
+- Major 3 (narrow-read rule reaching the artifacts the reviewer scans in full): resolved — `specs/pipeline-subagents/spec.md:43` and scenario `:52-57` scope it to main specs and files outside `openspec/changes/<name>/`; same bullet in `tasks.md:39`.
+- Minor 1 (strict-budget wording drift): resolved — `specs/pipeline-subagents/spec.md:43,59-63`, `design.md:29` and `tasks.md:39` all name `**Risks:**` and the exception to workflow step 6.
+- Minor 2 (3.2 paragraph dropped two checks): resolved — `tasks.md:34` keeps the comparison with the reported verdict and says the re-spawn carries the script's error list and the required headings (the mismatch outcome is Note 2, a gap that pre-dates this change).
+- Minor 3 (`templates/orchestrator.yaml` reaches no install): unresolved — left as decided and cosmetic (default `warn`): `bin/agent-orchestrator.js:3289-3293` still prefers `profiles/<profile>/orchestrator.yaml` and all four profiles ship one.
+- Minor 4 (weak Done-when): resolved — `tasks.md:62` now opens with `ls test/{…}.test.js`, which fails on the unchanged tree, so the whole Done-when fails before apply (1.2's third check at `tasks.md:11` stays a guard next to two checks that fail before apply); the new nit is Note 5.
+- Minor 5 (stale main-spec sentence «логіка, regex і вивід `gate-check --review` не змінюються»): unresolved — `openspec/specs/tiered-review/spec.md:167` untouched; cosmetic spec-hygiene debt that pre-dates this change.
+- Minor 6 (call budgets without slack): unresolved — partly: "the kit `status`" removes the ambiguity and the persist is counted (`tasks.md:29`: one shell call plus Write plus handoff CLI is 3), but the cloud exit steps (`templates/.agents/rules/session-handoff.mdc:24`) still exceed the cap; cosmetic, the rule is a text target measured afterwards (`design.md:35`).
+- Minor 7 (time-bound "17 changes" in a spec scenario): resolved — `specs/tiered-review/spec.md:62-67` now says «з явного списку в тесті»; the 17 stay only in `tasks.md:51` and `design.md:23`.
+- Required Before Apply 1 (re-propose exception in delta, 3.1 paragraph, D7, proposal C, scenario): resolved — evidence of Blocker 1; the paragraph is byte-identical in both files and the five pins plus `on a re-propose after Verdict REQUEST CHANGES` hold (`tasks.md:30`).
+- Required Before Apply 2 (APPROVE example gets `## Previous findings`): resolved — evidence of Major 1; 3.2 Done-when `1 0 2 1 1 1` confirmed (`tasks.md:35`).
+- Required Before Apply 3 (reader sentence, scenario, D10): resolved — evidence of Major 2.
+- Required Before Apply 4 (narrow-read scoping in the requirement and both bullet copies): resolved — evidence of Major 3; 3.3 Done-when counts confirmed (`tasks.md:40`).
+- Required Before Apply 5 (stay inside the budget): resolved — `proposal.md` 7 923 B, `design.md` 9 899 B, `tasks.md` 24 971 B, 11 tasks, 4 requirements; `gate-check --review lean-conductor-protocol` exit 0 without `artifact budget`.

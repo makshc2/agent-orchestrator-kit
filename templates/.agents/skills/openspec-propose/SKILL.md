@@ -24,6 +24,8 @@ When ready to implement, run /opsx:apply
 
 **Conductor delegation is mandatory:** spawn `spec-architect` with the resolved name, decision brief, design brief if present, and artifact instructions. The parent MUST NOT create or edit proposal/design/specs/tasks; after the structured report it may only verify paths, run status, run strict validation, run the Tier 1 pre-gate `npx agent-orchestrator-kit gate-check --review <name>`, and re-spawn `spec-architect` once with the gate-check errors.
 
+**Thin conductor (cost-lean protocol):** the parent MUST NOT research the repo — no grep/cat/sed over `bin/`, `src/`, specs, or other changes, before or after the spawn. It reads only the decision brief (by path), the kit `status`, and `handoff --restore`, plus `review.md` on a re-propose after Verdict REQUEST CHANGES (its path, verdict and Required Before Apply list go into the spawn prompt, per the re-propose rule below), and spawns `spec-architect` within at most 5 tool calls, passing the brief PATH (the user's description verbatim when no brief file exists) and the change name, never a digest of its own research. After the report the parent makes at most 3 tool calls (one shell call that runs `openspec status`, lists the reported artifact paths and runs `gate-check --review <name>`; then the session-exit persist) and, on a green gate, MUST NOT re-read the artifacts; a red gate adds only the one re-spawn and one more `gate-check --review`.
+
 **Task contract (mandatory tasks.md format):** every task must carry indented `Files:`, `Do:`, `Done-when:` fields:
 
 ```markdown
@@ -112,7 +114,7 @@ plus the absence of `## Checklist`; then fix only those gate-check errors.
    npx openspec status --change "<name>"
    npx agent-orchestrator-kit gate-check --review <name>
    ```
-   Tier 1 pre-gate (first propose, re-propose, and structure-only re-propose alike): the conductor MUST run `gate-check --review` itself; the architect's `**Gate:**` line does not replace it, and Tier 1 already includes `openspec validate --strict`. If it exits ≠ 0, re-spawn `spec-architect` once with the full list of gate-check errors (targeted fix), then run it again. If it still exits ≠ 0, close the session with `## Blocked` listing the remaining gate-check errors and next command `/opsx:propose <name>`. Handoff to `/opsx:review` without `gate-check --review` exit 0 is forbidden.
+   Tier 1 pre-gate (first propose, re-propose, and structure-only re-propose alike): the conductor MUST run `gate-check --review` itself; the architect's `**Gate:**` line does not replace it, and Tier 1 already includes `openspec validate --strict`. If it exits ≠ 0, re-spawn `spec-architect` once with the full list of gate-check errors (targeted fix), then run it again. If it still exits ≠ 0, close the session with `## Blocked` listing the remaining gate-check errors and next command `/opsx:propose <name>`. Handoff to `/opsx:review` without `gate-check --review` exit 0 is forbidden. A printed `artifact budget` warning does not change the exit code: relay it verbatim in the final summary and recommend splitting the change into slices that each fit the budget.
 
 **Output**
 

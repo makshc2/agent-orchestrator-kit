@@ -3343,11 +3343,15 @@ function parseTasksProgress(changeDir) {
   return { total, done };
 }
 
+// Shared by the verdict reader (`status`, `archive` take the first match) and
+// by `gate-check --review-md`, which counts the matches: a second one is an error.
+const REVIEW_VERDICT_LINE = /^(?:#{1,6}\s*)?\*{0,2}Verdict:\*{0,2}\s*(.+?)\s*$/m;
+
 function parseReviewVerdict(changeDir) {
   const reviewPath = join(changeDir, 'review.md');
   if (!existsSync(reviewPath)) return null;
   const content = readFileSync(reviewPath, 'utf-8');
-  const match = content.match(/^(?:#{1,6}\s*)?\*{0,2}Verdict:\*{0,2}\s*(.+?)\s*$/m);
+  const match = content.match(REVIEW_VERDICT_LINE);
   return match ? match[1].replace(/\*+\s*$/, '').trim() : 'unknown';
 }
 
@@ -3437,6 +3441,7 @@ function parsePipelineLegacy(content) {
   pick('require_design_brief', /require_design_brief:\s*(true|false)/);
   pick('max_active_changes', /max_active_changes:\s*(\d+)/);
   pick('task_contract', /task_contract:\s*(warn|strict|off)/);
+  pick('artifact_budget', /artifact_budget:\s*(warn|strict|off)/);
   pick('archive_after_merge', /archive_after_merge:\s*(true|false)/);
   // Quoted values may contain spaces or commas (multi-path lists); a bare
   // value runs to the end of the line, minus a trailing `# comment`.
@@ -3456,6 +3461,7 @@ function parsePipelineConfig(content) {
     requireDesignBrief: bool(values.require_design_brief, false),
     maxActiveChanges: /^\d+$/.test(values.max_active_changes || '') ? parseInt(values.max_active_changes, 10) : null,
     taskContract: ['warn', 'strict', 'off'].includes(values.task_contract) ? values.task_contract : 'warn',
+    artifactBudget: ['warn', 'strict', 'off'].includes(values.artifact_budget) ? values.artifact_budget : 'warn',
     srcGlob: srcGlob || null,
     // Policy flag, default true (the shipped templates). Read by `status` and `archive --if-ready`.
     archiveAfterMerge: bool(values.archive_after_merge, true),
@@ -3498,6 +3504,11 @@ const VAGUE_DO_PATTERNS = [/\bas needed\b/i, /\bif necessary\b/i, /\bas appropri
 function taskContractMode(projectDir) {
   const config = readPipelineConfig(projectDir);
   return config ? config.taskContract : 'warn';
+}
+
+function artifactBudgetMode(projectDir) {
+  const config = readPipelineConfig(projectDir);
+  return config ? config.artifactBudget : 'warn';
 }
 
 function parseTaskContracts(content) {
@@ -3574,6 +3585,31 @@ function isSafeChangeName(name) {
   return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name);
 }
 
+// Starting thresholds from docs/cost-lean-envelope-2026-10-02.md: every phase
+// re-reads the artifacts, and R4 (archive-from-terminal) shipped a 102 718 B
+// tasks.md inside a 203 753 B total.
+const ARTIFACT_BUDGET_TASKS_BYTES = 60000;
+const ARTIFACT_BUDGET_TOTAL_BYTES = 150000;
+
+// Measures proposal.md, design.md, tasks.md and every delta spec in bytes (a
+// missing file is 0; other change files such as review.md are not counted).
+function artifactBudgetFindings(changeDir) {
+  const bytes = (path) => (existsSync(path) ? statSync(path).size : 0);
+  const tasksBytes = bytes(join(changeDir, 'tasks.md'));
+  const totalBytes = bytes(join(changeDir, 'proposal.md'))
+    + bytes(join(changeDir, 'design.md'))
+    + tasksBytes
+    + listDeltaSpecFiles(changeDir).reduce((sum, path) => sum + bytes(path), 0);
+  const findings = [];
+  if (tasksBytes > ARTIFACT_BUDGET_TASKS_BYTES) {
+    findings.push(`artifact budget: tasks.md is ${tasksBytes} B (limit ${ARTIFACT_BUDGET_TASKS_BYTES} B) — split the change into slices, each within budget`);
+  }
+  if (totalBytes > ARTIFACT_BUDGET_TOTAL_BYTES) {
+    findings.push(`artifact budget: proposal+design+tasks+delta specs total ${totalBytes} B (limit ${ARTIFACT_BUDGET_TOTAL_BYTES} B) — split the change into slices, each within budget`);
+  }
+  return findings;
+}
+
 function runTier1Review(projectDir, name) {
   const errors = [];
   if (!isSafeChangeName(name)) {
@@ -3598,6 +3634,10 @@ function runTier1Review(projectDir, name) {
   const lint = runTasksLint(projectDir, name, { quiet: true });
   errors.push(...lint.errors);
 
+  const budgetMode = artifactBudgetMode(projectDir);
+  const budgetFindings = budgetMode === 'off' ? [] : artifactBudgetFindings(changeDir);
+  if (budgetMode === 'strict') errors.push(...budgetFindings);
+
   const proposalPath = join(changeDir, 'proposal.md');
   if (!existsSync(proposalPath)) {
     errors.push('proposal.md not found');
@@ -3619,7 +3659,97 @@ function runTier1Review(projectDir, name) {
   // spec, or an ADDED one that already exists, fails here instead of at archive.
   errors.push(...planSpecSync(projectDir, deltaSpecs, name).conflicts);
 
-  return { pass: errors.length === 0, errors, warnings: lint.warnings };
+  return { pass: errors.length === 0, errors, warnings: [...lint.warnings, ...(budgetMode === 'strict' ? [] : budgetFindings)] };
+}
+
+// --- review.md schema gate (gate-check --review-md) ---
+
+// Body lines of the first section whose heading starts with `name` (any level,
+// case-insensitive, so `## Checklist summary` is a Checklist section), up to
+// the next heading of the same or a higher level. Null when there is no such
+// heading.
+function reviewSectionBody(lines, name) {
+  const heading = new RegExp(`^(#{1,6})\\s*${name}\\b`, 'i');
+  const start = lines.findIndex((line) => heading.test(line));
+  if (start === -1) return null;
+  const level = lines[start].match(heading)[1].length;
+  const body = [];
+  for (const line of lines.slice(start + 1)) {
+    const next = line.match(/^(#{1,6})(?!#)/);
+    if (next && next[1].length <= level) break;
+    body.push(line);
+  }
+  return body;
+}
+
+// Checks only what the /opsx:review schema requires; extra sections are
+// allowed. A Tier 1 record (the parent writes it from the gate-check output)
+// is held to its verdict alone.
+function checkReviewMd(changeDir) {
+  const reviewPath = join(changeDir, 'review.md');
+  if (!existsSync(reviewPath)) return { pass: false, errors: ['review.md not found'] };
+  const content = readFileSync(reviewPath, 'utf-8');
+  const lines = content.split(/\r?\n/);
+  const errors = [];
+
+  let verdict = null;
+  const verdictLines = [...content.matchAll(new RegExp(REVIEW_VERDICT_LINE.source, 'gm'))];
+  if (verdictLines.length === 0) {
+    errors.push('review.md: no Verdict line');
+  } else {
+    if (verdictLines.length > 1) errors.push(`review.md: ${verdictLines.length} Verdict lines (exactly one required)`);
+    const value = verdictLines[0][1].replace(/\*+\s*$/, '').trim();
+    if (/^APPROVE/i.test(value)) verdict = 'APPROVE';
+    else if (/^REQUEST CHANGES/i.test(value)) verdict = 'REQUEST CHANGES';
+    else errors.push(`review.md: Verdict "${value}" is neither APPROVE nor REQUEST CHANGES`);
+  }
+
+  if (/^\*\*Source:\*\* gate-check\s*$/m.test(content) && reviewSectionBody(lines, 'Checklist') === null) {
+    if (verdict === 'APPROVE') errors.push('review.md: a Tier 1 record (**Source:** gate-check) must have Verdict REQUEST CHANGES');
+    return { pass: errors.length === 0, errors };
+  }
+
+  if (reviewSectionBody(lines, 'Previous findings') === null) errors.push('review.md: missing "Previous findings" section');
+
+  if (verdict === 'REQUEST CHANGES') {
+    for (const name of ['Checklist', 'Findings', 'Required Before Apply']) {
+      const body = reviewSectionBody(lines, name);
+      if (body === null) errors.push(`review.md: missing "${name}" section`);
+      else if (!body.some((line) => line.trim())) errors.push(`review.md: "${name}" section is empty`);
+    }
+    // A bucket is a sub-heading of Findings or a bold line (`**Blocker**`).
+    const findings = reviewSectionBody(lines, 'Findings');
+    if (findings) {
+      for (const bucket of ['Blocker', 'Major', 'Minor']) {
+        const bucketLine = new RegExp(`^(?:#{1,6}\\s*|\\*\\*)${bucket}\\b`, 'i');
+        if (!findings.some((line) => bucketLine.test(line))) errors.push(`review.md: Findings has no "${bucket}" bucket`);
+      }
+    }
+  }
+
+  if (verdict === 'APPROVE') {
+    const notesPath = join(changeDir, 'apply-notes.md');
+    if (!existsSync(notesPath)) {
+      errors.push('apply-notes.md not found (required on APPROVE)');
+    } else {
+      // Trailing blank lines are not counted.
+      const count = readFileSync(notesPath, 'utf-8').replace(/\s+$/, '').split('\n').length;
+      if (count > 20) errors.push(`apply-notes.md has ${count} lines (max 20)`);
+    }
+  }
+
+  return { pass: errors.length === 0, errors };
+}
+
+function runReviewMd(projectDir, name) {
+  if (!isSafeChangeName(name)) {
+    return { pass: false, errors: [`invalid change name: ${name}`] };
+  }
+  const changeDir = join(projectDir, 'openspec', 'changes', name);
+  if (!existsSync(changeDir)) {
+    return { pass: false, errors: [`change not found: ${name}`] };
+  }
+  return checkReviewMd(changeDir);
 }
 
 // --- Delta spec sync (archive --sync) ---
@@ -4462,7 +4592,8 @@ program
   .option('--staged', 'check staged files (git diff --cached) instead of --base...HEAD', false)
   .option('--tasks <name>', 'lint task contracts (Files/Do/Done-when) of a change')
   .option('--review <name>', 'run deterministic Tier 1 review checks on a change')
-  .option('--json', 'with --review: print a {pass, errors[]} JSON report to stdout', false)
+  .option('--review-md <name>', 'check review.md of a change against the /opsx:review schema (verdict, sections, apply-notes.md)')
+  .option('--json', 'with --review or --review-md: print a {pass, errors[]} JSON report to stdout', false)
   .action((changeName, opts) => {
     const projectDir = process.cwd();
 
@@ -4495,6 +4626,20 @@ program
         for (const w of result.warnings || []) log.warn(w);
         if (result.pass) log.ok('Tier 1 review passed — proceed to spec-reviewer (Tier 2)');
         else log.err(`Tier 1 review failed — ${result.errors.length} error(s)`);
+      }
+      if (!result.pass) process.exitCode = 1;
+      return;
+    }
+
+    if (opts.reviewMd) {
+      const result = runReviewMd(projectDir, opts.reviewMd);
+      if (opts.json) {
+        console.log(JSON.stringify({ pass: result.pass, errors: result.errors }, null, 2));
+      } else {
+        log.title(`gate-check --review-md  ${opts.reviewMd}`);
+        for (const e of result.errors) log.err(e);
+        if (result.pass) log.ok('review.md conforms to the schema');
+        else log.err(`review.md schema check failed — ${result.errors.length} error(s)`);
       }
       if (!result.pass) process.exitCode = 1;
       return;
@@ -5367,4 +5512,6 @@ export {
   findArchivedMarker,
   archiveCommandLine,
   isGreenApplyExit,
+  artifactBudgetFindings,
+  checkReviewMd,
 };

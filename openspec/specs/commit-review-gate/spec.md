@@ -48,7 +48,7 @@ Kit SHALL постачати скрипт `scripts/pre-commit-gate-check.sh`, я
 
 ### Requirement: Гейт блокує commit коду без APPROVE і є no-op у MVP-режимі
 
-`gate-check` SHALL мати режим `--staged`, який перевіряє staged-зміни (`git diff --cached`) замість diff від `HEAD~1`. За `pipeline.require_spec_review: true` commit зі staged-змінами під `src/` без `review.md` з вердиктом APPROVE в активному change MUST завершуватися non-zero exit. За `require_spec_review: false` гейт MUST бути no-op (exit 0). Якщо staged-diff неможливо обчислити, гейт MUST пропускати з попередженням, а не блокувати.
+`gate-check` SHALL мати режим `--staged`, який перевіряє staged-зміни (`git diff --cached`) замість diff від `HEAD~1`. За `pipeline.require_spec_review: true` commit зі staged-змінами під `src/` без `review.md` з вердиктом APPROVE в активному change MUST завершуватися non-zero exit. За `require_spec_review: false` гейт MUST бути no-op (exit 0). Якщо staged-diff неможливо обчислити, гейт MUST пропускати з попередженням, а не блокувати. Режим `--staged` MUST використовувати той самий список pathspec `--src-glob` / `pipeline.src_glob` (через кому або пробіл), що й режим `--base`: staged-зміна під будь-яким елементом списку вважається зміною коду.
 
 #### Scenario: Commit без APPROVE відхиляється
 
@@ -73,3 +73,12 @@ Kit SHALL постачати скрипт `scripts/pre-commit-gate-check.sh`, я
 - **GIVEN** `pipeline.require_spec_review: false`
 - **WHEN** спрацьовує pre-commit гейт
 - **THEN** exit 0 незалежно від наявності `review.md`
+
+#### Scenario: Staged-зміна під другим елементом списку --src-glob блокується
+
+- **GIVEN** проєкт із `require_spec_review: true` і активним change без `review.md`
+- **AND** в index є лише `lib/a.js`
+- **WHEN** виконується `gate-check --staged --src-glob bin/,lib/ <name>`
+- **THEN** команда завершується з exit 1 і повідомленням `review gate failed`
+- **AND** `gate-check --staged --src-glob bin/ <name>` для тієї самої index завершується з exit 0 і повідомленням "nothing to gate"
+

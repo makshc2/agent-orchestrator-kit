@@ -97,6 +97,7 @@ test('parsePipelineConfig reads only direct children of pipeline: and strips com
     taskContract: 'strict',
     srcGlob: 'bin/, scripts/ templates/',
     archiveAfterMerge: true,
+    artifactBudget: 'warn',
   });
 });
 
@@ -121,6 +122,7 @@ test('parsePipelineConfig does not close the pipeline: block on a column-0 comme
     taskContract: 'warn',
     srcGlob: 'lib/',
     archiveAfterMerge: true,
+    artifactBudget: 'warn',
   });
 });
 
@@ -135,6 +137,7 @@ test('parsePipelineConfig falls back to the legacy whole-file regex when no pipe
     taskContract: 'off',
     srcGlob: 'lib/ app/',
     archiveAfterMerge: true,
+    artifactBudget: 'warn',
   });
   const defaults = parsePipelineConfig('version: 1\nroles: {}\n');
   assert.deepEqual(defaults, {
@@ -144,6 +147,7 @@ test('parsePipelineConfig falls back to the legacy whole-file regex when no pipe
     taskContract: 'warn',
     srcGlob: null,
     archiveAfterMerge: true,
+    artifactBudget: 'warn',
   });
 });
 
@@ -156,6 +160,7 @@ test('parsePipelineConfig reads the shipped template and every profile the same 
     taskContract: 'warn',
     srcGlob: 'src/',
     archiveAfterMerge: true,
+    artifactBudget: 'warn',
   });
   const mvp = parsePipelineConfig(readFileSync(join(KIT_ROOT, 'profiles/mvp/orchestrator.yaml'), 'utf-8'));
   assert.equal(mvp.requireSpecReview, false);

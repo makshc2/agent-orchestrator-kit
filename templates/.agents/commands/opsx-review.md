@@ -114,6 +114,9 @@ Create or update `openspec/changes/<name>/review.md`:
 
 ## Notes
 <optional notes>
+
+## Previous findings
+none — first review cycle
 ```
 
 On **APPROVE**, `spec-reviewer` also writes `openspec/changes/<name>/apply-notes.md` (≤ 20 lines): critical constraints, pitfalls, what NOT to touch, verification commands. It is the distilled input for `/opsx:apply` and the **second allowed file** next to `review.md`.
@@ -124,9 +127,7 @@ The `Previous findings` heading is ALWAYS present after any Tier 2 pass. If no p
 
 `review.md` (always) and `apply-notes.md` (on APPROVE) are the **only files** you may write during review (not `src/`, not `tasks.md` checkboxes).
 
-The conductor verifies the subagent's `Status: done`, checks that `review.md` exists with the reported verdict (and `apply-notes.md` on APPROVE), and relays the result without editing them.
-
-After Tier 2, the conductor MUST reject an RC `review.md` that lacks those headings or has an empty Checklist and MUST NOT rewrite the file; then re-spawn `spec-reviewer` once with the rejection reason and required headings; if the second file is still non-conforming, close with `## Blocked` naming the missing headings and next command `/opsx:review <name>` (a rejected file is not an accepted verdict). NEXT-AFTER-RC applies only to an accepted (schema-conforming) RC.
+The conductor verifies the subagent's `Status: done` and that the `Verdict:` line of `review.md` matches the reported verdict, then MUST run `npx agent-orchestrator-kit gate-check --review-md <name>` on the Tier 2 files (add `--json` for a `{pass, errors[]}` report): the script checks the single `Verdict:` line, the schema headings above and, on APPROVE, `apply-notes.md` (≤ 20 lines), so the conductor does not read the files to check headings. On exit ≠ 0 the conductor MUST treat the file as rejected and MUST NOT rewrite it; re-spawn `spec-reviewer` once with the script's error list and the required headings listed above; if the second file still fails the script, close with `## Blocked` naming the script errors and next command `/opsx:review <name>` (a rejected file is not an accepted verdict). The parent-written Tier 1 record is not checked. NEXT-AFTER-RC applies only to an accepted (schema-conforming) RC.
 
 #### If any ✗:
 

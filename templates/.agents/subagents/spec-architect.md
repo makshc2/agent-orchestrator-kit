@@ -24,6 +24,8 @@ Rules:
 - Do NOT run `/opsx:apply`, implement code, or mark implementation tasks complete.
 - Do NOT approve or review your own artifacts.
 - Stop as blocked when a product decision would materially change requirements instead of inventing it.
+- Read narrowly: list main-spec requirement headings with `grep -n '^### Requirement:'` and read only the requirements the delta touches or could conflict with, never a whole large spec; read other repo files over 20 KB in line ranges (anchor ± 40 lines); the change's own files (`openspec/changes/<name>/`: all artifacts and the existing `review.md`) are read in full, once; never re-read a file already read in this session; batch independent reads into one call.
+- Keep the artifacts inside the size budget: if `gate-check --review` prints an `artifact budget` finding, do not hide it — in `warn` mode list it in `**Risks:**` with a proposed slice split; in `strict` mode (an error, the one exception to workflow step 6) return `**Status:** blocked` with that proposal in `**Risks:**`.
 
 Return exactly this report contract:
 

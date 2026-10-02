@@ -115,11 +115,12 @@ Non-goals: хуки (Зріз 3); derived exit і `metrics --profile` (Зріз 
 
 **Далі — «смуги» для складних задач** (Slice/epic із бюджетом, Probe, Fix, Amend, глибина review від ризику) — окрема explore-сесія.
 
-## Частина IV. Передумова: борг на корені кіта
+## Частина IV. Борг на корені кіта — закрито 2026-10-02
 
-- `status` показує 4 незаархівовані зміни (`fix-next-session-prompt`, `gate-check-config-parser-and-src-glob`, `metrics-ledger-integrity`, `tier1-delta-heading-check`; усі «no review.md», вже в 0.17.0). Для `handoff` без імені це «Multiple active changes» ⇒ завжди передавати ім'я.
-- **Пастка при archive.** `fix-next-session-prompt` у delta MODIFIED-ить «Next-session prompt follows agent_language», а R4 (уже заархівований) змінив ту саму вимогу: main має текст R4 (2 521 символ), delta R2a — старіший (2 313). `archive fix-next-session-prompt --sync` перезапише main і прибере сценарій зеленого apply («GIVEN усі таски `[x]` … CLI друкує … archive») на користь протилежного. Перед archive: прибрати цей MODIFIED-блок із delta R2a (main уже містить надмножину), `openspec validate --strict`, далі archive. Інші три зміни не перетинаються з R4.
-- Gate 1 на корені (немає `review.md` і `.agents/orchestrator.yaml` ⇒ `require_spec_review` за замовчуванням true): див. decisions R4 `gate1-heads-up` — тимчасовий кореневий `.agents/orchestrator.yaml` з `pipeline.require_spec_review: false`, не коммітити. Рішення — за власником.
+Чотири зміни (`tier1-delta-heading-check`, `gate-check-config-parser-and-src-glob`, `metrics-ledger-integrity`, `fix-next-session-prompt`; усі в 0.17.0) заархівовано в `openspec/changes/archive/2026-10-02-*` по черзі через `node bin/agent-orchestrator.js archive <name> --sync`. Активних змін немає, `status` чистий, `openspec validate --all --strict` 18/18, тести 289/289. Що варто пам'ятати:
+- Gate 1 обійдено тимчасовим кореневим `.agents/orchestrator.yaml` (`pipeline.require_spec_review: false`, видалений одразу після): жодна з чотирьох не проходила Tier 2 review, лише Tier 1 і тести.
+- З delta `fix-next-session-prompt` прибрано блок MODIFIED «Next-session prompt follows agent_language»: main мав надмножину від R4 (2 521 символ проти 2 313 у R2a), а archive без правки повертав суперечливий сценарій зеленого apply (exit 0, validate зелений — жоден гейт цього не ловить). Тож архівований R2a не містить цієї вимоги; її історія — в архівній delta R4.
+- Tier 1 порівнює заголовки, а не зміст: перетин двох changes в одній вимозі ловиться лише порядком archive або ручною звіркою тексту.
 
 ## Next-session prompt (вставити в НОВИЙ чат)
 
@@ -141,7 +142,7 @@ Chat language: Ukrainian. OpenSpec artifacts: prose in Ukrainian, headings and k
 ## Context
 - Closed role: Explorer (explore session 2026-10-02; no change directory yet)
 - Done: cost anatomy of R4 from transcripts; brief for `lean-conductor-protocol` (Part II); slice queue (Part III).
-- Blocked: none. Heads-up: Part IV (four unarchived changes; archive hazard for `fix-next-session-prompt`).
+- Blocked: none. The four older changes are archived; `status` shows no active changes.
 - Attach: `docs/cost-lean-envelope-2026-10-02.md`; `bin/agent-orchestrator.js:3577` (runTier1Review), `:4458` (gate-check), `:3448` (parsePipelineConfig)
 - Constraints: artifact budget II.3 (tasks.md ≤ 25 KB, ≤ 12 tasks); `/effort high`, not max; no hooks and no handoff changes in this change.
 
