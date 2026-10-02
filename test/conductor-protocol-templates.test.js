@@ -8,7 +8,7 @@ import { checkReviewMd } from '../bin/agent-orchestrator.js';
 
 // Pin phrases of the cost-lean conductor protocol in the shipped templates:
 // the thin conductor of /opsx:propose, the review.md schema gate of
-// /opsx:review and the narrow-reading rules of both spec specialists.
+// /opsx:review and the reading rules of both spec specialists.
 
 const KIT_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -83,7 +83,7 @@ test('opsx-review.md runs gate-check --review-md and its APPROVE example passes 
   }
 });
 
-test('spec-architect.md and spec-reviewer.md carry the narrow-reading rules', () => {
+test('spec-architect.md reads main specs narrowly, spec-reviewer.md reads the touched ones in full', () => {
   const architect = '.agents/subagents/spec-architect.md';
   const reviewer = '.agents/subagents/spec-reviewer.md';
   for (const rel of [architect, reviewer]) {
@@ -93,6 +93,14 @@ test('spec-architect.md and spec-reviewer.md carry the narrow-reading rules', ()
       'are read in full, once',
     ]);
   }
-  assertIncludes(architect, template(architect), ['artifact budget']);
-  assertIncludes(reviewer, template(reviewer), ['gate-check --review-md <name>']);
+  assertIncludes(architect, template(architect), ['never a whole large spec', 'artifact budget']);
+  // The reviewer is the last check for a conflict with a main spec, so its
+  // reading of main specs is not trimmed to headings.
+  assertIncludes(reviewer, template(reviewer), [
+    'read in full the main spec of every capability the delta touches',
+    'when in doubt, read it',
+    'unless its text is no longer in your context or a finding depends on its exact wording',
+    'gate-check --review-md <name>',
+  ]);
+  assert.ok(!template(reviewer).includes('never a whole large spec'), `${reviewer}: the narrow main-spec rule is back`);
 });

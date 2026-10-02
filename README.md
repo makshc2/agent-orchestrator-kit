@@ -80,7 +80,7 @@ npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-veri
 
 See [Installation](#installation) for profile/CI options.
 
-**🔄 Already have the kit installed? Upgrade to latest (v0.17.0 archives from a terminal instead of a chat — after a green apply `handoff` prints the single `archive` line, `archive` refuses an already-archived folder and gains `--if-ready` plus an opt-in CI job — and also makes `gate-check --review` check delta-spec headings against the main specs, trims the next-session prompt to the parent-driven protocol, and adds metrics ledger invariants):**
+**🔄 Already have the kit installed? Upgrade to latest (v0.18.0 makes the `/opsx:propose` conductor thin — it no longer researches the repo before or after the `spec-architect` spawn — and adds two deterministic checks: `gate-check --review` warns when a change's artifacts outgrow the size budget, and `gate-check --review-md` checks `review.md` against the `/opsx:review` schema; `spec-architect` and `spec-reviewer` also get reading rules):**
 
 ```bash
 npx agent-orchestrator-kit@latest update
@@ -352,7 +352,7 @@ The conductor spawns `codebase-explorer` for repository investigation and stays 
 **Model:** strong reasoning.
 **Purpose:** Create all change artifacts: proposal, design, tasks, delta specs.
 
-The conductor spawns `spec-architect`; it does not write artifacts in the parent session.
+The conductor spawns `spec-architect`; it does not write artifacts in the parent session. It is a thin conductor: it does not research the repo itself, passes the decision brief by path, and after the report only runs the exit gate below without re-reading the artifacts.
 
 **Exit gate:**
 ```bash
@@ -372,7 +372,7 @@ npx agent-orchestrator-kit gate-check --review <name>  # Tier 1 pre-gate: exit 0
 **Model:** medium or strong.
 **Purpose:** Review artifacts. Output **Approve ✓** or **Request Changes ✗**.
 
-Review is **two-tiered**. Tier 1 is deterministic: `npx agent-orchestrator-kit gate-check --review <name>` runs strict OpenSpec validation, the task-contract lint, and structural checks (Non-goals / Acceptance criteria in `proposal.md`, non-empty delta-spec sections). If Tier 1 fails, the verdict is REQUEST CHANGES without spawning anyone. Only on a Tier 1 pass does the conductor spawn `spec-reviewer` (not `code-reviewer`) for Tier 2 judgment and verify its `review.md`. On APPROVE the reviewer also writes `apply-notes.md` (≤ 20 lines of constraints and pitfalls for the implementer).
+Review is **two-tiered**. Tier 1 is deterministic: `npx agent-orchestrator-kit gate-check --review <name>` runs strict OpenSpec validation, the task-contract lint, and structural checks (Non-goals / Acceptance criteria in `proposal.md`, non-empty delta-spec sections); it also warns when the artifacts outgrow the size budget. If Tier 1 fails, the verdict is REQUEST CHANGES without spawning anyone. Only on a Tier 1 pass does the conductor spawn `spec-reviewer` (not `code-reviewer`) for Tier 2 judgment and verify its `review.md` with `gate-check --review-md <name>`. On APPROVE the reviewer also writes `apply-notes.md` (≤ 20 lines of constraints and pitfalls for the implementer).
 
 Tier 2 checks (judgment only — no duplication of Tier 1):
 - Consistency proposal ↔ design ↔ tasks
@@ -507,6 +507,14 @@ npx agent-orchestrator-kit gate-check --review <change-name> [--json]
 ```
 
 Deterministic Tier 1 of the review phase: strict OpenSpec validation, the task-contract lint, `Non-goals` / `Acceptance criteria` sections in `proposal.md`, non-empty ADDED/MODIFIED/REMOVED sections in delta specs, and the same heading checks `archive --sync` enforces (a MODIFIED/REMOVED title must exist in the main spec, an ADDED title must not). Human-readable stdout, or `--json` for a `{pass, errors[]}` report.
+
+It also measures `proposal.md`, `design.md`, `tasks.md` and the delta specs in bytes and reports `artifact budget: …` when `tasks.md` is over 60 000 B or their total is over 150 000 B, with the advice to split the change into slices. `pipeline.artifact_budget` sets the mode: `warn` (default) prints a warning and keeps the exit code, `strict` makes it an error (exit 1), `off` skips the measurement.
+
+```bash
+npx agent-orchestrator-kit gate-check --review-md <change-name> [--json]
+```
+
+Checks `review.md` against the `/opsx:review` schema after Tier 2: exactly one `Verdict:` line (APPROVE or REQUEST CHANGES), a `Previous findings` heading, on REQUEST CHANGES non-empty `Checklist`, `Findings` (Blocker / Major / Minor) and `Required Before Apply`, on APPROVE an `apply-notes.md` of at most 20 lines. A Tier 1 record (`**Source:** gate-check`, no Checklist) only has to be REQUEST CHANGES. Exit 1 with the error list, or `--json` for a `{pass, errors[]}` report. `/opsx:review` runs it after the `spec-reviewer` report instead of checking the headings by hand.
 
 ### Pre-commit review gate (optional)
 
@@ -652,6 +660,7 @@ pipeline:
   max_active_changes: 1
   archive_after_merge: true     # policy flag: `status` shows it; `archive --if-ready` and the opt-in CI job honour it; a manual archive ignores it
   task_contract: warn           # tasks.md lint mode for gate-check: warn | strict | off
+  artifact_budget: warn         # change size budget for gate-check --review: warn | strict | off (a missing key means warn)
   src_glob: "src/"              # paths gate-check treats as product code (default for --src-glob)
 
 verifier:
@@ -979,6 +988,7 @@ npx agent-orchestrator-kit gate-check [change-name] [options]
   --staged           Check staged files (git diff --cached) instead of --base
   --tasks <name>     Lint task contracts (Files / Do / Done-when)
   --review <name>    Deterministic Tier 1 review (optional --json)
+  --review-md <name> Check review.md against the /opsx:review schema (optional --json)
   Exit non-zero when require_spec_review is true, src/ changed, and the
   active change has no review.md with Verdict: APPROVE. Graceful no-op
   otherwise (missing config, review not required, no relevant diff).
@@ -1110,6 +1120,13 @@ The kit moves toward an Agentic Factory in four phases. **One phase = one OpenSp
 Phase bounds and non-goals: [`openspec/specs/agentic-factory-roadmap/spec.md`](openspec/specs/agentic-factory-roadmap/spec.md).
 
 ## Changelog
+
+### 0.18.0
+- **Thin `/opsx:propose` conductor**: the parent does not research the repo. It reads the decision brief (by path), `status` and `handoff --restore`, spawns `spec-architect` within 5 tool calls, and after the report makes at most 3 tool calls without re-reading the artifacts on a green gate.
+- **Artifact size budget in `gate-check --review`**: a warning when `tasks.md` is over 60 000 B or `proposal.md` + `design.md` + `tasks.md` + delta specs are over 150 000 B, with the advice to split the change into slices. `pipeline.artifact_budget: warn | strict | off` sets the mode (default `warn`; `strict` exits 1).
+- **`gate-check --review-md <name>`** checks `review.md` against the `/opsx:review` schema (one `Verdict:` line, `Previous findings`, the REQUEST CHANGES sections, an `apply-notes.md` of at most 20 lines on APPROVE). `/opsx:review` runs it after the `spec-reviewer` report instead of checking the headings by hand.
+- **Reading rules for the spec specialists**: `spec-architect` reads main specs by requirement heading; `spec-reviewer` reads the main spec of every capability the delta touches in full and may re-read a file when a finding depends on the exact wording; both read large repo files in line ranges and batch independent reads.
+- Upgrade: `update` refreshes the commands, skills and subagents. It does not touch `orchestrator.yaml`: a missing `artifact_budget` reads as `warn`, so add the key under `pipeline:` by hand only to switch to `strict` or `off`.
 
 ### 0.17.0
 - **Archive from a terminal, not a chat**: when the Implementer closes with every task `[x]` and `## Blocked` empty, `handoff <name>` prints exactly `npx agent-orchestrator-kit archive <name> --sync` (run it after the PR is merged) and sets `## Next role` to `none`; every other exit is unchanged. `/opsx:archive` is now a fallback that calls the same CLI and stops on a refusal.
