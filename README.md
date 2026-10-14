@@ -80,7 +80,7 @@ npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-veri
 
 See [Installation](#installation) for profile/CI options.
 
-**🔄 Already have the kit installed? Upgrade to latest (v0.18.0 makes the `/opsx:propose` conductor thin — it no longer researches the repo before or after the `spec-architect` spawn — and adds two deterministic checks: `gate-check --review` warns when a change's artifacts outgrow the size budget, and `gate-check --review-md` checks `review.md` against the `/opsx:review` schema; `spec-architect` and `spec-reviewer` also get reading rules):**
+**🔄 Already have the kit installed? Upgrade to latest (v0.18.1: `gate-check` no longer blocks `src/` commits on an explore-only change that has neither `proposal.md` nor `tasks.md`; a change that already has one of those files still needs `review.md` with `APPROVE`):**
 
 ```bash
 npx agent-orchestrator-kit@latest update
@@ -1120,6 +1120,9 @@ The kit moves toward an Agentic Factory in four phases. **One phase = one OpenSp
 Phase bounds and non-goals: [`openspec/specs/agentic-factory-roadmap/spec.md`](openspec/specs/agentic-factory-roadmap/spec.md).
 
 ## Changelog
+
+### 0.18.1
+- **`gate-check` skips explore-only changes.** Auto-select no longer treats a folder without `proposal.md` and without `tasks.md` as the review target, so a research change does not block unrelated `src/` commits. `gate-check <name>` still checks the named change. A change that already has `proposal.md` or `tasks.md` still needs `review.md` with `APPROVE`.
 
 ### 0.18.0
 - **Thin `/opsx:propose` conductor**: the parent does not research the repo. It reads the decision brief (by path), `status` and `handoff --restore`, spawns `spec-architect` within 5 tool calls, and after the report makes at most 3 tool calls without re-reading the artifacts on a green gate.
