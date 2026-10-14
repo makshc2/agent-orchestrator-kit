@@ -4945,6 +4945,30 @@ test('gate-check honours pipeline.src_glob for code outside src/', () => {
   }
 });
 
+test('gate-check --staged skips explore-only changes without proposal.md or tasks.md', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-gate-explore-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'gate-explore', scripts: {} }, null, 2));
+    runInit(dir, '--profile generic --name GateExplore --lang en');
+    initGit(dir);
+
+    const changeDir = join(dir, 'openspec/changes/explore-only');
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'handoff.md'), '# Session Handoff\n\nstatus: exploring\n');
+
+    mkdirSync(join(dir, 'src'), { recursive: true });
+    writeFileSync(join(dir, 'src/index.js'), 'console.log(1);\n');
+    execSync('git add -A', { cwd: dir });
+
+    const res = cliSpawn(dir, ['gate-check', '--staged']);
+    assert.equal(res.status, 0, res.stdout + res.stderr);
+    assert.match(res.stdout, /review gate skipped \(explore-only\)/);
+    assert.doesNotMatch(res.stdout, /review gate failed/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('gate-check verifies the gate instead of passing when the diff is unknown', () => {
   const dir = mkdtempSync(join(tmpdir(), 'aok-gate-nodiff-'));
   try {

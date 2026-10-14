@@ -3334,6 +3334,11 @@ function listActiveChanges(projectDir) {
     .sort();
 }
 
+function isReviewGateChange(projectDir, name) {
+  const changeDir = join(projectDir, 'openspec', 'changes', name);
+  return existsSync(join(changeDir, 'proposal.md')) || existsSync(join(changeDir, 'tasks.md'));
+}
+
 function parseTasksProgress(changeDir) {
   const tasksPath = join(changeDir, 'tasks.md');
   if (!existsSync(tasksPath)) return null;
@@ -4690,11 +4695,16 @@ program
 
     let target = changeName;
     if (!target) {
-      if (changes.length === 0) {
-        log.warn(`${srcGlob} changed but no active OpenSpec change found — cannot verify review gate`);
+      const reviewTargets = changes.filter((name) => isReviewGateChange(projectDir, name));
+      if (reviewTargets.length === 0) {
+        if (changes.length === 0) {
+          log.warn(`${srcGlob} changed but no active OpenSpec change found — cannot verify review gate`);
+        } else {
+          log.info(`active changes have no proposal.md or tasks.md — review gate skipped (${changes.join(', ')})`);
+        }
         return;
       }
-      target = changes
+      target = reviewTargets
         .map((name) => ({ name, mtime: statSync(join(projectDir, 'openspec', 'changes', name)).mtimeMs }))
         .sort((a, b) => b.mtime - a.mtime)[0].name;
       log.info(`auto-selected change: ${target} (override: gate-check <name>)`);

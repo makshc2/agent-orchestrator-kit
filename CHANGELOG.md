@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **`gate-check` no longer treats an explore-only change as the review target.** Auto-select skips a change that has neither `proposal.md` nor `tasks.md`. Staged or branch `src/` changes are not blocked by a research folder that has not entered propose. An explicit `gate-check <name>` still checks that change. A change that already has `tasks.md` or `proposal.md` still needs `review.md` with `APPROVE`.
+
 ## [0.18.0] - 2026-10-02
 
 ### Added
