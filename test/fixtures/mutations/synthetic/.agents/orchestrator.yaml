@@ -1,0 +1,3 @@
+pipeline:
+  task_contract: strict
+  artifact_budget: off

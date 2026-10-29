@@ -1,0 +1,225 @@
+## Purpose
+
+tiered-review — requirements merged from change lean-pipeline-v2.
+
+## Requirements
+
+### Requirement: Скриптовий Tier 1 перед LLM-review
+
+Команда `npx agent-orchestrator-kit gate-check --review <name>` SHALL виконувати детерміновані перевірки: `openspec validate --strict --type change`, task-контракт-лінт, наявність секцій `Non-goals` і `Acceptance criteria` в proposal.md, наявність непорожніх ADDED/MODIFIED/REMOVED/RENAMED секцій у delta specs і перевірку заголовків delta проти main specs тим самим кодом, що й `archive --sync` (`planSpecSync`): кожен заголовок `### Requirement:` у MODIFIED і REMOVED та кожен `FROM:` у RENAMED MUST байт-у-байт існувати в `openspec/specs/<capability>/spec.md`, а кожен заголовок ADDED і кожен `TO:` у RENAMED MUST NOT там існувати. Порівняння точне, без толерантності до регістру чи пробілів, бо archive відмовить за тих самих умов. Кожен конфлікт SHALL потрапляти в `errors` тим самим рядком, який archive друкує як sync conflict (`<capability>: MODIFIED requirement not found in main spec: "<name>"`, `REMOVED requirement not found in main spec`, `ADDED requirement already exists in main spec`, `RENAMED requirement not found in main spec`, `RENAMED target already exists in main spec`). Capability без main spec приймає лише ADDED. Перевірка конфліктів в archive лишається чинною: main spec може змінитись між propose і archive. Команда `/opsx:review` MUST запускати Tier 1 до читання артефактів LLM-ом.
+
+#### Scenario: Падіння Tier 1 завершує review без LLM-читання
+
+- **GIVEN** change, що не проходить task-контракт-лінт або validate
+- **WHEN** виконується `/opsx:review <name>`
+- **THEN** у чат виводиться REQUEST CHANGES з помилками gate-check, `review.md` записується з `Verdict: REQUEST CHANGES`, phase-субагент не спавниться, артефакти LLM не читає
+
+#### Scenario: Tier 1 OK передає скорочений чекліст у Tier 2
+
+- **GIVEN** change, що проходить `gate-check --review`
+- **WHEN** спавниться `spec-reviewer`
+- **THEN** його чекліст містить лише LLM-перевірки (узгодженість артефактів, конфлікти з main specs, scope creep, самодостатність тасків) без пунктів, які вже покрив Tier 1
+
+#### Scenario: MODIFIED-заголовок, відсутній у main spec, падає в Tier 1
+
+- **GIVEN** delta `openspec/changes/<name>/specs/auth/spec.md` має `## MODIFIED Requirements` із заголовком `### Requirement: Old Requirement`, а `openspec/specs/auth/spec.md` містить лише `### Requirement: Old Req`
+- **WHEN** виконується `gate-check --review <name> --json`
+- **THEN** `pass` є `false`, exit code 1
+- **AND** `errors` містить `auth: MODIFIED requirement not found in main spec: "Old Requirement"`
+- **AND** той самий рядок для заголовка `old req` або `Old  Req` (регістр, подвійний пробіл) — без нормалізації
+
+#### Scenario: RENAMED проходить Tier 1 і падає на відсутньому FROM
+
+- **GIVEN** delta містить лише `## RENAMED Requirements` з `- FROM: \`### Requirement: Old Req\`` і `- TO: \`### Requirement: Renamed Req\``, а main spec має `Old Req` і не має `Renamed Req`
+- **WHEN** виконується `gate-check --review <name> --json`
+- **THEN** `pass` є `true` і `errors` не містить `no non-empty`
+- **AND** якщо FROM відсутній у main spec — `errors` містить `auth: RENAMED requirement not found in main spec: "<from>"`
+- **AND** якщо TO уже існує в main spec — `errors` містить `auth: RENAMED target already exists in main spec: "<to>"`
+
+### Requirement: apply-notes.md при APPROVE
+
+При вердикті APPROVE reviewer MUST записати `openspec/changes/<name>/apply-notes.md` (≤ 20 рядків): критичні констрейнти, підводні камені, що не чіпати, команди перевірки. Це єдиний додатковий файл, дозволений reviewer-у поруч із `review.md`.
+
+#### Scenario: APPROVE створює дистилят для apply
+
+- **GIVEN** review завершився APPROVE
+- **WHEN** перевіряється директорія change
+- **THEN** існують `review.md` (`Verdict: APPROVE`) і `apply-notes.md` з констрейнтами для виконавця
+
+### Requirement: Вичерпний скан Tier 2 до вердикту
+
+Після проходження `gate-check --review` `spec-reviewer` MUST завершити повний LLM-чекліст Tier 2 і повний скан артефактів change (proposal.md, design.md, tasks.md, усі delta specs, згадані main specs і шляхи репозиторію) **до** запису вердикту в `review.md`. Він MUST NOT зупинятись на першому blocking-знаходженні. Один пункт чекліста ✗ усе одно SHALL давати `Verdict: REQUEST CHANGES`, але файл MUST перелічити **кожне** blocking-знаходження цього проходу. Косметичні зауваження MUST NOT потрапляти в Required Before Apply. Наявні вимоги «Скриптовий Tier 1 перед LLM-review» і «apply-notes.md при APPROVE» лишаються чинними; сценарій «Падіння Tier 1 завершує review без LLM-читання» MUST NOT змінюватись.
+
+#### Scenario: Один ✗ не обрізає решту blocking
+
+- **GIVEN** change пройшов `gate-check --review` і в артефактах є щонайменше два незалежні blocking-дефекти (наприклад design-поведінка без вимоги в delta і таск, чий `Do:` не виконується без design.md)
+- **WHEN** виконується Tier 2 `/opsx:review <name>`
+- **THEN** `review.md` має `Verdict: REQUEST CHANGES`
+- **AND** Required Before Apply містить обидва дефекти, а не лише перший знайдений
+- **AND** кожен пункт чекліста Tier 2 позначений ✓ або ✗
+
+#### Scenario: Косметика лишається поза Required Before Apply
+
+- **GIVEN** Tier 2 знайшов один blocking і одну косметичну примітку
+- **WHEN** записується `review.md` з `Verdict: REQUEST CHANGES`
+- **THEN** Required Before Apply містить лише blocking
+- **AND** косметика потрапляє в Findings як Minor або в Notes, не в Required Before Apply
+
+### Requirement: Схема review.md на REQUEST CHANGES і повторному review
+
+Після Tier 2 будь-який `review.md` з `Verdict: REQUEST CHANGES` і будь-який повторний Tier 2 review MUST містити секції з цими заголовками (англійські імена в шаблонах): `Checklist`, `Findings`, `Required Before Apply`, `Previous findings`. У Findings SHALL бути відра Blocker, Major, Minor (або еквівалентні іменовані відра); порожні відра дозволені. Checklist MUST перелічити кожен пункт чекліста Tier 2 з ✓ або ✗. Заголовок `Previous findings` ALWAYS присутній після будь-якого Tier 2 проходу. Якщо попереднього `review.md` не було — тіло є літеральним рядком `none — first review cycle`. Якщо був — кожен попередній пункт Required Before Apply MUST з’явитись як `resolved` або `unresolved` з однорядковим evidence. Запис після падіння лише Tier 1 MUST містити рядок `**Source:** gate-check`, MUST перелічити помилки скрипта, MUST NOT мати секцію `## Checklist` і MUST NOT вимагати заповненого LLM-Checklist. Parent-запис цього T1 `review.md` є прийнятим винятком з вимоги pipeline-subagents «parent MUST NOT сама писати вердикт».
+
+#### Scenario: T2 REQUEST CHANGES має всі обов'язкові секції
+
+- **GIVEN** Tier 1 пройшов, перед спавном `review.md` не існував, і `spec-reviewer` ставить REQUEST CHANGES
+- **WHEN** записується `openspec/changes/<name>/review.md`
+- **THEN** файл містить заголовки Checklist, Findings, Required Before Apply і Previous findings
+- **AND** Findings має відра Blocker, Major, Minor
+- **AND** Checklist не порожній: кожен пункт T2 позначений ✓ або ✗
+- **AND** тіло Previous findings є літеральним рядком `none — first review cycle`
+
+#### Scenario: T1-only RC не вимагає LLM-Checklist
+
+- **GIVEN** `gate-check --review` завершився з exit ≠ 0
+- **WHEN** parent записує `review.md` з `Verdict: REQUEST CHANGES`, рядком `**Source:** gate-check` і без секції `## Checklist`
+- **THEN** файл перелічує помилки скрипта
+- **AND** phase-субагент не спавниться
+- **AND** порожній LLM-Checklist не є порушенням цієї вимоги
+- **AND** цей запис parent-а є прийнятим винятком з «parent MUST NOT сама писати вердикт»
+
+### Requirement: Повнота повторного review і той самий клас дефекту
+
+Пізніший `/opsx:review` після існуючого `review.md` MUST трактувати попередній punch list як вхід: прочитати існуючий `review.md` перед overwrite, перенести punch list у Previous findings і все одно виконати повний чекліст плюс скан того самого класу дефекту в усіх артефактах. Клас дефекту для цього rescan — лише LLM-only, наприклад: інший таск, чий `Do:` не виконується без design.md; інша design-поведінка без вимоги в delta; інший drift proposal↔tasks; інший згаданий заголовок/шлях, якого немає. Класи Tier 1 (відсутня секція proposal, порожня підсекція delta, провал validate / task-contract) NEVER входять у same-class rescan Tier 2. Confirmation review після вичерпного propose MUST виконати ту саму повноту; він MUST NOT вважатись третім discovery-циклом, але MUST NOT зупинятись на першому новому leftover. Файл MUST NOT бути однопунктовим RC, який називає лише перший leftover і залишає інші знайдені blocking поза Required Before Apply.
+
+#### Scenario: Re-review переносить попередній punch list
+
+- **GIVEN** існуючий `review.md` з трьома пунктами Required Before Apply
+- **WHEN** виконується наступний Tier 2 `/opsx:review <name>`
+- **THEN** спеціаліст читає існуючий `review.md` перед overwrite
+- **AND** нова секція Previous findings містить усі три пункти зі статусом `resolved` або `unresolved` і однорядковим evidence
+- **AND** reviewer усе одно завершує повний чекліст до вердикту
+
+#### Scenario: Confirmation не дробить leftover того самого класу
+
+- **GIVEN** попередній RC назвав один таск, чий `Do:` не виконується без design.md, а після propose в `tasks.md` лишились ще два таски без конкретного `Do:`
+- **WHEN** виконується confirmation `/opsx:review <name>`
+- **THEN** якщо вердикт REQUEST CHANGES, Required Before Apply перелічує всі знайдені такі таски цього проходу
+- **AND** файл MUST NOT містити лише перший leftover як єдиний blocking
+- **AND** reviewer MUST NOT додавати в цей rescan класи Tier 1
+
+### Requirement: Перевірка заголовків conductor-ом після Tier 2
+
+Після звіту `spec-reviewer` conductor MUST перевірити `review.md` з `Verdict: REQUEST CHANGES`: наявні обов’язкові заголовки схеми і Checklist не порожній. Перед першим спавном conductor MUST зафіксувати, чи існував `review.md`, і передати цей факт плюс шлях до файла в spawn-промпт. Якщо перевірка падає, conductor MUST один раз переспавнити `spec-reviewer` з причиною відхилення і списком обов’язкових заголовків. Якщо другий файл знову неконформний, conductor MUST закрити сесію з `## Blocked`, назвати відсутні заголовки і поставити next command `/opsx:review <name>`; відхилений файл не є прийнятим вердиктом. Conductor MUST NOT сам редагувати `review.md`. Ця перевірка застосовується після Tier 2, не до T1-запису від gate-check. На APPROVE conductor і далі перевіряє наявність `apply-notes.md` і MUST NOT переписувати файли спеціаліста.
+
+#### Scenario: Порожній Checklist після T2 блокує сесію
+
+- **GIVEN** `spec-reviewer` повернув `Status: done` і `review.md` з `Verdict: REQUEST CHANGES` без секції Checklist або з порожнім Checklist
+- **WHEN** conductor перевіряє звіт
+- **THEN** він один раз переспавнює `spec-reviewer` з причиною відхилення і списком обов’язкових заголовків
+- **AND** вміст файлу лишається без правок conductor-а
+
+#### Scenario: Другий неконформний RC веде в review, не в propose
+
+- **GIVEN** conductor уже один раз відхилив T2 `review.md` за відсутніми заголовками і переспавнив `spec-reviewer`
+- **AND** другий файл знову неконформний (немає обов’язкового заголовка або Checklist порожній)
+- **WHEN** conductor закриває сесію
+- **THEN** `handoff.md` має `## Blocked` із названими відсутніми заголовками
+- **AND** next command є `/opsx:review <name>`
+- **AND** відхилений файл не є прийнятим вердиктом, тож NEXT-AFTER-RC не застосовується
+
+#### Scenario: T1 RC без LLM-Checklist не блокується цією перевіркою
+
+- **GIVEN** parent записав `review.md` після падіння `gate-check --review` з рядком `**Source:** gate-check` і без `## Checklist`, без спавну `spec-reviewer`
+- **WHEN** сесія йде в Session Exit
+- **THEN** відсутність заповненого LLM-Checklist MUST NOT вважатись провалом parent heading check
+
+### Requirement: Next command після REQUEST CHANGES є propose
+
+Після прийнятого (schema-conforming) `Verdict: REQUEST CHANGES` (Tier 1 або Tier 2) Session Exit next command SHALL бути `/opsx:propose <name>`. NEXT-AFTER-RC застосовується лише до прийнятого RC; відхилений неконформний файл не є прийнятим вердиктом і MUST NOT мапитись на `/opsx:propose`. Після другого неконформного T2 файла next command SHALL бути `/opsx:review <name>`. Він MUST NOT бути негайним `/opsx:review <name>` після прийнятого RC. Після `Verdict: APPROVE` next command SHALL лишатись `/opsx:apply <name>`. Шаблони `/opsx:review` MUST NOT вказувати «потім знову `/opsx:review`» як next command після прийнятого RC.
+
+#### Scenario: T2 RC веде в propose
+
+- **GIVEN** прийнятий schema-conforming `review.md` містить `Verdict: REQUEST CHANGES` після Tier 2
+- **WHEN** закривається review-сесія
+- **THEN** `handoff.md` / pasted prompt починається з `/opsx:propose <name>`
+- **AND** не починається з `/opsx:review <name>`
+
+#### Scenario: APPROVE веде в apply
+
+- **GIVEN** `review.md` містить `Verdict: APPROVE`
+- **WHEN** закривається review-сесія
+- **THEN** next command є `/opsx:apply <name>`
+
+### Requirement: Метрика discovery loops не більше двох
+
+Шаблони kit (`templates/.agents/skills/agent-orchestration/SKILL.md` і `templates/AGENTS.md`) SHALL описувати health-метрику: Spec review discovery loops ≤ 2 — опційний цикл Tier 1 structural RC плюс один семантичний RC Tier 2. У skill точна форма рядка — `Spec review discovery loops: ≤ 2` (з двокрапкою; smoke regex MUST збігатися саме з цією формою). Confirmation `/opsx:review` з очікуваним APPROVE після вичерпного propose MUST NOT рахуватись discovery loop. Текст MUST NOT лишати «Spec review loops: ≤ 1» як ціль. Анти-патерн one-finding review loop SHALL бути названий у цих шаблонах. Після Request Changes skill MUST містити фразу `run `/opsx:propose <name>` to fix the punch list`.
+
+#### Scenario: Skill більше не цілить ≤ 1 discovery loop
+
+- **WHEN** після apply читається `templates/.agents/skills/agent-orchestration/SKILL.md`
+- **THEN** метрика містить «Spec review discovery loops: ≤ 2»
+- **AND** текст пояснює, що confirmation APPROVE не є discovery loop
+- **AND** рядок «Spec review loops: ≤ 1» відсутній
+- **AND** файл містить «run `/opsx:propose <name>` to fix the punch list»
+
+### Requirement: Propose проганяє Tier 1 до handoff на review
+
+Команда `templates/.agents/commands/opsx-propose.md` і skill `templates/.agents/skills/openspec-propose/SKILL.md` MUST вимагати: після звіту `spec-architect` conductor сам запускає `npx agent-orchestrator-kit gate-check --review <name>` (Tier 1 pre-gate); рядок `**Gate:**` у звіті архітектора лише інформаційний і його не замінює, хоч би яке значення мав (зокрема `not run` чи відсутній рядок). Якщо exit ≠ 0, conductor MUST один раз переспавнити `spec-architect` з повним списком помилок gate-check (targeted fix) і MUST запустити gate-check повторно. Якщо exit усе ще ≠ 0, conductor MUST закрити сесію з `## Blocked`, перелічити помилки gate-check, що лишились, і поставити next command `/opsx:propose <name>`. Handoff на `/opsx:review <name>` без exit 0 MUST NOT відбуватись: рядок Prompt у розділі **Output** обох файлів і перший рядок промпта в Session Exit команди MUST пропонувати `/opsx:review <name>` лише після exit 0, а інакше — `## Blocked` і `/opsx:propose <name>`. Правило SHALL діяти однаково для першого propose, re-propose після Tier 2 REQUEST CHANGES і structure-only re-propose після T1-only REQUEST CHANGES (рядок `**Source:** gate-check` без `## Checklist`). Conductor MUST NOT сам виправляти proposal/design/specs/tasks за помилками gate-check. Стан «є `proposal.md`, немає `review.md`, gate-check exit ≠ 0» після `## Blocked` MUST маршрутизуватись на `/opsx:propose <name>` і в `openspec-guide` (MODIFIED-вимога pipeline-subagents «openspec-guide маршрутизує REQUEST CHANGES на propose»). `/opsx:quick` не має фази review і цей pre-gate не отримує; `opsx-quick.md` не змінюється. Pre-gate є адитивним: вимога «Скриптовий Tier 1 перед LLM-review» лишається чинною, і `/opsx:review` MUST і далі сам запускати Tier 1 до читання артефактів LLM-ом; вимога «Метрика discovery loops не більше двох» і рядок `Spec review discovery loops: ≤ 2` не змінюються; логіка, regex і вивід `gate-check --review` не змінюються.
+
+#### Scenario: Відсутня Acceptance criteria виправляється в тій самій propose-сесії
+
+- **GIVEN** `spec-architect` повернув `Status: done`, а `proposal.md` не має заголовка `## Acceptance criteria`
+- **WHEN** conductor запускає `npx agent-orchestrator-kit gate-check --review <name>`
+- **THEN** exit ≠ 0, і conductor один раз переспавнює `spec-architect` з повним списком помилок gate-check
+- **AND** після виправлення повторний `gate-check --review <name>` дає exit 0
+- **AND** next command сесії є `/opsx:review <name>`
+
+#### Scenario: Повторний провал pre-gate закриває propose як Blocked
+
+- **GIVEN** conductor уже один раз переспавнив `spec-architect` з помилками gate-check
+- **AND** повторний `gate-check --review <name>` знову дає exit ≠ 0
+- **WHEN** conductor закриває сесію
+- **THEN** `handoff.md` має `## Blocked` з помилками gate-check, що лишились
+- **AND** next command є `/opsx:propose <name>`, а не `/opsx:review <name>`
+- **AND** підсумок сесії за розділом **Output** не пропонує `Run /opsx:review <name> in a fresh session` і не каже, що pre-gate пройдено
+- **AND** conductor не редагував proposal/design/specs/tasks сам
+- **AND** `openspec-guide`, викликаний для цього change до нового propose, теж називає next command `/opsx:propose <name>`
+
+#### Scenario: Pre-gate діє і для structure-only re-propose
+
+- **GIVEN** `review.md` з `Verdict: REQUEST CHANGES`, рядком `**Source:** gate-check` і без `## Checklist`
+- **WHEN** виконується `/opsx:propose <name>` і `spec-architect` виправив лише помилки gate-check
+- **THEN** conductor усе одно запускає `gate-check --review <name>` до handoff
+- **AND** handoff на `/opsx:review <name>` відбувається лише при exit 0
+
+#### Scenario: Review і далі запускає Tier 1 сам
+
+- **GIVEN** propose завершився з `gate-check --review <name>` exit 0
+- **WHEN** виконується наступний `/opsx:review <name>`
+- **THEN** review MUST знову запустити `gate-check --review <name>` до спавну `spec-reviewer`
+- **AND** рядок `Spec review discovery loops: ≤ 2` у `templates/.agents/skills/agent-orchestration/SKILL.md` не змінений
+
+### Requirement: Шаблонні умови виходу Architect включають Tier 1 pre-gate
+
+Шаблони kit, що описують умови виходу propose, MUST називати `gate-check --review` як pre-gate перед handoff на review:
+- розділ `### propose → review` у `templates/.agents/skills/agent-orchestration/SKILL.md`: команда `npx agent-orchestrator-kit gate-check --review <name>` з вимогою exit 0, один re-spawn `spec-architect` і вихід `## Blocked` з `/opsx:propose <name>`;
+- Orchestration Checklist того ж skill;
+- абзац «Quality gates:» у `templates/AGENTS.md`;
+- речення про двоярусний review у `templates/CLAUDE.md`;
+- рядок CLI ↔ Cursor для `/opsx:propose` у `templates/.agents/skills/openspec-howto/SKILL.md`;
+- блок **Exit gate:** розділу Role 2 Architect у `README.md`.
+
+`templates/AGENTS.md` MUST лишатись коротшим за 4000 символів. `test/smoke.test.js` SHALL асертити `gate-check --review` у `opsx-propose.md`, у `openspec-propose/SKILL.md` і у зрізі skill між `### propose → review` та `### review → apply`. Для skill потрібен саме зріз: whole-file match хибно-позитивний через рядок маршрутизації `/opsx:review`.
+
+#### Scenario: Skill називає pre-gate в умовах виходу Architect
+
+- **GIVEN** kit після apply цього change
+- **WHEN** читається зріз `templates/.agents/skills/agent-orchestration/SKILL.md` від `### propose → review` до `### review → apply`
+- **THEN** зріз містить `gate-check --review` і `## Blocked`
+- **AND** рядок `Spec review discovery loops: ≤ 2` поза зрізом не змінений
+
+#### Scenario: AGENTS.md і CLAUDE.md згадують pre-gate propose
+
+- **WHEN** читаються `templates/AGENTS.md` і `templates/CLAUDE.md`
+- **THEN** кожен містить речення, що propose запускає `gate-check --review` як pre-gate і передає на review лише при exit 0
+- **AND** `templates/AGENTS.md` коротший за 4000 символів
