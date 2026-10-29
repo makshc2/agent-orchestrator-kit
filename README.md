@@ -613,6 +613,17 @@ roles:
 
 ---
 
+### Quick — `/opsx:quick <name>` for small changes
+
+One session for a small change (1–3 files, one behaviour) that does not need a separate review cycle: propose → light review → apply, with no prompt pasting in between.
+
+- `spec-architect` writes a short proposal (`## Why`, `## What Changes`, `## Non-goals`, `## Acceptance criteria`), contract tasks and a **minimal delta**: one requirement with one scenario. `openspec validate --strict` rejects a change without a delta.
+- **`require_spec_review: true`** (node, vue3 and generic profiles): the light review is mandatory. The conductor runs `gate-check --review`, then spawns `spec-reviewer` in quick mode, which writes REQUEST CHANGES only on a Blocker; Major and Minor items go to `apply-notes.md`. The result is a real `review.md` (`**Mode:** quick`), checked with `gate-check --review-md`, so the CI gate and archive accept the change. After one more failed cycle the change moves to the full pipeline (`/opsx:propose <name>`).
+- **`require_spec_review: false`** (mvp): no review step.
+- Apply is the same as in `/opsx:apply`. The session closes with `## Closed role` `Implementer — quick`; a green quick prints the single `npx agent-orchestrator-kit archive <name> --sync` line.
+
+---
+
 ### Archive — terminal first, `/opsx:archive` as fallback
 
 After the PR is merged and CI is green, archive from a terminal — no chat needed:
@@ -1144,7 +1155,7 @@ Phase bounds and non-goals: [`openspec/specs/agentic-factory-roadmap/spec.md`](o
 
 ### 0.16.0
 - **Tier 1 pre-gate in `/opsx:propose`**: after the `spec-architect` report the conductor runs `npx agent-orchestrator-kit gate-check --review <name>`. On exit ≠ 0 it re-spawns the architect once with the full error list; if the gate still fails it closes with `## Blocked` and next command `/opsx:propose <name>`. Handoff to `/opsx:review` requires exit 0 for the first propose, re-propose, and structure-only re-propose.
-- `spec-architect` requires the exact `## Non-goals` and `## Acceptance criteria` headings. Under `/opsx:propose` it runs `gate-check --review` itself and reports `**Gate:** gate-check --review exit <code>`; under `/opsx:quick` it writes `**Gate:** not run (/opsx:quick)`. Done-when must check the new state, keep counts consistent with `Do:`, and avoid volatile repo values.
+- `spec-architect` requires the exact `## Non-goals` and `## Acceptance criteria` headings. Under `/opsx:propose` it runs `gate-check --review` itself and reports `**Gate:** gate-check --review exit <code>`; under `/opsx:quick` it writes `**Gate:** not run (/opsx:quick)` and adds a minimal delta (the quick conductor runs the gate when review is required). Done-when must check the new state, keep counts consistent with `Do:`, and avoid volatile repo values.
 - `openspec-guide` routes a change that has `proposal.md` and no `review.md` by `gate-check --review`: exit 0 → `/opsx:review`, exit ≠ 0 → `/opsx:propose`.
 - New `templates/openspec-config.yaml.example` is the stack-neutral fallback that `init` installs for `node` / `generic`. Every rule is double-quoted so OpenSpec keeps the lists. `init --force --profile node|generic` now overwrites an existing `openspec/config.yaml`.
 - Upgrade: `update` refreshes the commands, skills, and subagents. It does not touch `AGENTS.md`, `CLAUDE.md`, or an existing `openspec/config.yaml`, so add the proposal rule by hand (see [Update](#update)).

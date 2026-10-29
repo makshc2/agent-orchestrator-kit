@@ -18,6 +18,8 @@ Workflow:
 4. On APPROVE, also write `apply-notes.md` (≤ 20 lines): critical constraints, pitfalls, what NOT to touch, verification commands. It is the second and last file you may write.
 5. Approve only when artifacts are implementable without material guessing.
 
+Quick mode (the spawn prompt mentions `/opsx:quick`): a light review of a small change in the same session. Run the same LLM-only checklist and the same reads, but REQUEST CHANGES only for a Blocker: a task not executable from Files/Do/Done-when, a conflict with a main spec, or a delta that contradicts the tasks. Major and Minor go to `apply-notes.md` and `**Risks:**`, not to Required Before Apply. Add the line `**Mode:** quick` under the verdict. The `review.md` schema and the `apply-notes.md` rule stay unchanged.
+
 Rules:
 
 - Do NOT edit `src/`, tests, proposal/design/spec files, or `tasks.md`.

@@ -164,7 +164,7 @@ tiered-review — requirements merged from change lean-pipeline-v2.
 
 ### Requirement: Propose проганяє Tier 1 до handoff на review
 
-Команда `templates/.agents/commands/opsx-propose.md` і skill `templates/.agents/skills/openspec-propose/SKILL.md` MUST вимагати: після звіту `spec-architect` conductor сам запускає `npx agent-orchestrator-kit gate-check --review <name>` (Tier 1 pre-gate); рядок `**Gate:**` у звіті архітектора лише інформаційний і його не замінює, хоч би яке значення мав (зокрема `not run` чи відсутній рядок). Якщо exit ≠ 0, conductor MUST один раз переспавнити `spec-architect` з повним списком помилок gate-check (targeted fix) і MUST запустити gate-check повторно. Якщо exit усе ще ≠ 0, conductor MUST закрити сесію з `## Blocked`, перелічити помилки gate-check, що лишились, і поставити next command `/opsx:propose <name>`. Handoff на `/opsx:review <name>` без exit 0 MUST NOT відбуватись: рядок Prompt у розділі **Output** обох файлів і перший рядок промпта в Session Exit команди MUST пропонувати `/opsx:review <name>` лише після exit 0, а інакше — `## Blocked` і `/opsx:propose <name>`. Правило SHALL діяти однаково для першого propose, re-propose після Tier 2 REQUEST CHANGES і structure-only re-propose після T1-only REQUEST CHANGES (рядок `**Source:** gate-check` без `## Checklist`). Conductor MUST NOT сам виправляти proposal/design/specs/tasks за помилками gate-check. Стан «є `proposal.md`, немає `review.md`, gate-check exit ≠ 0» після `## Blocked` MUST маршрутизуватись на `/opsx:propose <name>` і в `openspec-guide` (MODIFIED-вимога pipeline-subagents «openspec-guide маршрутизує REQUEST CHANGES на propose»). `/opsx:quick` не має фази review і цей pre-gate не отримує; `opsx-quick.md` не змінюється. Pre-gate є адитивним: вимога «Скриптовий Tier 1 перед LLM-review» лишається чинною, і `/opsx:review` MUST і далі сам запускати Tier 1 до читання артефактів LLM-ом; вимога «Метрика discovery loops не більше двох» і рядок `Spec review discovery loops: ≤ 2` не змінюються; логіка, regex і вивід `gate-check --review` не змінюються.
+Команда `templates/.agents/commands/opsx-propose.md` і skill `templates/.agents/skills/openspec-propose/SKILL.md` MUST вимагати: після звіту `spec-architect` conductor сам запускає `npx agent-orchestrator-kit gate-check --review <name>` (Tier 1 pre-gate); рядок `**Gate:**` у звіті архітектора лише інформаційний і його не замінює, хоч би яке значення мав (зокрема `not run` чи відсутній рядок). Якщо exit ≠ 0, conductor MUST один раз переспавнити `spec-architect` з повним списком помилок gate-check (targeted fix) і MUST запустити gate-check повторно. Якщо exit усе ще ≠ 0, conductor MUST закрити сесію з `## Blocked`, перелічити помилки gate-check, що лишились, і поставити next command `/opsx:propose <name>`. Handoff на `/opsx:review <name>` без exit 0 MUST NOT відбуватись: рядок Prompt у розділі **Output** обох файлів і перший рядок промпта в Session Exit команди MUST пропонувати `/opsx:review <name>` лише після exit 0, а інакше — `## Blocked` і `/opsx:propose <name>`. Правило SHALL діяти однаково для першого propose, re-propose після Tier 2 REQUEST CHANGES і structure-only re-propose після T1-only REQUEST CHANGES (рядок `**Source:** gate-check` без `## Checklist`). Conductor MUST NOT сам виправляти proposal/design/specs/tasks за помилками gate-check. Стан «є `proposal.md`, немає `review.md`, gate-check exit ≠ 0» після `## Blocked` MUST маршрутизуватись на `/opsx:propose <name>` і в `openspec-guide` (MODIFIED-вимога pipeline-subagents «openspec-guide маршрутизує REQUEST CHANGES на propose»). `/opsx:quick` не має окремої propose-сесії і цей pre-gate не отримує; свій Tier 1 він запускає за вимогою «Quick проходить легке рев'ю, коли review обов'язковий». Pre-gate є адитивним: вимога «Скриптовий Tier 1 перед LLM-review» лишається чинною, і `/opsx:review` MUST і далі сам запускати Tier 1 до читання артефактів LLM-ом; вимога «Метрика discovery loops не більше двох» і рядок `Spec review discovery loops: ≤ 2` не змінюються; логіка, regex і вивід `gate-check --review` не змінюються.
 
 #### Scenario: Відсутня Acceptance criteria виправляється в тій самій propose-сесії
 
@@ -302,3 +302,35 @@ tiered-review — requirements merged from change lean-pipeline-v2.
 - **WHEN** conductor запускає `gate-check --review-md <name>`
 - **THEN** exit code 1, conductor один раз переспавнює `spec-reviewer` зі списком помилок скрипта і списком обов'язкових заголовків та не редагує файл
 - **AND** якщо другий файл знову не проходить скрипт, сесія закривається з `## Blocked` і next command `/opsx:review <name>`
+
+### Requirement: Quick проходить легке рев'ю, коли review обов'язковий
+
+Команда `templates/.agents/commands/opsx-quick.md` MUST читати `pipeline.require_spec_review` (відсутній файл чи ключ означає `true`). Якщо значення `false`, quick MUST NOT запускати review. Якщо `true`, quick MUST у тій самій сесії між validate і apply:
+- запустити `npx agent-orchestrator-kit gate-check --review <name>`; за exit ≠ 0 один раз переспавнити `spec-architect` з усіма помилками і повторити запуск;
+- заспавнити `spec-reviewer` у quick-режимі, тобто згадати `/opsx:quick` у spawn-промпті;
+- запустити `npx agent-orchestrator-kit gate-check --review-md <name>`, який має завершитись з exit 0.
+
+Parent MUST NOT пропускати цей крок і MUST NOT сам писати `review.md`. REQUEST CHANGES дає один повторний цикл architect → reviewer. Якщо після нього лишається REQUEST CHANGES або Tier 1 і далі падає, сесія MUST закриватись з `## Blocked` і next command `/opsx:propose <name>`.
+
+Інструкція `templates/.agents/subagents/spec-reviewer.md` MUST описувати quick-режим:
+- той самий LLM-only checklist і ті самі правила читання;
+- REQUEST CHANGES лише за Blocker: таск не виконується з Files/Do/Done-when, конфлікт із main spec, delta суперечить таскам;
+- Major і Minor ідуть в `apply-notes.md` і `**Risks:**`;
+- рядок `**Mode:** quick` під вердиктом;
+- схема `review.md` і правило `apply-notes.md` (не більше 20 рядків) не змінюються.
+
+Такий `review.md` є справжнім Tier 2 записом, тому CI-гейт і archive Gate 1 приймають quick-зміну без жодних обходів. Логіка `gate-check` не змінюється.
+
+#### Scenario: Quick у профілі з обов'язковим review пише справжній review.md
+
+- **GIVEN** `.agents/orchestrator.yaml` з `require_spec_review: true` і зміна, створена `/opsx:quick`
+- **WHEN** `gate-check --review <name>` завершився з exit 0 і `spec-reviewer` у quick-режимі повернув APPROVE
+- **THEN** `review.md` містить рівно один рядок `Verdict: APPROVE`, рядок `**Mode:** quick` і заголовок `Previous findings`
+- **AND** `gate-check --review-md <name>` завершується з exit 0
+- **AND** apply виконується в тій самій сесії без промпта наступної сесії
+
+#### Scenario: Quick у профілі mvp не запускає review
+
+- **GIVEN** `require_spec_review: false`
+- **WHEN** виконується `/opsx:quick <name>`
+- **THEN** інструкція не вимагає ні `gate-check --review`, ні spawn `spec-reviewer`

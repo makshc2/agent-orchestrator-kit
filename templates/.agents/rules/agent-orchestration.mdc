@@ -8,7 +8,7 @@ alwaysApply: true
 Spec-driven pipeline. Read `.agents/orchestrator.yaml`. Details: skill `agent-orchestration`. Handoff: `.agents/rules/session-handoff.mdc`. CLI: `npx` only (`.agents/rules/cli-via-npm.mdc`).
 
 ## Commands
-`/opsx:explore` read-only · `/opsx:design <name>` brief+assets only · `/opsx:propose <name>` change artifacts · `/opsx:review <name>` review.md · `/opsx:apply <name>` code (blocked without Approve when `require_spec_review`) · `/opsx:quick <name>` MVP propose+apply · `/opsx:archive`
+`/opsx:explore` read-only · `/opsx:design <name>` brief+assets only · `/opsx:propose <name>` change artifacts · `/opsx:review <name>` review.md · `/opsx:apply <name>` code (blocked without Approve when `require_spec_review`) · `/opsx:quick <name>` small change: propose+light review+apply · `/opsx:archive`
 
 The parent `/opsx:*` session is the **conductor**. Delegation is differentiated by phase: propose/review MUST spawn their specialist; apply is parent-driven with optional subagents; archive is a CLI call with phase subagents forbidden. Only the parent marks `tasks.md`. `spec-reviewer` ≠ `code-reviewer`.
 

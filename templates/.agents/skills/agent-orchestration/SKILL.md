@@ -28,6 +28,8 @@ explore → quick (propose+apply) → verify → archive (optional)
 ```
 In quick mode the same session may create the design brief before propose+apply.
 
+**Small change, any profile:** `/opsx:quick <name>` runs propose → light review → apply in one session. With `require_spec_review: true` the light review is mandatory: `gate-check --review`, then `spec-reviewer` in quick mode (REQUEST CHANGES only on a Blocker) writes a real `review.md`, so the CI gate and archive accept the change.
+
 Read `.agents/orchestrator.yaml` for project-specific config (language, flags, MCP, review gate).
 
 ## Roles & Commands
@@ -39,7 +41,7 @@ Read `.agents/orchestrator.yaml` for project-specific config (language, flags, M
 | Architect | `/opsx:propose <name>` | specs-only | strong | `openspec/changes/` |
 | Spec Reviewer | `/opsx:review <name>` | read-only | medium | `review.md`, Approve / Request Changes |
 | Implementer | `/opsx:apply <name>` | code | strong | `src/`, `tasks.md [x]` |
-| Quick (MVP) | `/opsx:quick <name>` | specs+code | strong | `openspec/changes/` + `src/` |
+| Quick (small change) | `/opsx:quick <name>` | specs+code | strong | `openspec/changes/` + `src/` |
 | Verifier | CI / local scripts | — | — | exit codes |
 
 ## Conductor Routing (Differentiated by Phase)

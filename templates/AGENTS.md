@@ -8,7 +8,7 @@ Spec-driven OpenSpec pipeline. Each phase is a **separate chat**. Delegation is 
 explore → [design] → propose → review → apply → verify → archive
 ```
 
-`[design]` is optional (`/opsx:design`). Non-UI: `Design: none` in `proposal.md` when `require_design_brief: true`. MVP: `/opsx:quick` when `require_spec_review: false`.
+`[design]` is optional (`/opsx:design`). Non-UI: `Design: none` in `proposal.md` when `require_design_brief: true`. Small changes: `/opsx:quick` — propose, light review (when `require_spec_review: true`) and apply in one session.
 
 Routing table, HARD STOP, and CLI forms: `.agents/rules/` (`agent-orchestration`, `session-handoff`, `cli-via-npm`). Config: `.agents/orchestrator.yaml`.
 
@@ -20,7 +20,7 @@ Routing table, HARD STOP, and CLI forms: `.agents/rules/` (`agent-orchestration`
 | Architect | `/opsx:propose <name>` |
 | Spec Reviewer | `/opsx:review <name>` |
 | Implementer | `/opsx:apply <name>` |
-| Quick (MVP) | `/opsx:quick <name>` |
+| Quick (small change) | `/opsx:quick <name>` |
 | Archive | terminal/CI: `npx agent-orchestrator-kit archive <name> --sync` (fallback `/opsx:archive`) |
 
 Session Start / Exit are **parent-driven** — canonical protocol in `.agents/rules/session-handoff.mdc`. Start: `status` → `handoff --restore` → `handoff.md` fallback. Exit HARD STOP: parent writes `handoff.md` including `## Metrics` (use `unknown` when a value is missing) → `npx agent-orchestrator-kit handoff <name>` (exit 0; optional `--collect`) → paste the CLI `/opsx:*` prompt (after a green apply the CLI prints one archive line for a terminal instead). `session-handoff` subagent = fallback only. Do not start the next phase here.

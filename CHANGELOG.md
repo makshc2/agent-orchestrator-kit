@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **`/opsx:quick` is a working path for small changes in every profile.** The architect now writes a minimal delta (one requirement, one scenario); the old "skip `specs/`" scope always failed `openspec validate --strict`. With `require_spec_review: true` the quick session runs a light review: `gate-check --review`, then `spec-reviewer` in quick mode (REQUEST CHANGES only on a Blocker, `**Mode:** quick`), then `gate-check --review-md`. This writes a real `review.md`, so the CI gate and `archive` Gate 1 accept the change. One failed repeat cycle routes to `/opsx:propose <name>`. Apply follows the parent-driven `/opsx:apply`. The session closes as `Implementer — quick`, and a green quick prints the single archive line instead of the outdated `/opsx:archive` step. Specs: tiered-review (new requirement "Quick проходить легке рев'ю, коли review обов'язковий"), task-contract, session-handoff. Test: `test/opsx-quick.test.js`.
+
+### Fixed
+- **Closed role `Code Writer` counts as `Implementer`.** `canonicalRole` maps `Code Writer` / `code-writer` (the kit's apply subagent) to `Implementer`, like `Spec Architect` → `Architect`. Before this, `Code Writer (apply, 8/8 tasks)` was stored as `"Code Writer (apply"`: green-apply printed a full prompt instead of the archive line, and the ledger contract test failed on the archive.
+
 ## [0.18.1] - 2026-10-14
 
 ### Fixed

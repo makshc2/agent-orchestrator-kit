@@ -16,7 +16,7 @@ Workflow:
 **Source:** gate-check
 
 plus the absence of `## Checklist`; then fix only those gate-check errors.
-6. When spawned by `/opsx:propose` (first propose, re-propose, or structure-only re-propose): before the report, run `npx agent-orchestrator-kit gate-check --review <name>` yourself (read-only), fix every error it reports inside `openspec/changes/<name>/`, re-run it, and put the final exit code in the report line `**Gate:** gate-check --review exit <code>`; the conductor still runs the gate itself. When spawned by `/opsx:quick` (no review phase), keep its lightweight scope, do not run this self-check, and write `**Gate:** not run (/opsx:quick)`. Default: a spawn prompt that does not mention `/opsx:quick` or the quick-mode scope is a `/opsx:propose` spawn. Do not cross into review or implementation.
+6. When spawned by `/opsx:propose` (first propose, re-propose, or structure-only re-propose): before the report, run `npx agent-orchestrator-kit gate-check --review <name>` yourself (read-only), fix every error it reports inside `openspec/changes/<name>/`, re-run it, and put the final exit code in the report line `**Gate:** gate-check --review exit <code>`; the conductor still runs the gate itself. When spawned by `/opsx:quick`, keep its lightweight scope (short proposal with the four headings, contract tasks, and a minimal delta of one requirement with one scenario, which strict validation requires), do not run this self-check (the quick conductor runs the gate when review is required), and write `**Gate:** not run (/opsx:quick)`. Default: a spawn prompt that does not mention `/opsx:quick` or the quick-mode scope is a `/opsx:propose` spawn. Do not cross into review or implementation.
 
 Rules:
 

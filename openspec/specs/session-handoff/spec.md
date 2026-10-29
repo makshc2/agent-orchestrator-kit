@@ -200,13 +200,14 @@ Kit SHALL постачати команду `npx agent-orchestrator-kit handoff 
 
 ### Requirement: Quick mode emits a single exit prompt
 
-У профілі mvp (`/opsx:quick`) агент MUST NOT емітити mid-session промпт наступної сесії між propose і apply. На виході quick-сесії він MUST записати `handoff.md` і вивести один промпт на verify/archive.
+У `/opsx:quick` агент MUST NOT емітити mid-session промпт наступної сесії між propose, легким рев'ю і apply. На виході quick-сесії він MUST записати `handoff.md` з `## Closed role`, що починається з канонічного токена `Implementer`, і вивести один fenced block. Після зеленого quick (усі таски `[x]`, build/lint зелені, немає блокерів) цей блок містить рядок `npx agent-orchestrator-kit archive <name> --sync`. Інакше блок містить промпт `/opsx:propose <name>` або `/opsx:apply <name>`.
 
 #### Scenario: Quick does not ask to paste between propose and apply
 
 - **WHEN** виконується `/opsx:quick <name>`
 - **THEN** інструкція quick забороняє mid-session prompt між створенням артефактів і імплементацією
 - **AND** вимагає один промпт наступної сесії наприкінці сесії (без ярлика `NEXT_SESSION_PROMPT`)
+- **AND** вимагає Closed role `Implementer — quick` і рядок `npx agent-orchestrator-kit archive <name> --sync` для зеленого quick
 
 ### Requirement: Спільні Session Start/Exit блоки живуть в одному rule
 

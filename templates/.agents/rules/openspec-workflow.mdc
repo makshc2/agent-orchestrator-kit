@@ -26,7 +26,7 @@ alwaysApply: true
 - `/opsx:propose <name>` → skill `openspec-propose`
 - `/opsx:review <name>` → command `opsx-review` (read-only, writes review.md)
 - `/opsx:apply` → skill `openspec-apply-change`
-- `/opsx:quick <name>` → command `opsx-quick` (mvp: propose + apply)
+- `/opsx:quick <name>` → command `opsx-quick` (small change: propose + light review + apply)
 - `/opsx:archive` → skill `openspec-archive-change`
 - `/opsx:sync` → skill `openspec-sync-specs`
 

@@ -55,7 +55,7 @@ task-contract — requirements merged from change lean-pipeline-v2.
 - виправити в межах `openspec/changes/<name>/` усі помилки, які назвав gate-check;
 - записати фінальний exit code у звіт рядком `**Gate:** gate-check --review exit <code>`.
 
-Коли architect заспавнений з `/opsx:quick` (без фази review), він MUST зберегти легкий обсяг quick, MUST NOT запускати цей self-check і виправляти артефакти під нього (зокрема додавати delta specs лише заради gate-check) і пише у звіт рядок `**Gate:** not run (/opsx:quick)`; `templates/.agents/commands/opsx-quick.md` не змінюється. Правило вибору MUST бути вирішуваним без знання батьківської команди: spawn, чий промпт не згадує `/opsx:quick` чи quick-mode scope, architect MUST вважати spawn-ом з `/opsx:propose` і виконувати self-check.
+Коли architect заспавнений з `/opsx:quick`, він MUST зберегти легкий обсяг quick: короткий proposal з чотирма заголовками, таски в контрактному форматі і мінімальну delta з однією вимогою та одним `#### Scenario:`, бо `openspec validate --strict` відхиляє зміну без delta. Він MUST NOT запускати цей self-check і пише у звіт рядок `**Gate:** not run (/opsx:quick)`; Tier 1 для quick запускає conductor, коли review обов'язковий (вимога tiered-review «Quick проходить легке рев'ю, коли review обов'язковий»). Правило вибору MUST бути вирішуваним без знання батьківської команди: spawn, чий промпт не згадує `/opsx:quick` чи quick-mode scope, architect MUST вважати spawn-ом з `/opsx:propose` і виконувати self-check.
 
 Report contract `spec-architect` SHALL містити рядок `**Gate:** gate-check --review exit <code>`. Запуск Tier 1 архітектором не є review власних артефактів і не замінює запуск pre-gate conductor-ом.
 
@@ -69,7 +69,7 @@ Report contract `spec-architect` SHALL містити рядок `**Gate:** gate
 
 #### Scenario: Quick-режим не запускає self-check Tier 1
 
-- **GIVEN** `spec-architect` заспавнений з `/opsx:quick` з легким обсягом (без delta specs)
+- **GIVEN** `spec-architect` заспавнений з `/opsx:quick` з легким обсягом (одна вимога в delta)
 - **WHEN** architect завершує артефакти
 - **THEN** інструкція `spec-architect.md` не вимагає від нього запускати `gate-check --review <name>` і виправляти артефакти під нього
 - **AND** `proposal.md` усе одно має заголовки `## Non-goals` і `## Acceptance criteria`

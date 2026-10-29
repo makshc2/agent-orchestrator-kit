@@ -4121,7 +4121,7 @@ function printNextSteps(profile, projectDir, ci = 'github', specVerify = false) 
     lines.push(`  6. Optional pre-commit gate: ${pc.cyan('npx agent-orchestrator-kit hooks-setup')} or ${pc.cyan('init --hooks')}`);
     lines.push(`  7. Start your first change:`);
   } else if (profile === 'mvp') {
-    lines.push(`  3. For quick demos use ${pc.cyan('/opsx:quick <name>')} (propose + apply, no review gate)`);
+    lines.push(`  3. For small changes use ${pc.cyan('/opsx:quick <name>')} (propose + light review + apply in one session)`);
     lines.push(`  4. MCP: ${pc.cyan('npx agent-orchestrator-kit mcp-setup')} (GitHub/GitLab from origin + browser)`);
     lines.push(`  5. Optional Figma: ${pc.cyan('npx agent-orchestrator-kit figma-setup')} then paste token into ${pc.cyan('.agents/figma.local.env')} (never in chat)`);
     lines.push(`  6. Optional pre-commit gate: ${pc.cyan('npx agent-orchestrator-kit hooks-setup')} or ${pc.cyan('init --hooks')}`);
