@@ -1964,6 +1964,8 @@ function canonicalRole(role) {
     // `spec-architect` is the kit's own propose subagent; its report role is the Architect phase
     if (/^spec\s+architect\b/i.test(value)) return 'Architect';
     if (/^architect\b/i.test(value)) return 'Architect';
+    // `code-writer` is the kit's own apply subagent; its report role is the Implementer phase
+    if (/^code[\s-]+writer\b/i.test(value)) return 'Implementer';
     if (/^implementer\b/i.test(value)) return 'Implementer';
     if (/^archiver\b/i.test(value)) return 'Archiver';
     return '';

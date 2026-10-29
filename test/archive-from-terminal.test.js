@@ -568,6 +568,7 @@ test('green-apply: isGreenApplyExit and archiveCommandLine follow the trigger ta
 
   assert.equal(isGreenApplyExit({ closedRole: 'Implementer', blocked: 'none' }, done), true);
   assert.equal(isGreenApplyExit({ closedRole: 'implementer — apply complete', blocked: 'None.' }, done), true);
+  assert.equal(isGreenApplyExit({ closedRole: 'Code Writer (apply, 8/8 tasks)', blocked: 'none' }, done), true);
   for (const blocked of ['', '-', '- none', '—', 'n/a', 'N/A', 'немає', 'Немає.']) {
     assert.equal(isGreenApplyExit({ closedRole: 'Implementer', blocked }, done), true, `blocked ${JSON.stringify(blocked)} counts as empty`);
   }

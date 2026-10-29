@@ -1209,7 +1209,7 @@ Kit SHALL і надалі постачати `templates/scripts/cursor-spend-hoo
 
 ### Requirement: Канонічна Closed role у metrics.json
 
-`session.role`, `pending.role` і `phases.*.agents` MUST зберігати канонічний токен ролі, не повний рядок Closed role з `handoff.md`. Канонічні токени: `Explorer`, `Architect`, `Spec Reviewer`, `Implementer`, `Archiver`, `Design Intake`; `bin/agent-orchestrator.js` SHALL експортувати їх як `CANONICAL_ROLE_TOKENS` разом із `isCanonicalRole`. CLI SHALL брати перший відомий токен з Closed role або next role (регістр ігнорується; `Spec Reviewer` — два слова) або перший сегмент до `—` / коми, якщо він збігається з токеном. `Spec Architect` (ім'я субагента kit-а `spec-architect`) SHALL канонізуватись у `Architect`. `Conductor` і `Code Reviewer` не є Closed role жодного шаблону і MUST NOT додаватись як токени: `canonicalRole` лишає їх сирим рядком, а інваріант «Інваріанти правдоподібності — попередження на запис, не блокування» позначає такий запис як неканонічний (warning + `session.notes`, contract-тест над новими архівами падає). Текст після `—` MUST NOT записуватись у `session.role`, MUST NOT записуватись у `pending.role` і MUST NOT потрапляти в `phases.*.agents`. `handoff.md` MAY лишати повне речення Closed role. `metricsRecordSessionStart` SHALL пропускати роль через ту саму `canonicalRole`, що й persist.
+`session.role`, `pending.role` і `phases.*.agents` MUST зберігати канонічний токен ролі, не повний рядок Closed role з `handoff.md`. Канонічні токени: `Explorer`, `Architect`, `Spec Reviewer`, `Implementer`, `Archiver`, `Design Intake`; `bin/agent-orchestrator.js` SHALL експортувати їх як `CANONICAL_ROLE_TOKENS` разом із `isCanonicalRole`. CLI SHALL брати перший відомий токен з Closed role або next role (регістр ігнорується; `Spec Reviewer` — два слова) або перший сегмент до `—` / коми, якщо він збігається з токеном. `Spec Architect` (ім'я субагента kit-а `spec-architect`) SHALL канонізуватись у `Architect`, а `Code Writer` (ім'я субагента kit-а `code-writer`, також через дефіс) — у `Implementer`, зокрема коли перший сегмент до коми містить дужку (`Code Writer (apply, 8/8 tasks)`). `Conductor` і `Code Reviewer` не є Closed role жодного шаблону і MUST NOT додаватись як токени: `canonicalRole` лишає їх сирим рядком, а інваріант «Інваріанти правдоподібності — попередження на запис, не блокування» позначає такий запис як неканонічний (warning + `session.notes`, contract-тест над новими архівами падає). Текст після `—` MUST NOT записуватись у `session.role`, MUST NOT записуватись у `pending.role` і MUST NOT потрапляти в `phases.*.agents`. `handoff.md` MAY лишати повне речення Closed role. `metricsRecordSessionStart` SHALL пропускати роль через ту саму `canonicalRole`, що й persist.
 
 `phaseForRole` SHALL визначати фазу з канонічного токена: `Explorer`→`explore`, `Architect` / propose→`spec`, `Spec Reviewer` / review→`review`, `Implementer` / apply→`apply`, `Design Intake` / design→`design`, `Archiver`→`archive`, інакше `other`. Перевірка Architect / propose MUST виконуватись **до** перевірки review, щоб рядок `Architect — … ready for Spec Reviewer` давав `spec`, не `review`.
 
@@ -1242,6 +1242,14 @@ Kit SHALL і надалі постачати `templates/scripts/cursor-spend-hoo
 - **WHEN** записується сесія
 - **THEN** `session.role` дорівнює `Architect`
 - **AND** `session.phase` дорівнює `spec`
+- **AND** stderr не містить `metrics: warning: role`
+
+#### Scenario: Code Writer канонізується в Implementer
+
+- **GIVEN** Closed role `Code Writer (apply, 8/8 tasks)`
+- **WHEN** записується сесія
+- **THEN** `session.role` дорівнює `Implementer`
+- **AND** `session.phase` дорівнює `apply`
 - **AND** stderr не містить `metrics: warning: role`
 
 #### Scenario: Conductor лишається неканонічним і помічається

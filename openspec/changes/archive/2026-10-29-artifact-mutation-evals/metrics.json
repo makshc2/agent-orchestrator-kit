@@ -144,7 +144,7 @@
       "cacheReadTokens": 3448591,
       "cacheCreationTokens": 195668,
       "agents": [
-        "Code Writer (apply"
+        "Implementer"
       ],
       "models": [
         "claude-opus-5-5",
@@ -588,7 +588,7 @@
       "startedAt": "2026-10-29T09:46:10.921Z",
       "endedAt": "2026-10-29T09:57:16.350Z",
       "durationMs": 665429,
-      "role": "Code Writer (apply",
+      "role": "Implementer",
       "phase": "apply",
       "runtime": "local",
       "agentId": "none",
@@ -736,9 +736,6 @@
       "models": [
         "claude-opus-5-5",
         "claude-sonnet-5-5"
-      ],
-      "notes": [
-        "role \"Code Writer (apply\" is not a canonical Closed role token"
       ],
       "costUsdTotal": 2.9155
     },
