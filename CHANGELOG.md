@@ -4,11 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-10-29
+
 ### Changed
 - **`/opsx:quick` is a working path for small changes in every profile.** The architect now writes a minimal delta (one requirement, one scenario); the old "skip `specs/`" scope always failed `openspec validate --strict`. With `require_spec_review: true` the quick session runs a light review: `gate-check --review`, then `spec-reviewer` in quick mode (REQUEST CHANGES only on a Blocker, `**Mode:** quick`), then `gate-check --review-md`. This writes a real `review.md`, so the CI gate and `archive` Gate 1 accept the change. One failed repeat cycle routes to `/opsx:propose <name>`. Apply follows the parent-driven `/opsx:apply`. The session closes as `Implementer — quick`, and a green quick prints the single archive line instead of the outdated `/opsx:archive` step. Specs: tiered-review (new requirement "Quick проходить легке рев'ю, коли review обов'язковий"), task-contract, session-handoff. Test: `test/opsx-quick.test.js`.
 
 ### Fixed
 - **Closed role `Code Writer` counts as `Implementer`.** `canonicalRole` maps `Code Writer` / `code-writer` (the kit's apply subagent) to `Implementer`, like `Spec Architect` → `Architect`. Before this, `Code Writer (apply, 8/8 tasks)` was stored as `"Code Writer (apply"`: green-apply printed a full prompt instead of the archive line, and the ledger contract test failed on the archive.
+
+### Development
+- **Artifact mutation eval for Tier 1 (repo-only, not shipped).** `test/artifact-mutation-evals.test.js` applies 14 frozen mutations to a synthetic fixture and to a reconstruction of an archived change. It runs `gate-check --review` and the real local `openspec validate` in an isolated temp root and classifies each result as caught, missed or invalid. In the strict profile it catches 12 of 14. The two known gaps stay visible: Done-when semantics (S10) and a MODIFIED collision between two active changes (S11). The provenance and the procedure for adding a case are in `test/fixtures/mutations/README.md`. (`openspec/changes/artifact-mutation-evals`)
 
 ## [0.18.1] - 2026-10-14
 

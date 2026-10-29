@@ -80,7 +80,7 @@ npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-veri
 
 See [Installation](#installation) for profile/CI options.
 
-**🔄 Already have the kit installed? Upgrade to latest (v0.18.1: `gate-check` no longer blocks `src/` commits on an explore-only change that has neither `proposal.md` nor `tasks.md`; a change that already has one of those files still needs `review.md` with `APPROVE`):**
+**🔄 Already have the kit installed? Upgrade to latest (v0.19.0: `/opsx:quick` works for small changes in every profile — a minimal delta, plus a light in-session review that writes a real `review.md` when `require_spec_review: true`; a `Code Writer` Closed role now counts as `Implementer`):**
 
 ```bash
 npx agent-orchestrator-kit@latest update
@@ -1131,6 +1131,11 @@ The kit moves toward an Agentic Factory in four phases. **One phase = one OpenSp
 Phase bounds and non-goals: [`openspec/specs/agentic-factory-roadmap/spec.md`](openspec/specs/agentic-factory-roadmap/spec.md).
 
 ## Changelog
+
+### 0.19.0
+- **`/opsx:quick` for small changes in every profile.** The architect writes a minimal delta (one requirement, one scenario), so `openspec validate --strict` passes. With `require_spec_review: true` the same session runs a light review: `gate-check --review`, then `spec-reviewer` in quick mode (REQUEST CHANGES only on a Blocker, `**Mode:** quick`), then `gate-check --review-md`. The CI gate and `archive` accept the resulting `review.md`. Apply is the same as `/opsx:apply`. The session closes as `Implementer — quick`, and a green quick prints the single archive line. See [Quick](#quick--opsxquick-name-for-small-changes).
+- **`Code Writer` Closed role counts as `Implementer`** in metrics and in the green-apply check (it used to be stored as `"Code Writer (apply"`).
+- Upgrade: `update` refreshes the commands, rules, skills and subagents, which carries the new `opsx-quick.md` and the quick mode of `spec-reviewer`. `AGENTS.md` is not refreshed; its new Quick wording reaches only new installs. No `orchestrator.yaml` key changes.
 
 ### 0.18.1
 - **`gate-check` skips explore-only changes.** Auto-select no longer treats a folder without `proposal.md` and without `tasks.md` as the review target, so a research change does not block unrelated `src/` commits. `gate-check <name>` still checks the named change. A change that already has `proposal.md` or `tasks.md` still needs `review.md` with `APPROVE`.
