@@ -1,0 +1,211 @@
+{
+  "version": 2,
+  "change": "spec-verify-conformance-report",
+  "createdAt": "2026-10-30T07:10:50.657Z",
+  "updatedAt": "2026-10-30T07:19:12.979Z",
+  "archivedAt": "2026-10-30T07:19:12.979Z",
+  "spend": {
+    "inputTokens": 653955,
+    "outputTokens": 2988,
+    "totalTokens": 656943,
+    "costUsd": null,
+    "costUsdEstimated": 0.2154,
+    "costUsdTotal": 0.2154,
+    "cacheReadTokens": 648767,
+    "cacheCreationTokens": 5178
+  },
+  "spendByPlatform": {
+    "cursor": {
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null,
+      "costUsdTotal": null,
+      "cacheReadTokens": null,
+      "cacheCreationTokens": null,
+      "source": "none"
+    },
+    "claude": {
+      "inputTokens": 653955,
+      "outputTokens": 2988,
+      "totalTokens": 656943,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": 0.2154,
+      "costUsdTotal": 0.2154,
+      "cacheReadTokens": 648767,
+      "cacheCreationTokens": 5178,
+      "source": "claude-jsonl"
+    },
+    "amp": {
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null,
+      "costUsdTotal": null,
+      "cacheReadTokens": null,
+      "cacheCreationTokens": null,
+      "source": "none"
+    }
+  },
+  "spendByModel": [
+    {
+      "model": "claude-opus-5-5",
+      "platform": "claude",
+      "inputTokens": 653955,
+      "outputTokens": 2988,
+      "totalTokens": 656943,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": 0.2154,
+      "costUsdTotal": 0.2154,
+      "cacheReadTokens": 648767,
+      "cacheCreationTokens": 5178
+    },
+    {
+      "model": "grok-4.7",
+      "platform": "cursor",
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null,
+      "costUsdTotal": null,
+      "cacheReadTokens": null,
+      "cacheCreationTokens": null
+    }
+  ],
+  "totals": {
+    "sessions": 2,
+    "durationMs": 1350,
+    "leadTimeMs": 502322,
+    "cloudSessions": 0
+  },
+  "phases": {
+    "apply": {
+      "sessions": 1,
+      "durationMs": 0,
+      "startedAt": "2026-10-30T07:10:50.657Z",
+      "endedAt": "2026-10-30T07:10:50.657Z",
+      "leadTimeMs": 0,
+      "inputTokens": 653955,
+      "outputTokens": 2988,
+      "totalTokens": 656943,
+      "costUsd": null,
+      "costUsdEstimated": 0.2154,
+      "costUsdTotal": 0.2154,
+      "cacheReadTokens": 648767,
+      "cacheCreationTokens": 5178,
+      "agents": [
+        "Implementer"
+      ],
+      "models": [
+        "claude-opus-5-5"
+      ]
+    },
+    "archive": {
+      "sessions": 1,
+      "durationMs": 1350,
+      "startedAt": "2026-10-30T07:19:11.629Z",
+      "endedAt": "2026-10-30T07:19:12.979Z",
+      "leadTimeMs": 1350,
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "costUsdEstimated": null,
+      "costUsdTotal": null,
+      "cacheReadTokens": null,
+      "cacheCreationTokens": null,
+      "agents": [
+        "Archiver"
+      ],
+      "models": [
+        "grok-4.7"
+      ]
+    }
+  },
+  "sessions": [
+    {
+      "startedAt": "2026-10-30T07:10:50.657Z",
+      "endedAt": "2026-10-30T07:10:50.657Z",
+      "durationMs": 0,
+      "role": "Implementer",
+      "phase": "apply",
+      "runtime": "local",
+      "agentId": "none",
+      "model": "claude-opus-5-5",
+      "platform": "claude",
+      "threadId": null,
+      "tasks": "6/6",
+      "sourceIds": [
+        "msg_011CgY1CHmKvtkKiwYXGeaUF",
+        "msg_011CgY1CSuVaYPCfvQePJFsC",
+        "msg_011CgY1HUXcr5WNLeUQpVUar",
+        "msg_011CgY1HoDGyX7mJhRNwEUQr"
+      ],
+      "sourceTotals": {
+        "msg_011CgY1CHmKvtkKiwYXGeaUF": 162562,
+        "msg_011CgY1CSuVaYPCfvQePJFsC": 164146,
+        "msg_011CgY1HUXcr5WNLeUQpVUar": 164586,
+        "msg_011CgY1HoDGyX7mJhRNwEUQr": 165649
+      },
+      "byModel": [
+        {
+          "model": "claude-opus-5-5",
+          "platform": "claude",
+          "inputTokens": 653955,
+          "outputTokens": 2988,
+          "totalTokens": 656943,
+          "costUsd": null,
+          "costUsdEstimated": 0.2154,
+          "cacheReadTokens": 648767,
+          "cacheCreationTokens": 5178,
+          "costSource": "api-estimate"
+        }
+      ],
+      "inputTokens": 653955,
+      "outputTokens": 2988,
+      "totalTokens": 656943,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": 0.2154,
+      "cacheReadTokens": 648767,
+      "cacheCreationTokens": 5178,
+      "spendSource": "adapter",
+      "costUsdTotal": 0.2154
+    },
+    {
+      "startedAt": "2026-10-30T07:19:11.629Z",
+      "endedAt": "2026-10-30T07:19:12.979Z",
+      "durationMs": 1350,
+      "role": "Archiver",
+      "phase": "archive",
+      "runtime": "local",
+      "agentId": "none",
+      "model": "grok-4.7",
+      "platform": "cursor",
+      "threadId": "d8aa27dc-223a-47de-b31d-2f6061b4be9a",
+      "tasks": "6/6",
+      "sourceIds": [],
+      "sourceTotals": {},
+      "byModel": [],
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null,
+      "cacheReadTokens": null,
+      "cacheCreationTokens": null,
+      "spendSource": "unreported",
+      "costUsdTotal": null
+    }
+  ],
+  "pending": null
+}
