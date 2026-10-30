@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Main-spec failures surface before apply.** `gate-check --review` validates a temporary preview of all main specs after the planned delta sync with the consumer's installed OpenSpec, including unchanged specs. Strict failures identify the projected file and whether it is outside the current change. The preview never replaces working specs and is cleaned up on failure. Change validation and heading conflicts are checked first; archive retains its final strict validation and rollback. Newly created capabilities receive a Purpose long enough for strict validation even with short names.
+- **Document the 500-character requirement-description limit at authoring time.** Architect, propose, workflow/howto, and profile config templates explain the boundary and preserve existing MODIFIED behavior/scenarios. Existing long specs require a separate migration; strict is not disabled. Pin the kit's existing OpenSpec development version to 1.4.1 and document local/CI version consistency.
+
 ## [0.19.0] - 2026-10-29
 
 ### Changed

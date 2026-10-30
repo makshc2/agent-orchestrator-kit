@@ -508,6 +508,10 @@ npx agent-orchestrator-kit gate-check --review <change-name> [--json]
 
 Deterministic Tier 1 of the review phase: strict OpenSpec validation, the task-contract lint, `Non-goals` / `Acceptance criteria` sections in `proposal.md`, non-empty ADDED/MODIFIED/REMOVED sections in delta specs, and the same heading checks `archive --sync` enforces (a MODIFIED/REMOVED title must exist in the main spec, an ADDED title must not). Human-readable stdout, or `--json` for a `{pass, errors[]}` report.
 
+After change validation and heading checks pass, the gate builds a temporary copy of **all main specs**, overlays the planned delta sync, and runs `openspec validate --specs --strict --json` with the project's installed OpenSpec. The working specs stay untouched; the preview is removed on success and failure. Diagnostics identify specs **after delta sync** or **existing main specs outside this change**. This catches a long MODIFIED requirement and existing blockers before apply, instead of first discovering them at archive. The preview does not validate other active changes; archive still runs its final `--all --strict` check.
+
+**500 characters means one requirement description**, excluding its heading and scenarios. Write one behavior per requirement, examples and edge cases in scenarios, and implementation details in design/tasks. OpenSpec 1.14.1 made this finding a WARNING, which fails `--strict`; older versions such as 1.4.1 emit INFO. The kit preserves the installed validator's severity; INFO is printed in human-readable output and does not fail the gate. Keep strict enabled. Migrate existing long descriptions separately, preserving all behavior and scenarios; do not truncate them or expand an unrelated change to silence a warning. When the gate reports an existing blocker outside the change, report that blocker and the migration needed rather than repeatedly rewriting the current delta.
+
 It also measures `proposal.md`, `design.md`, `tasks.md` and the delta specs in bytes and reports `artifact budget: …` when `tasks.md` is over 60 000 B or their total is over 150 000 B, with the advice to split the change into slices. `pipeline.artifact_budget` sets the mode: `warn` (default) prints a warning and keeps the exit code, `strict` makes it an error (exit 1), `off` skips the measurement.
 
 ```bash
@@ -702,9 +706,14 @@ npx agent-orchestrator-kit update
 rules:
   proposal:
     - "Always include the exact level-2 headings '## Non-goals' and '## Acceptance criteria' (gate-check --review Tier 1 rejects the proposal without them)."
+  specs:
+    - "Keep each new requirement description between '### Requirement:' and its first '#### Scenario:' at most 500 characters; headings and scenarios do not count. Use one behavior per requirement."
+    - "Preserve existing MODIFIED behavior and scenarios; split old long requirements only in an explicitly scoped migration."
 ```
 
 Double-quote every rule: an unquoted item that contains `: ` makes OpenSpec drop the whole list for that artifact, and an unquoted ` #` silently cuts the rule short (YAML reads the rest as a comment). A fresh `init --profile node` or `init --profile generic` installs `openspec/config.yaml.example` with these rules from `templates/openspec-config.yaml.example`; `init --force` overwrites an existing `openspec/config.yaml`.
+
+**OpenSpec version consistency:** pin a reviewed local version using `npm install --save-dev --save-exact @fission-ai/openspec@<version>`, commit the lockfile, and use `npm ci` in CI (or the equivalent frozen-lockfile install for your package manager). Avoid mixing a global CLI with a different local version. This kit's own development baseline stays pinned to 1.4.1; upgrading it and migrating existing main specs are separate work. The preview regression suite also supports checking another installed version via `AOK_TEST_OPENSPEC_MODULES=/path/to/node_modules node --test --test-concurrency=1 test/spec-preflight.test.js` without downloading packages during tests. Kit `update` distributes the new rules and skills, but does not upgrade OpenSpec or rewrite consumer specs/config.
 
 ### Upgrading from older versions
 

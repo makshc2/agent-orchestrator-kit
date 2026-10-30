@@ -5,6 +5,12 @@ copies one fixture into a fresh temp directory, applies exactly one defect and
 runs `gate-check --review <change> --json` with the locally installed OpenSpec
 validator.
 
+The launcher accepts exactly the change validation call and
+`npx --no-install openspec validate --specs --strict --json` for the gate's
+temporary preview of the resulting main specs. Both use the same locally
+installed CLI with telemetry disabled; all other invocations are rejected.
+The preview does not alter these frozen fixtures.
+
 ## Eval profile
 
 Both fixtures pin the same profile in `.agents/orchestrator.yaml`:

@@ -24,3 +24,5 @@ rules:
     - "Last task: build, lint, and tests pass."
   specs:
     - "Delta format: ADDED / MODIFIED / REMOVED Requirements; every requirement uses SHALL or MUST and has at least one '#### Scenario:'."
+    - "Keep each new requirement description (between '### Requirement:' and its first '#### Scenario:') at most 500 characters; headings and scenarios do not count. Use one behavior per requirement; put examples in scenarios and implementation details in design/tasks."
+    - "For MODIFIED, preserve the existing heading, scenarios, and behavior. Split an existing long requirement only in an explicitly scoped migration: retain one behavior under its heading and add the others as ADDED requirements with scenarios."

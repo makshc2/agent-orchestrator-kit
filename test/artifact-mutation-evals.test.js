@@ -50,18 +50,25 @@ function launcherSource(openspecBin) {
 const { spawnSync } = require('node:child_process');
 const OPENSPEC_BIN = ${JSON.stringify(openspecBin)};
 const args = process.argv.slice(2);
-const accepted = args.length === 6
+const changeCall = args.length === 6
   && args[0] === 'openspec'
   && args[1] === 'validate'
   && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(args[2])
   && args[3] === '--strict'
   && args[4] === '--type'
   && args[5] === 'change';
-if (!accepted) {
-  process.stderr.write('mutation-eval npx launcher: rejected call "npx ' + args.join(' ') + '": only "npx openspec validate <name> --strict --type change" is allowed\\n');
+const previewCall = args.length === 6
+  && args[0] === '--no-install'
+  && args[1] === 'openspec'
+  && args[2] === 'validate'
+  && args[3] === '--specs'
+  && args[4] === '--strict'
+  && args[5] === '--json';
+if (!changeCall && !previewCall) {
+  process.stderr.write('mutation-eval npx launcher: rejected call "npx ' + args.join(' ') + '": only change validation or projected spec validation is allowed\\n');
   process.exit(2);
 }
-const res = spawnSync(process.execPath, [OPENSPEC_BIN, 'validate', args[2], '--strict', '--type', 'change'], {
+const res = spawnSync(process.execPath, [OPENSPEC_BIN, ...(previewCall ? ['validate', '--specs', '--strict', '--json'] : ['validate', args[2], '--strict', '--type', 'change'])], {
   cwd: process.cwd(),
   env: process.env,
   encoding: 'utf-8',
@@ -323,7 +330,7 @@ test('classifier: causal truth table for gate and validate oracle results', asyn
   }
 });
 
-test('launcher rejects any call other than "openspec validate <name> --strict --type change"', async () => {
+test('launcher accepts only change validation and projected main-spec validation', async () => {
   const openspecBin = resolveOpenspecBin();
   await withSandbox('synthetic', openspecBin, (sandbox) => {
     const npx = join(sandbox.root, 'bin', 'npx');
@@ -333,6 +340,8 @@ test('launcher rejects any call other than "openspec validate <name> --strict --
       ['openspec', 'list'],
       ['openspec', 'validate', '../x', '--strict', '--type', 'change'],
       ['openspec', 'show', 'x', '--strict', '--type', 'change'],
+      ['--no-install', 'openspec', 'validate', '--all', '--strict', '--json'],
+      ['--no-install', 'openspec', 'validate', '--specs', '--json'],
     ]) {
       const rejected = spawnSync(npx, args, opts);
       assert.equal(rejected.status, 2, `expected exit 2 for ${args.join(' ')}`);
@@ -345,6 +354,10 @@ test('launcher rejects any call other than "openspec validate <name> --strict --
     assert.equal(direct.status, 0, direct.stderr);
     assert.equal(accepted.status, direct.status);
     assert.equal(accepted.stdout, direct.stdout);
+
+    const preview = spawnSync(npx, ['--no-install', 'openspec', 'validate', '--specs', '--strict', '--json'], opts);
+    assert.equal(preview.status, 0, preview.stderr);
+    assert.equal(JSON.parse(preview.stdout).items[0].type, 'spec');
   });
 });
 

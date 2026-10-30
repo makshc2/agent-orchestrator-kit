@@ -26,6 +26,8 @@ When ready to implement, run /opsx:apply
 
 **Thin conductor (cost-lean protocol):** the parent MUST NOT research the repo — no grep/cat/sed over `bin/`, `src/`, specs, or other changes, before or after the spawn. It reads only the decision brief (by path), the kit `status`, and `handoff --restore`, plus `review.md` on a re-propose after Verdict REQUEST CHANGES (its path, verdict and Required Before Apply list go into the spawn prompt, per the re-propose rule below), and spawns `spec-architect` within at most 5 tool calls, passing the brief PATH (the user's description verbatim when no brief file exists) and the change name, never a digest of its own research. After the report the parent makes at most 3 tool calls (one shell call that runs `openspec status`, lists the reported artifact paths and runs `gate-check --review <name>`; then the session-exit persist) and, on a green gate, MUST NOT re-read the artifacts; a red gate adds only the one re-spawn and one more `gate-check --review`.
 
+**Spec descriptions:** pass the 500-character requirement-description guidance in `.agents/rules/openspec-workflow.mdc` to `spec-architect`. The limit excludes headings and scenarios. Preserve existing MODIFIED behavior and scenarios; do not authorize an unrelated migration or truncation merely to make a gate green.
+
 **Task contract (mandatory tasks.md format):** every task must carry indented `Files:`, `Do:`, `Done-when:` fields:
 
 ```markdown

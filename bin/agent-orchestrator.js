@@ -8,6 +8,7 @@ import { execSync, execFileSync } from 'child_process';
 import { collectSpend } from './spend-collect.js';
 import { describeClaudeCostEstimate } from './claude-cost-estimate.js';
 import { resolveRestoreClient, ampThreadIdFromEnv } from './session-client.js';
+import { validateProjectedSpecs } from './spec-preflight.js';
 import {
   earlierTimestamp,
   formatKyivDisplay,
@@ -3619,6 +3620,7 @@ function artifactBudgetFindings(changeDir) {
 
 function runTier1Review(projectDir, name) {
   const errors = [];
+  let changeValid = true;
   if (!isSafeChangeName(name)) {
     return { pass: false, errors: [`invalid change name: ${name}`] };
   }
@@ -3634,6 +3636,7 @@ function runTier1Review(projectDir, name) {
       encoding: 'utf-8',
     });
   } catch (e) {
+    changeValid = false;
     const detail = `${e.stdout || ''}${e.stderr || ''}`.trim().split('\n')[0] || 'non-zero exit';
     errors.push(`openspec validate --strict failed: ${detail}`);
   }
@@ -3664,9 +3667,19 @@ function runTier1Review(projectDir, name) {
   // Same heading-vs-main-spec check that `archive --sync` runs (planSpecSync),
   // so a MODIFIED/REMOVED/RENAMED heading that does not byte-match the main
   // spec, or an ADDED one that already exists, fails here instead of at archive.
-  errors.push(...planSpecSync(projectDir, deltaSpecs, name).conflicts);
+  const sync = planSpecSync(projectDir, deltaSpecs, name);
+  errors.push(...sync.conflicts);
+  let preview = { errors: [], warnings: [] };
+  if (changeValid && !sync.conflicts.length) {
+    try {
+      preview = validateProjectedSpecs(projectDir, sync.plan);
+    } catch (error) {
+      preview.errors.push(`projected main specs: could not validate: ${error.message}`);
+    }
+    errors.push(...preview.errors);
+  }
 
-  return { pass: errors.length === 0, errors, warnings: [...lint.warnings, ...(budgetMode === 'strict' ? [] : budgetFindings)] };
+  return { pass: errors.length === 0, errors, warnings: [...lint.warnings, ...(budgetMode === 'strict' ? [] : budgetFindings), ...preview.warnings] };
 }
 
 // --- review.md schema gate (gate-check --review-md) ---
@@ -3848,7 +3861,7 @@ function planSpecSync(projectDir, deltaSpecPaths, changeName) {
     const oldContent = existed ? readFileSync(mainPath, 'utf-8') : null;
     let content = existed
       ? oldContent
-      : `## Purpose\n\n${capability} — requirements merged from change ${changeName}.\n\n## Requirements\n`;
+      : `## Purpose\n\nRequirements for ${capability}, introduced by change ${changeName}. This specification defines the supported behavior and acceptance scenarios.\n\n## Requirements\n`;
 
     // Renames go first: openspec validate requires MODIFIED to use the new name.
     for (const pair of delta.RENAMED) {

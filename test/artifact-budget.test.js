@@ -29,6 +29,12 @@ function isolatedEnv(dir) {
 // checks decide the gate-check result.
 const OPENSPEC_STUB = `#!/usr/bin/env node
 const args = process.argv.slice(2);
+if (args[0] === 'validate' && args.includes('--specs') && args.includes('--json')) {
+  const specs = require('path').join(process.cwd(), 'openspec/specs');
+  const items = require('fs').readdirSync(specs).map(id => ({ id, type: 'spec', valid: true, issues: [] }));
+  console.log(JSON.stringify({ items }));
+  process.exit(0);
+}
 if (args[0] === 'validate') { console.log('valid (stub)'); process.exit(0); }
 if (args[0] === 'status') { console.log('{}'); process.exit(0); }
 process.exit(0);

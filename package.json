@@ -57,6 +57,6 @@
     "release:tag": "git tag v$(node -p \"require('./package.json').version\")"
   },
   "devDependencies": {
-    "@fission-ai/openspec": "^1.4.1"
+    "@fission-ai/openspec": "1.4.1"
   }
 }

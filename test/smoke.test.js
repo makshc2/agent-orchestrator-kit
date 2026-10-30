@@ -2264,6 +2264,12 @@ if (args[0] === 'status') {
   }));
   process.exit(0);
 }
+if (args[0] === 'validate' && args.includes('--specs') && args.includes('--json')) {
+  const specs = require('path').join(process.cwd(), 'openspec/specs');
+  const items = require('fs').readdirSync(specs).map(id => ({ id, type: 'spec', valid: true, issues: [] }));
+  console.log(JSON.stringify({ items }));
+  process.exit(0);
+}
 if (args[0] === 'validate') {
   if (fs.existsSync(path.join(process.cwd(), '.openspec-validate-fail'))) {
     console.error('Validation failed (stub)');
