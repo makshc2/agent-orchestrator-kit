@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-10-30
+
+### Fixed
+- **A skipped Session Exit no longer goes unnoticed.** `handoff <name> --restore` prints `UNPERSISTED SESSION` when the previous session left an open `pending` in `metrics.json`, when a change has artifacts but no `handoff.md`, or when `handoff.md` is older than the artifacts (2 s slack). It is advisory: exit code and briefing are unchanged, and it works the same in every client. The explore command and skill now name Session Exit as the exception to «never write OpenSpec artifacts» and no longer say «no mandatory outputs», the contradiction an agent cited when it skipped the persist. Spec: session-handoff. Test: `test/restore-unpersisted-warning.test.js`.
+
 ## [0.20.0] - 2026-10-30
 
 ### Added

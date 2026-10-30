@@ -405,3 +405,26 @@ CLI-промпт наступної сесії (`buildNextSessionPrompt`, stdout
 - **WHEN** виконується restore
 - **THEN** брифінг містить рядок `attach:` і цей рядок секції без змін
 - **AND** рядок `Memory entities: N` надруковано, як і раніше
+
+### Requirement: Restore попереджає про пропущений Session Exit
+
+`handoff <name> --restore` SHALL друкувати попередження `UNPERSISTED SESSION`, коли попередня сесія не виконала Session Exit: у `metrics.json` лишився `pending`, `handoff.md` відсутній при наявних артефактах change, або `handoff.md` старший за артефакти більш ніж на 2 секунди. `handoff.md`, `metrics.json`, `decisions.md` і `.openspec.yaml` не рахуються артефактами. Попередження не змінює exit code і не блокує restore. Пояснення в `opsx-explore.md` і `openspec-explore` SHALL називати Session Exit винятком із заборони писати артефакти.
+
+#### Scenario: Відкрита сесія без persist
+
+- **GIVEN** `metrics.json` має непорожній `pending`
+- **WHEN** виконується restore
+- **THEN** вивід містить `UNPERSISTED SESSION` і роль та час початку відкритої сесії
+- **AND** exit code дорівнює 0
+
+#### Scenario: Артефакти без handoff.md
+
+- **GIVEN** у change є `proposal.md`, але немає `handoff.md`
+- **WHEN** виконується restore
+- **THEN** вивід містить `UNPERSISTED SESSION` і `no handoff.md`
+
+#### Scenario: Чистий стан не попереджає
+
+- **GIVEN** `handoff.md` новіший за всі артефакти і `pending` порожній
+- **WHEN** виконується restore
+- **THEN** вивід не містить `UNPERSISTED SESSION`

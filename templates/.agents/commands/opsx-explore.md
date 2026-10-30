@@ -11,11 +11,11 @@ Follow the canonical Session Start protocol in `.agents/rules/session-handoff.md
 
 Enter explore mode. Think deeply. Visualize freely. Follow the conversation wherever it goes.
 
-**IMPORTANT: Explore mode is read-only thinking, not implementation or artifact authoring.** You may discuss evidence returned by the specialist, but you must NEVER write code or OpenSpec artifacts. If the user asks you to implement or formalize the change, end explore with a handoff to a fresh propose session.
+**IMPORTANT: Explore mode is read-only thinking, not implementation or artifact authoring.** You may discuss evidence returned by the specialist, but you must NEVER write code or OpenSpec artifacts. The one exception is Session Exit: `handoff.md` and `npx agent-orchestrator-kit handoff <name>` are session bookkeeping, not OpenSpec artifacts, and an explore session that skips them is incomplete. If the user asks you to implement or formalize the change, end explore with a handoff to a fresh propose session.
 
 **Conductor delegation is mandatory:** for any repository investigation, spawn `codebase-explorer` with a self-contained question and require its structured report. Do not search or trace the codebase in the parent session, and do not let the subagent write specs or code. The parent may synthesize the report and continue the exploratory conversation.
 
-**This is a stance, not a workflow.** There are no fixed steps, no required sequence, no mandatory outputs. You're a thinking partner helping the user explore.
+**This is a stance, not a workflow.** There are no fixed steps, no required sequence, no mandatory outputs during the conversation, except the Session Exit persist when it ends. You're a thinking partner helping the user explore.
 
 **Input**: The argument after `/opsx:explore` is whatever the user wants to think about. Could be:
 - A vague idea: "real-time collaboration"

@@ -80,7 +80,7 @@ npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-veri
 
 See [Installation](#installation) for profile/CI options.
 
-**🔄 Already have the kit installed? Upgrade to latest (v0.20.0: the opt-in spec verifier reports `implemented` / `missing` / `scope_creep`; long verifier responses are no longer cut; `gate-check --review` validates the projected main specs before apply):**
+**🔄 Already have the kit installed? Upgrade to latest (v0.20.1: `handoff --restore` flags a previous session that skipped Session Exit; the explore command names Session Exit as the exception to the artifact ban):**
 
 ```bash
 npx agent-orchestrator-kit@latest update
@@ -1173,6 +1173,11 @@ The kit moves toward an Agentic Factory in four phases. **One phase = one OpenSp
 Phase bounds and non-goals: [`openspec/specs/agentic-factory-roadmap/spec.md`](openspec/specs/agentic-factory-roadmap/spec.md).
 
 ## Changelog
+
+### 0.20.1
+- **Skipped Session Exit is flagged.** `handoff <name> --restore` prints `UNPERSISTED SESSION` for an open `pending`, a change with artifacts but no `handoff.md`, or a `handoff.md` older than the artifacts. Advisory only; exit code and briefing are unchanged.
+- **Explore no longer contradicts Session Exit.** The explore command and skill name `handoff.md` + the `handoff` CLI as the exception to «never write OpenSpec artifacts».
+- Upgrade: `update` refreshes the commands and skills; the new check is in the CLI itself. No `orchestrator.yaml` key changes.
 
 ### 0.20.0
 - **Spec verifier conformance report (opt-in).** `verify-specs.sh` asks for `implemented[]`, `missing[]` and `scope_creep[]` next to the findings; the GitHub and GitLab comments add `### Implemented`, `### Missing` and `### Scope creep`. `pass` / `score` still come from `findings` only, so the merge gate is unchanged.

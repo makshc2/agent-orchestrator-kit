@@ -1645,6 +1645,52 @@ function localIsoDate(now = new Date()) {
 }
 
 const RESTORE_DECISIONS_LIMIT = 10;
+const UNPERSISTED_MTIME_SLACK_MS = 2000;
+const HANDOFF_NEUTRAL_FILES = new Set(['handoff.md', 'metrics.json', 'decisions.md', '.openspec.yaml']);
+
+function newestArtifactMtimeMs(dir, top = true) {
+  let newest = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (top && HANDOFF_NEUTRAL_FILES.has(entry.name)) continue;
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) newest = Math.max(newest, newestArtifactMtimeMs(full, false));
+    else newest = Math.max(newest, statSync(full).mtimeMs);
+  }
+  return newest;
+}
+
+function printUnpersistedWarnings(warnings) {
+  for (const warning of warnings) {
+    log.warn(`UNPERSISTED SESSION — ${warning}. Tell the user, and recover what you can from git history and the artifacts before continuing.`);
+  }
+}
+
+// A previous /opsx:* session that skipped Session Exit leaves no trace the
+// next session would notice; restore is the one place every client passes.
+function collectUnpersistedSessionWarnings(changeDir) {
+  const warnings = [];
+  if (!existsSync(changeDir)) return warnings;
+  try {
+    const metricsPath = join(changeDir, 'metrics.json');
+    if (existsSync(metricsPath)) {
+      const pending = JSON.parse(readFileSync(metricsPath, 'utf-8')).pending;
+      if (pending && pending.startedAt) {
+        warnings.push(`previous session (${pending.role || 'unknown role'}, started ${pending.startedAt}) was never persisted: no \`handoff <name>\` run closed it. Its context may be missing from handoff.md / decisions.md`);
+      }
+    }
+    const handoffPath = join(changeDir, 'handoff.md');
+    const newest = newestArtifactMtimeMs(changeDir);
+    if (!existsSync(handoffPath)) {
+      if (newest > 0) warnings.push('change has artifacts but no handoff.md: the session that wrote them did not run Session Exit');
+    } else if (newest > statSync(handoffPath).mtimeMs + UNPERSISTED_MTIME_SLACK_MS) {
+      warnings.push('handoff.md is older than the change artifacts: the last session edited them without a Session Exit, so handoff.md may be stale');
+    }
+  } catch {
+    // The check is advisory; a malformed metrics.json must not block restore.
+  }
+  return warnings;
+}
+
 
 function decisionsFilePath(projectDir, changeName) {
   return join(projectDir, 'openspec', 'changes', changeName, 'decisions.md');
@@ -5217,7 +5263,9 @@ program
       const memoryItems = loadMemoryItems(memoryPath).filter(
         (item) => item.type === 'entity' && String(item.name || '').includes(name),
       );
+      const unpersisted = collectUnpersistedSessionWarnings(changeDir);
       if (!fields && memoryItems.length === 0) {
+        printUnpersistedWarnings(unpersisted);
         log.err(`No handoff.md or Memory entities for ${name}`);
         log.info(`Expected: ${filePath}`);
         process.exitCode = 1;
@@ -5258,6 +5306,7 @@ program
       } else {
         log.warn(`Memory JSON empty or missing at ${memoryPath}`);
       }
+      printUnpersistedWarnings(unpersisted);
       if (opts.metrics !== false && existsSync(changeDir)) {
         const client = resolveRestoreClient({
           env: process.env,
