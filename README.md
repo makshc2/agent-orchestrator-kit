@@ -472,11 +472,44 @@ include:
 
 Setup after install (GitHub): the workflow runs automatically on `pull_request` — just add the repo secret `AMP_API_KEY` (Settings → Secrets and variables → Actions). `GITHUB_TOKEN` is provided by Actions automatically.
 
-Verdict schema (`artifacts/verdict.json`): `pass`, `score` (0–100), `summary`, `findings[]` with `severity` (`error` fails the job), `spec`, `requirement`, `message`, `file`. The script degrades gracefully — no `src/` changes, no specs, missing `amp` CLI, or missing `AMP_API_KEY` produce a skipped passing verdict and never block the pipeline. Secrets are never logged; `.env`/key/token files are excluded from prompts.
+Verdict schema (`artifacts/verdict.json`): `pass`, `score` (0–100), `summary`, `findings[]` with `severity` (`error` fails the job), `spec`, `requirement`, `message`, `file`, `line`. The script degrades gracefully — no `src/` changes, no specs, missing `amp` CLI, or missing `AMP_API_KEY` produce a skipped passing verdict and never block the pipeline. Secrets are never logged; `.env`/key/token files are excluded from prompts.
+
+**Conformance report (additive).** The verdict also carries three arrays: `implemented[]` (provided code satisfies a relevant requirement; `message` is the evidence), `missing[]` (a positive requirement is absent or incomplete in a provided file where it is expected) and `scope_creep[]` (provided code does what a requirement or an explicit boundary forbids: SHALL NOT, MUST NOT, an explicit exclusion or non-goal). Each item has `spec`, `requirement`, `message`, `file` (a provided source path or `null`) and `line` (a positive 1-based line of that file or `null`):
+
+```json
+{
+  "pass": true,
+  "score": 97,
+  "summary": "Login works; lockout reset is incomplete.",
+  "findings": [
+    { "severity": "warning", "spec": "openspec/specs/auth/spec.md", "requirement": "Lockout", "message": "Counter is never reset", "file": "src/auth.js", "line": 42 }
+  ],
+  "implemented": [
+    { "spec": "openspec/specs/auth/spec.md", "requirement": "Login", "message": "Password is compared with the stored hash", "file": "src/auth.js", "line": 17 }
+  ],
+  "missing": [
+    { "spec": "openspec/specs/auth/spec.md", "requirement": "Lockout", "message": "Counter is never reset", "file": "src/auth.js", "line": 42 }
+  ],
+  "scope_creep": []
+}
+```
+
+- **Classification.** One discrepancy goes to exactly one group: an unmet positive requirement is `missing`, a violated prohibition or exclusion is `scope_creep`. `missing` needs a provided file (`line` may be `null`); when the verifier cannot name one, it writes a warning/info finding about the uncertainty instead. `scope_creep` needs an explicit prohibition, so it is rare; a changed file without a related spec stays an info finding. An empty group does not prove absence: conclusions are limited to the changed source files in the prompt, and behaviour in an unchanged file is outside the verifier's view.
+- **Findings stay the gate.** `pass` and `score` are computed from `findings[]` only (unchanged severity gate: any `error` blocks). Every `missing` / `scope_creep` item has exactly one mirrored finding with the same `spec`, `requirement`, `file` and `line`: `missing` → `error` when a SHALL/MUST behaviour is wholly absent from that file, otherwise `warning`; `scope_creep` → `error` for SHALL NOT / MUST NOT, otherwise `warning`. The arrays themselves never change `pass` or `score`; `implemented` items have no finding.
+- **Coordinates.** Changed source files are numbered in the prompt from line 1 (blank lines included), so `line` refers to the file in `HEAD`, not to a diff. `"line": null` means the location is unknown; a `null` file means the path is unknown too. The comments show `file:line` only for a known file with a positive integer line, otherwise just the file or `—`.
+- **Comments.** The MR/PR comment keeps Summary, Score, status and Findings, then adds `### Implemented`, `### Missing` and `### Scope creep` (columns Spec / Requirement / Evidence / File). A group shows `_None reported._` when the verifier returned an empty array, `_Not reported by this verifier._` when the field is absent, `null` or not an array (a legacy verdict), `_Not checked — verification skipped._` for a skipped verdict and `_Not checked — verifier response was inconclusive._` when the verifier did not return valid JSON (the fallback verdict is marked `"inconclusive": true`, keeps `pass: true` and `score: 50`).
+- **Legacy compatibility.** Verdicts without the arrays are read as before, without migration; older consumers ignore the new fields.
+
+Known limitations:
+
+- A response where the JSON object starts on the same line as other text (`Verdict: {…}`) is treated as invalid and gives the inconclusive fallback; the object must start on its own line (markdown fences are fine).
+- GitHub limits a comment to 65 536 characters. Large reports can exceed it; `gh pr comment` then fails, the script only prints `Failed to post PR comment` and exits 0.
+- The GitLab comment is sent from a temporary file (`curl --data-binary @file`), so the 131 072-byte limit of a single command-line argument does not apply. A refusal by the GitLab API (non-2xx) is only printed; the script exits 0.
+- A valid JSON object without a boolean `pass` is stored as is and evaluates as PASS (existing behaviour; no schema validation).
 
 **Warning-only rollout (Phase 1):** uncomment `allow_failure: true` (GitLab) or `continue-on-error: true` (GitHub) to keep the pipeline green while the team builds trust in verdicts, then remove it to enforce blocking (Phase 2).
 
-`update` refreshes the spec-verify files only in projects that already installed them — the feature stays opt-in.
+`update` refreshes the spec-verify files only in projects that already installed them — the feature stays opt-in. Projects that installed spec-verify earlier get the conformance report through the same `update`; no new CI permissions, dependencies or verdict migration are needed.
 
 ---
 
