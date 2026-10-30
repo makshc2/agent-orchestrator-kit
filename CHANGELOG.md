@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-10-30
+
 ### Added
 - **Spec verifier conformance report.** The opt-in `verify-specs.sh` prompt asks for three additional arrays, `implemented[]`, `missing[]` and `scope_creep[]`, each item with `spec`, `requirement`, `message`, `file` and `line`. `missing` needs a provided file and `scope_creep` an explicit prohibition; one discrepancy lands in one group. Every `missing` / `scope_creep` item has one mirrored finding with a defined severity, and `pass` / `score` still come from `findings` only, so the merge gate is unchanged. Changed source files are numbered in the prompt from line 1 (`awk`, blank lines included), so `line` points at the file in `HEAD`. The GitHub and GitLab comments add `### Implemented`, `### Missing` and `### Scope creep` after Findings and tell an empty group (`_None reported._`) from a legacy verdict without groups (`_Not reported by this verifier._`) and from a skipped or inconclusive run (`_Not checked — …_`); the invalid-JSON fallback is marked `"inconclusive": true`. Cells escape `|` and line breaks, `file:line` appears only for a positive integer line, and malformed entries no longer raise. Projects with spec-verify already installed get the scripts through `update`; no new CI permissions, dependencies or verdict migration. (`openspec/changes/spec-verify-conformance-report`)
 

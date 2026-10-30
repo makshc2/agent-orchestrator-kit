@@ -80,7 +80,7 @@ npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-veri
 
 See [Installation](#installation) for profile/CI options.
 
-**🔄 Already have the kit installed? Upgrade to latest (v0.19.0: `/opsx:quick` works for small changes in every profile — a minimal delta, plus a light in-session review that writes a real `review.md` when `require_spec_review: true`; a `Code Writer` Closed role now counts as `Implementer`):**
+**🔄 Already have the kit installed? Upgrade to latest (v0.20.0: the opt-in spec verifier reports `implemented` / `missing` / `scope_creep`; long verifier responses are no longer cut; `gate-check --review` validates the projected main specs before apply):**
 
 ```bash
 npx agent-orchestrator-kit@latest update
@@ -1173,6 +1173,13 @@ The kit moves toward an Agentic Factory in four phases. **One phase = one OpenSp
 Phase bounds and non-goals: [`openspec/specs/agentic-factory-roadmap/spec.md`](openspec/specs/agentic-factory-roadmap/spec.md).
 
 ## Changelog
+
+### 0.20.0
+- **Spec verifier conformance report (opt-in).** `verify-specs.sh` asks for `implemented[]`, `missing[]` and `scope_creep[]` next to the findings; the GitHub and GitLab comments add `### Implemented`, `### Missing` and `### Scope creep`. `pass` / `score` still come from `findings` only, so the merge gate is unchanged.
+- **Long verifier responses are no longer cut or lost.** The Amp response is kept in a file, and `post-mr-verdict.sh` sends the comment from a temporary file, so a payload over 131 072 bytes no longer fails with `Argument list too long`.
+- **Main-spec failures surface before apply.** `gate-check --review` validates a temporary preview of all main specs after the planned delta sync with strict validation; new capabilities get a Purpose long enough for strict.
+- **500-character requirement-description limit documented** in the architect, propose and howto templates.
+- Upgrade: `update` refreshes the commands, skills and subagents, and the spec-verify scripts only in projects that already installed them. No `orchestrator.yaml` key changes.
 
 ### 0.19.0
 - **`/opsx:quick` for small changes in every profile.** The architect writes a minimal delta (one requirement, one scenario), so `openspec validate --strict` passes. With `require_spec_review: true` the same session runs a light review: `gate-check --review`, then `spec-reviewer` in quick mode (REQUEST CHANGES only on a Blocker, `**Mode:** quick`), then `gate-check --review-md`. The CI gate and `archive` accept the resulting `review.md`. Apply is the same as `/opsx:apply`. The session closes as `Implementer — quick`, and a green quick prints the single archive line. See [Quick](#quick--opsxquick-name-for-small-changes).
