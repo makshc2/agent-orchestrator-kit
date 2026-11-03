@@ -80,7 +80,7 @@ npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-veri
 
 See [Installation](#installation) for profile/CI options.
 
-**🔄 Already have the kit installed? Upgrade to latest (v0.20.1: `handoff --restore` flags a previous session that skipped Session Exit; the explore command names Session Exit as the exception to the artifact ban):**
+**🔄 Already have the kit installed? Upgrade to latest (v0.21.0: `/opsx:apply` runs the tests once before the last box; new `checkpoint` command and a recovery briefing on `handoff --restore`):**
 
 ```bash
 npx agent-orchestrator-kit@latest update
@@ -1201,6 +1201,14 @@ The kit moves toward an Agentic Factory in four phases. **One phase = one OpenSp
 Phase bounds and non-goals: [`openspec/specs/agentic-factory-roadmap/spec.md`](openspec/specs/agentic-factory-roadmap/spec.md).
 
 ## Changelog
+
+### 0.21.0
+- **`/opsx:apply` runs the tests once, before the last box.** New step 6.5 reads `verifier.test_command`, runs it once and shows the last 20 lines. The outcome table fixes the last box and the `tests:` line in Done for every case: green and narrowed-green tick, an empty command is skipped with a warning and ticks, a red run stops with the box unticked, a pre-existing failure waits for the user, and a session that pauses earlier writes `tests: not run (paused: <k> tasks pending)`. Session Exit carries the `tests:` line; `/opsx:quick` inherits it. No hard gate.
+- **Fix changes start with a failing regression test.** A guideline (not a lint) in `spec-architect`, `/opsx:propose`, the propose skill and the config example: when the name starts with `fix-` or the brief describes a bug fix, the first implementation task adds a regression test that fails on the unfixed code.
+- **New `checkpoint [change-name]` command.** Saves task, role, done, blocker, next step and decisions to the git-tracked `openspec/changes/<name>/checkpoint.json` with an atomic write and an integrity digest. An unchanged state is a no-op; a corrupt file is replaced. It never closes the session, starts a phase or touches `decisions.md`, Memory JSON or `metrics.json` — decisions stay in `checkpoint.json` until Session Exit lists them under `## Decisions`. See [Checkpoint and recovery briefing](#checkpoint-and-recovery-briefing).
+- **`handoff --restore` prints a recovery briefing.** After an `UNPERSISTED SESSION` warning: at most 40 lines and 4096 bytes of FACTS, UNKNOWN, CONTRADICTIONS, GAPS and QUESTIONS, each tagged with its source, built only from local files and git. A superseded checkpoint contributes only its decisions; review currency needs a committed `review.md` plus git history, otherwise it is reported unknown. Advisory and read-only.
+- **An unreadable `handoff.md` or `decisions.md` no longer aborts `--restore`.**
+- Upgrade: `update` refreshes the commands, skills and subagents; the `checkpoint` command and the briefing are in the CLI itself. No `orchestrator.yaml` key changes.
 
 ### 0.20.1
 - **Skipped Session Exit is flagged.** `handoff <name> --restore` prints `UNPERSISTED SESSION` for an open `pending`, a change with artifacts but no `handoff.md`, or a `handoff.md` older than the artifacts. Advisory only; exit code and briefing are unchanged.

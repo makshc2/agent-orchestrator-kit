@@ -2,17 +2,17 @@
   "version": 2,
   "change": "apply-test-run-discipline",
   "createdAt": "2026-11-03T09:51:50.278Z",
-  "updatedAt": "2026-11-03T12:58:15.332Z",
-  "archivedAt": null,
+  "updatedAt": "2026-11-03T12:59:55.427Z",
+  "archivedAt": "2026-11-03T12:59:55.427Z",
   "spend": {
-    "inputTokens": 30802399,
-    "outputTokens": 488585,
-    "totalTokens": 31290984,
+    "inputTokens": 30958751,
+    "outputTokens": 489119,
+    "totalTokens": 31447870,
     "costUsd": null,
-    "costUsdEstimated": 19.4104,
-    "costUsdTotal": 19.4104,
-    "cacheReadTokens": 29382083,
-    "cacheCreationTokens": 1419702
+    "costUsdEstimated": 19.5151,
+    "costUsdTotal": 19.5151,
+    "cacheReadTokens": 29536137,
+    "cacheCreationTokens": 1421998
   },
   "spendByPlatform": {
     "cursor": {
@@ -28,15 +28,15 @@
       "source": "none"
     },
     "claude": {
-      "inputTokens": 30802399,
-      "outputTokens": 488585,
-      "totalTokens": 31290984,
+      "inputTokens": 30958751,
+      "outputTokens": 489119,
+      "totalTokens": 31447870,
       "costUsd": null,
       "ampCredits": null,
-      "costUsdEstimated": 19.4104,
-      "costUsdTotal": 19.4104,
-      "cacheReadTokens": 29382083,
-      "cacheCreationTokens": 1419702,
+      "costUsdEstimated": 19.5151,
+      "costUsdTotal": 19.5151,
+      "cacheReadTokens": 29536137,
+      "cacheCreationTokens": 1421998,
       "source": "claude-jsonl"
     },
     "amp": {
@@ -108,21 +108,21 @@
     {
       "model": "claude-opus-5",
       "platform": "claude",
-      "inputTokens": 8294672,
-      "outputTokens": 96851,
-      "totalTokens": 8391523,
+      "inputTokens": 8451024,
+      "outputTokens": 97385,
+      "totalTokens": 8548409,
       "costUsd": null,
       "ampCredits": null,
-      "costUsdEstimated": 8.1379,
-      "costUsdTotal": 8.1379,
-      "cacheReadTokens": 8021660,
-      "cacheCreationTokens": 272810
+      "costUsdEstimated": 8.2426,
+      "costUsdTotal": 8.2426,
+      "cacheReadTokens": 8175714,
+      "cacheCreationTokens": 275106
     }
   ],
   "totals": {
-    "sessions": 9,
-    "durationMs": 8006103,
-    "leadTimeMs": 11185054,
+    "sessions": 10,
+    "durationMs": 8007316,
+    "leadTimeMs": 11285149,
     "cloudSessions": 0
   },
   "phases": {
@@ -163,7 +163,7 @@
       "cacheReadTokens": 5599271,
       "cacheCreationTokens": 355192,
       "agents": [
-        "Reviewer"
+        "Spec Reviewer"
       ],
       "models": [
         "gpt-6",
@@ -177,14 +177,14 @@
       "startedAt": "2026-11-03T11:19:02.780Z",
       "endedAt": "2026-11-03T12:58:15.332Z",
       "leadTimeMs": 5952552,
-      "inputTokens": 9009058,
-      "outputTokens": 104985,
-      "totalTokens": 9114043,
+      "inputTokens": 9165410,
+      "outputTokens": 105519,
+      "totalTokens": 9270929,
       "costUsd": null,
-      "costUsdEstimated": 8.7114,
-      "costUsdTotal": 8.7114,
-      "cacheReadTokens": 8649356,
-      "cacheCreationTokens": 359470,
+      "costUsdEstimated": 8.8161,
+      "costUsdTotal": 8.8161,
+      "cacheReadTokens": 8803410,
+      "cacheCreationTokens": 361766,
       "agents": [
         "Implementer"
       ],
@@ -193,6 +193,25 @@
         "claude-sonnet-5-5",
         "claude-opus-5"
       ]
+    },
+    "archive": {
+      "sessions": 1,
+      "durationMs": 1213,
+      "startedAt": "2026-11-03T12:59:54.214Z",
+      "endedAt": "2026-11-03T12:59:55.427Z",
+      "leadTimeMs": 1213,
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "costUsdEstimated": null,
+      "costUsdTotal": null,
+      "cacheReadTokens": null,
+      "cacheCreationTokens": null,
+      "agents": [
+        "Archiver"
+      ],
+      "models": []
     }
   },
   "sessions": [
@@ -462,7 +481,7 @@
       "startedAt": "2026-11-03T10:35:21.451Z",
       "endedAt": "2026-11-03T10:41:06.205Z",
       "durationMs": 344754,
-      "role": "Reviewer",
+      "role": "Spec Reviewer",
       "phase": "review",
       "runtime": "local",
       "agentId": "none",
@@ -482,9 +501,7 @@
       "cacheReadTokens": null,
       "cacheCreationTokens": null,
       "spendSource": "unreported",
-      "notes": [
-        "role \"Reviewer\" is not a canonical Closed role token"
-      ],
+      "notes": [],
       "costUsdTotal": null
     },
     {
@@ -630,7 +647,7 @@
       "startedAt": "2026-11-03T11:08:30.049Z",
       "endedAt": "2026-11-03T11:18:16.264Z",
       "durationMs": 586215,
-      "role": "Reviewer",
+      "role": "Spec Reviewer",
       "phase": "review",
       "runtime": "local",
       "agentId": "none",
@@ -773,9 +790,7 @@
       "cacheReadTokens": 5599271,
       "cacheCreationTokens": 355192,
       "spendSource": "adapter",
-      "notes": [
-        "role \"Reviewer\" is not a canonical Closed role token"
-      ],
+      "notes": [],
       "costUsdTotal": 2.8975,
       "models": [
         "claude-sonnet-5-5",
@@ -1140,7 +1155,8 @@
         "msg_011Cgg2swGZ1jSq8ZYo9dN6P",
         "msg_011Cgg2tGcPhtYft3xcdXzff",
         "msg_011Cgg2tjgonCMpyidn7VzFv",
-        "msg_011Cgfwc6vSsXAoshQWPZcok"
+        "msg_011Cgfwc6vSsXAoshQWPZcok",
+        "msg_011Cgg2vXHF8FU3tQa1CXZFd"
       ],
       "sourceTotals": {
         "msg_011Cgfwc6SgTxJwECM1KoRyi": 40006,
@@ -1194,19 +1210,20 @@
         "msg_011Cgg2swGZ1jSq8ZYo9dN6P": 146875,
         "msg_011Cgg2tGcPhtYft3xcdXzff": 153326,
         "msg_011Cgg2tjgonCMpyidn7VzFv": 156110,
-        "msg_011Cgfwc6vSsXAoshQWPZcok": 33151
+        "msg_011Cgfwc6vSsXAoshQWPZcok": 33151,
+        "msg_011Cgg2vXHF8FU3tQa1CXZFd": 156886
       },
       "byModel": [
         {
           "model": "claude-opus-5",
           "platform": "claude",
-          "inputTokens": 5061357,
-          "outputTokens": 58002,
-          "totalTokens": 5119359,
+          "inputTokens": 5217709,
+          "outputTokens": 58536,
+          "totalTokens": 5276245,
           "costUsd": null,
-          "costUsdEstimated": 4.7757,
-          "cacheReadTokens": 4923096,
-          "cacheCreationTokens": 138159,
+          "costUsdEstimated": 4.8804,
+          "cacheReadTokens": 5077150,
+          "cacheCreationTokens": 140455,
           "costSource": "api-estimate"
         },
         {
@@ -1222,20 +1239,46 @@
           "costSource": "api-estimate"
         }
       ],
-      "inputTokens": 5094490,
-      "outputTokens": 58020,
-      "totalTokens": 5152510,
+      "inputTokens": 5250842,
+      "outputTokens": 58554,
+      "totalTokens": 5309396,
       "costUsd": null,
       "ampCredits": null,
-      "costUsdEstimated": 4.8278,
-      "cacheReadTokens": 4936529,
-      "cacheCreationTokens": 157857,
+      "costUsdEstimated": 4.9325,
+      "cacheReadTokens": 5090583,
+      "cacheCreationTokens": 160153,
       "spendSource": "adapter",
       "models": [
         "claude-opus-5",
         "claude-sonnet-5-5"
       ],
-      "costUsdTotal": 4.8278
+      "costUsdTotal": 4.9325
+    },
+    {
+      "startedAt": "2026-11-03T12:59:54.214Z",
+      "endedAt": "2026-11-03T12:59:55.427Z",
+      "durationMs": 1213,
+      "role": "Archiver",
+      "phase": "archive",
+      "runtime": "local",
+      "agentId": "none",
+      "model": null,
+      "platform": null,
+      "threadId": null,
+      "tasks": "20/20",
+      "sourceIds": [],
+      "sourceTotals": {},
+      "byModel": [],
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null,
+      "cacheReadTokens": null,
+      "cacheCreationTokens": null,
+      "spendSource": "unreported",
+      "costUsdTotal": null
     }
   ],
   "pending": null
