@@ -9,6 +9,19 @@ import { collectSpend } from './spend-collect.js';
 import { describeClaudeCostEstimate } from './claude-cost-estimate.js';
 import { resolveRestoreClient, ampThreadIdFromEnv } from './session-client.js';
 import { validateProjectedSpecs } from './spec-preflight.js';
+import { collectRecoverySources } from './recovery-sources.js';
+import { buildRecoveryBriefing } from './session-recovery.js';
+import {
+  CHECKPOINT_DECISIONS_TOTAL,
+  CHECKPOINT_TMP,
+  buildRecord,
+  buildSnapshot,
+  decisionKey,
+  mergeDecisions,
+  readCheckpoint,
+  saveCheckpoint,
+  validateCheckpointInput,
+} from './session-checkpoint.js';
 import {
   earlierTimestamp,
   formatKyivDisplay,
@@ -1645,8 +1658,24 @@ function localIsoDate(now = new Date()) {
 }
 
 const RESTORE_DECISIONS_LIMIT = 10;
+function printRecoveryBriefing(projectDir, changeName, fields, unpersisted) {
+  if (unpersisted.length === 0) return;
+  try {
+    const sources = collectRecoverySources(projectDir, changeName, {
+      neutralFiles: HANDOFF_NEUTRAL_FILES,
+      slackMs: UNPERSISTED_MTIME_SLACK_MS,
+      handoffFields: fields,
+      missingHandoffFields,
+      parseDecisionsFileEntries,
+    });
+    for (const line of buildRecoveryBriefing(sources, { changeName })) console.log(line);
+  } catch (error) {
+    log.warn(`recovery briefing failed: ${String(error.message || error).split('\n')[0]}`);
+  }
+}
+
 const UNPERSISTED_MTIME_SLACK_MS = 2000;
-const HANDOFF_NEUTRAL_FILES = new Set(['handoff.md', 'metrics.json', 'decisions.md', '.openspec.yaml']);
+const HANDOFF_NEUTRAL_FILES = new Set(['handoff.md', 'metrics.json', 'decisions.md', '.openspec.yaml', 'checkpoint.json', 'checkpoint.json.tmp']);
 
 function newestArtifactMtimeMs(dir, top = true) {
   let newest = 0;
@@ -5258,7 +5287,14 @@ program
 
     if (opts.restore) {
       log.title(`handoff restore  ${name}`);
-      const { filePath, fields } = readHandoffFields(projectDir, name);
+      let filePath = join(changeDir, 'handoff.md');
+      let fields = null;
+      let handoffReadError = '';
+      try {
+        ({ filePath, fields } = readHandoffFields(projectDir, name));
+      } catch (error) {
+        handoffReadError = String(error.message || error).split('\n')[0].slice(0, 80);
+      }
       const memoryPath = resolve(projectDir, MEMORY_FILE_REL);
       const memoryItems = loadMemoryItems(memoryPath).filter(
         (item) => item.type === 'entity' && String(item.name || '').includes(name),
@@ -5266,6 +5302,10 @@ program
       const unpersisted = collectUnpersistedSessionWarnings(changeDir);
       if (!fields && memoryItems.length === 0) {
         printUnpersistedWarnings(unpersisted);
+        printRecoveryBriefing(projectDir, name, fields, unpersisted);
+        if (handoffReadError) {
+          log.warn(`handoff.md unreadable (${handoffReadError}) — using Memory JSON only`);
+        }
         log.err(`No handoff.md or Memory entities for ${name}`);
         log.info(`Expected: ${filePath}`);
         process.exitCode = 1;
@@ -5281,22 +5321,32 @@ program
         console.log('');
         console.log('attach:');
         console.log(fields.attach || '');
+      } else if (handoffReadError) {
+        log.warn(`handoff.md unreadable (${handoffReadError}) — using Memory JSON only`);
       } else {
         log.warn('handoff.md missing — using Memory JSON only');
       }
       const decisionsPath = decisionsFilePath(projectDir, name);
       if (existsSync(decisionsPath)) {
-        log.ok(`decisions.md: ${decisionsPath}`);
-        const entries = parseDecisionsFileEntries(readFileSync(decisionsPath, 'utf-8'));
-        // The reviewer needs the full history for consistency checks, but the
-        // briefing is pasted into every session: print the newest entries and
-        // point at the file for the rest.
-        const older = Math.max(0, entries.length - RESTORE_DECISIONS_LIMIT);
-        for (const entry of entries.slice(older)) {
-          console.log(`- ${entry.date} ${entry.text}`);
+        let entries = null;
+        try {
+          entries = parseDecisionsFileEntries(readFileSync(decisionsPath, 'utf-8'));
+        } catch (error) {
+          const reason = String(error.message || error).split('\n')[0].slice(0, 80);
+          log.warn(`decisions.md unreadable (${reason})`);
         }
-        if (older > 0) {
-          console.log(`(${older} older entries in openspec/changes/${name}/decisions.md)`);
+        if (entries) {
+          log.ok(`decisions.md: ${decisionsPath}`);
+          // The reviewer needs the full history for consistency checks, but the
+          // briefing is pasted into every session: print the newest entries and
+          // point at the file for the rest.
+          const older = Math.max(0, entries.length - RESTORE_DECISIONS_LIMIT);
+          for (const entry of entries.slice(older)) {
+            console.log(`- ${entry.date} ${entry.text}`);
+          }
+          if (older > 0) {
+            console.log(`(${older} older entries in openspec/changes/${name}/decisions.md)`);
+          }
         }
       } else {
         console.log('decisions: none');
@@ -5307,6 +5357,7 @@ program
         log.warn(`Memory JSON empty or missing at ${memoryPath}`);
       }
       printUnpersistedWarnings(unpersisted);
+      printRecoveryBriefing(projectDir, name, fields, unpersisted);
       if (opts.metrics !== false && existsSync(changeDir)) {
         const client = resolveRestoreClient({
           env: process.env,
@@ -5449,6 +5500,106 @@ program
       ),
     );
     process.stdout.write(`${prompt}\n`);
+  });
+
+program
+  .command('checkpoint [change-name]')
+  .description('Save mid-session progress to checkpoint.json without closing the session')
+  .option('--task <id>', 'Task id in progress, like 2.1')
+  .option('--role <role>', 'Current role')
+  .option('--done <text>', 'What is done so far')
+  .option('--blocked <text>', 'Current blocker')
+  .option('--next <text>', 'Next step')
+  .option('--decision <text>', 'Decision to hold (repeatable)', (value, previous) => [...previous, value], [])
+  .action((changeName, opts) => {
+    const projectDir = process.cwd();
+    const resolved = resolveHandoffChange(projectDir, changeName);
+    if (!resolved) {
+      log.err('No active change found. Pass a name: npx agent-orchestrator-kit checkpoint <name>');
+      process.exitCode = 1;
+      return;
+    }
+    if (resolved.ambiguous) {
+      log.err(`Multiple active changes: ${resolved.ambiguous.join(', ')}. Pass the change name argument.`);
+      process.exitCode = 1;
+      return;
+    }
+    const name = resolved;
+    const changeDir = join(projectDir, 'openspec', 'changes', name);
+    if (!existsSync(changeDir)) {
+      log.err(`Change not found: ${name}`);
+      process.exitCode = 1;
+      return;
+    }
+
+    const validated = validateCheckpointInput(
+      { task: opts.task, role: opts.role, done: opts.done, blocked: opts.blocked, next: opts.next, decisions: opts.decision },
+      CANONICAL_ROLE_TOKENS,
+    );
+    if (!validated.ok) {
+      log.err(validated.error);
+      process.exitCode = 1;
+      return;
+    }
+    const input = validated.value;
+
+    const recordedKeys = new Set();
+    const decisionsPath = decisionsFilePath(projectDir, name);
+    if (existsSync(decisionsPath)) {
+      try {
+        for (const entry of parseDecisionsFileEntries(readFileSync(decisionsPath, 'utf-8'))) {
+          recordedKeys.add(decisionKey(entry.text));
+        }
+      } catch (error) {
+        recordedKeys.clear();
+        console.error(`decisions.md unreadable (${String(error.message || error).slice(0, 80)}): all decisions kept`);
+      }
+    }
+
+    const existing = readCheckpoint(changeDir, name);
+    const previous = existing.state === 'valid' ? existing.record : null;
+    const merged = mergeDecisions(previous ? previous.decisions : [], input.decisions, recordedKeys, CHECKPOINT_DECISIONS_TOTAL);
+    if (!merged.ok) {
+      log.err(merged.error);
+      process.exitCode = 1;
+      return;
+    }
+    rmSync(join(changeDir, CHECKPOINT_TMP), { force: true });
+
+    if (existing.state === 'corrupt') {
+      console.error(`checkpoint.json was unreadable (${existing.reason}): replaced; seq restarts at 1`);
+    }
+    const snapshot = buildSnapshot(projectDir, changeDir, {
+      tasks: parseTasksProgress(changeDir),
+      review: parseReviewVerdict(changeDir),
+    });
+    const seq = previous ? previous.seq + 1 : 1;
+    const record = buildRecord({
+      change: name,
+      seq,
+      savedAt: new Date().toISOString(),
+      input,
+      decisions: merged.decisions,
+      snapshot,
+    });
+
+    if (previous && previous.contentDigest === record.contentDigest) {
+      log.ok(`checkpoint unchanged (seq ${previous.seq})`);
+    } else {
+      try {
+        saveCheckpoint(changeDir, record);
+      } catch (error) {
+        log.err(`checkpoint not saved: ${String(error.message || error)}; no other file was changed`);
+        process.exitCode = 1;
+        return;
+      }
+      log.ok(`checkpoint saved (seq ${seq}): openspec/changes/${name}/checkpoint.json`);
+    }
+    if (record.decisions.length) {
+      log.info(
+        `decisions held in checkpoint.json: ${record.decisions.length} (not in decisions.md; list them under ## Decisions at Session Exit)`,
+      );
+    }
   });
 
 program

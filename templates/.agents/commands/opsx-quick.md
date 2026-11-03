@@ -57,7 +57,7 @@ Quick mode for **small changes, demos, and hypothesis testing** where a full rev
 
 5. **Apply**
 
-   Follow `/opsx:apply` for the same change: parent-driven from `tasks.md` (+ `apply-notes.md` when written), conductor marks `[x]`, `design-implementer` for design-brief tasks, build/lint from `orchestrator.yaml` verifier commands.
+   Follow `/opsx:apply` for the same change: parent-driven from `tasks.md` (+ `apply-notes.md` when written), conductor marks `[x]`, `design-implementer` for design-brief tasks, build/lint from `orchestrator.yaml` verifier commands. Run `checkpoint` as in `/opsx:apply` step 6: after each ticked box, each important decision and each `code-reviewer` verdict.
 
 6. **Exit**
 
@@ -67,12 +67,12 @@ Quick mode for **small changes, demos, and hypothesis testing** where a full rev
 
 ## Session Exit (HARD STOP)
 
-Close via the canonical Session Exit protocol in `.agents/rules/session-handoff.mdc` once, at the end of the whole quick session. Write `## Closed role` as `Implementer — quick` (the canonical token keeps metrics and the green-apply line correct). Include review verdict (or `not required`), task and build/lint status in Done.
+Close via the canonical Session Exit protocol in `.agents/rules/session-handoff.mdc` once, at the end of the whole quick session. Write `## Closed role` as `Implementer — quick` (the canonical token keeps metrics and the green-apply line correct). Include review verdict (or `not required`), task, build/lint and `tests:` status in Done.
 
 **Green quick** (every task `[x]`, build/lint green): `## Blocked` `none`, `## Next command` the literal line `npx agent-orchestrator-kit archive <name> --sync`, `## Next role` `none`. `handoff <name>` then prints only that line — paste it as the one fenced block; it runs in a terminal after the PR is merged (for a throw-away demo it may be skipped). Otherwise record the blocker and use `/opsx:propose <name>` (artifacts or review failed) or `/opsx:apply <name>` (tasks remain). Do not start archive in this chat.
 
 **Guardrails**
 - Max ~3 hours of work — if bigger, switch to the full pipeline
-- Still run build/lint before declaring done
+- Still run build/lint and the test step of `/opsx:apply` before declaring done
 - Do not skip OpenSpec — proposal, tasks and a minimal delta are always written
 - Never emit or request paste of a next-session prompt between propose, review and apply; emit exactly one only at final exit

@@ -398,6 +398,7 @@ Tier 2 checks (judgment only — no duplication of Tier 1):
 ```bash
 npm run build   # must pass
 npm run lint    # must pass
+# tests: verifier.test_command runs once before the last task is ticked; Done records "tests: N/N" (empty command = skipped with a warning)
 ```
 
 ```
@@ -865,6 +866,18 @@ npx agent-orchestrator-kit handoff add-bulk-export --restore
 
 `Decisions: none` does not create the file. Re-running persist with the same handoff does not duplicate rows. A later revision of the same topic is a new line; the old line stays. `update` does not migrate historical Memory entities into the file.
 
+### Checkpoint and recovery briefing
+
+Checkpoint after a finished task, an important decision or a `code-reviewer` verdict:
+
+```bash
+npx agent-orchestrator-kit checkpoint add-bulk-export --task 2.1 --done "wired the exporter" --next "start 2.2"
+```
+
+State lives in git-tracked `openspec/changes/<name>/checkpoint.json` (atomic write, unchanged state is a no-op). Decisions stay there until Session Exit lists them under `## Decisions`; `checkpoint` never writes `decisions.md` and never touches `metrics.json`.
+
+When `handoff <name> --restore` prints `UNPERSISTED SESSION`, a `RECOVERY BRIEFING` follows: facts, unknowns, contradictions, gaps and questions, each tagged with its source (`tasks.md`, `checkpoint.json`, `handoff.md`, `review.md`, `decisions.md`, git). Review currency needs a committed `review.md` plus git history; without both it is reported as unknown. The briefing is advisory and read-only - it changes no canonical file, and transcript or LLM extraction is not part of it.
+
 ### Cloud agent handoff (Phase 3)
 
 Every persist writes a `## Runtime` section to `openspec/changes/<name>/handoff.md`:
@@ -1085,9 +1098,24 @@ npx agent-orchestrator-kit archive <name> [--sync | --no-sync --force] [options]
   openspec/changes/archive/YYYY-MM-DD-<name>, validate, write final handoff,
   and print the change-wide metrics summary.
 
+npx agent-orchestrator-kit checkpoint [change-name] [options]
+  --task <id>        Task id finished at this checkpoint
+  --role <role>      Role running the session
+  --done <text>      What finished
+  --blocked <text>   Current blocker
+  --next <text>      Next step
+  --decision <text>  Decision to keep (repeatable)
+  Save progress, blocker, next step and decisions to openspec/changes/<name>/checkpoint.json
+  (atomic write; an unchanged state is a no-op; each call replaces done, blocked and next).
+  Never writes decisions.md - decisions stay in checkpoint.json until Session Exit lists them
+  under ## Decisions. Never closes the session, starts a phase or touches metrics.json.
+
 npx agent-orchestrator-kit handoff [change-name] [options]
   --restore          Print the restore briefing instead of persisting
                      (also records the session start into metrics.json)
+                     When an UNPERSISTED SESSION warning is printed, a RECOVERY BRIEFING
+                     (at most 40 lines and 4096 bytes: facts, unknowns, contradictions, gaps,
+                     questions, each with its source) follows.
   --closed-role <role>      Closed role for persist
   --next-command <command>  Next /opsx:* command
   --next-role <role>        Next role or subagent name

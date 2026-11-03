@@ -41,6 +41,8 @@ Each task must be self-contained for a blind implementer — executable without 
 
 **Done-when quality:** Done-when checks that the new state is present, not only that the old state is gone. A quantitative `Done-when:` check (`grep -c`, "exactly N lines") must be consistent with the code or text that `Do:` of the same task prescribes. Do not hardcode volatile repo values (current version number, dates, "top entry"); describe them as the current value plus a rule evaluated at apply time.
 
+**Fix changes:** when the change name starts with `fix-` or the brief describes a bug fix, the first implementation task adds a regression test that fails on the unfixed code, and its `Done-when:` names the test and states that it fails before the fix and passes after. When no automated test can reproduce the bug, `design.md` says why and the first task records the manual reproduction steps. This is guidance for the architect, not a lint.
+
 On re-propose after `review.md` Verdict REQUEST CHANGES, the conductor MUST pass `review.md` (path + verdict + Required Before Apply list) in the `spec-architect` spawn prompt and verify the report addresses every item; the parent MUST NOT itself edit proposal/design/specs/tasks. Exception: the structure-only propose trigger is the exact line
 
 **Source:** gate-check

@@ -74,13 +74,23 @@ Implement tasks from an OpenSpec change.
    - Show which task is being worked on
    - Implement it in the parent session from its Files/Do/Done-when contract (spawn `code-writer`/`test-writer` only for ≥ 2 independent tasks with no shared files, or on explicit user request; `design-implementer` for design-brief/Figma tasks)
    - Verify the task's Done-when condition actually holds
-   - Mark the task complete in the tasks file: `- [ ]` → `- [x]`
+   - Mark the task complete in the tasks file: `- [ ]` → `- [x]` (the last pending task only after step 6.5)
+   - After each ticked box, each important decision and each `code-reviewer` verdict, save progress with `npx agent-orchestrator-kit checkpoint <name> --task <id> --done "<what finished>" --next "<next step>"`; add `--blocked "<blocker>"` or `--decision "<topic>: <text>"` when they apply (a decision is kept in `checkpoint.json` only: also list it under `## Decisions` at Session Exit). A failed checkpoint is reported and never blocks the session.
    - Continue to next task
 
    **STOP (escape valve) if:**
    - The task requires information beyond its contract + `apply-notes.md` + referenced artifacts → record the gap in `handoff.md`, next command `/opsx:propose <name>` — never improvise
    - Error or blocker encountered → report and wait for guidance
    - User interrupts
+
+6.5. **Run the tests once (before the last box)**
+
+   When one task is left pending and its Done-when holds, do not tick it yet. Read `.agents/orchestrator.yaml` → `verifier.test_command` and run it once from the project root; show only the last 20 lines of its output and keep the exit code of the command itself (not of `tail`). A green run of the same command earlier in this session with no edit since counts, so do not run it twice.
+   - **Empty or missing command** (or no `orchestrator.yaml`): skip, warn "verifier.test_command is empty — tests not run", write `tests: skipped (no test_command)` in `## Done`, then tick the last box (its Done-when holds); `## Blocked` is not changed for it. Never guess a command such as `npm test`.
+   - **Resource limits** (a project rule or a busy machine): narrow the run — the specs of the changed files, or `--maxWorkers=1` — and write `tests: <passed>/<total> (narrowed: <what>)`; a green narrowed run ticks the last box. If nothing can run, write `tests: not run (<reason>)` in `## Done`, repeat the reason in `## Blocked`, leave the last box unticked and stop. Never skip a run without a record.
+   - **Red run** (exit ≠ 0): STOP and leave the last box unticked, with `tests: red (see Blocked)` in `## Done`. Fix it in this session when the cause is inside the tasks' `Files:` and run again; otherwise end through the escape valve (the failing command and its last lines in `## Blocked`, next command `/opsx:propose <name>`). A failure that already existed before this change (the same test fails on the unchanged code) needs an explicit user decision: name the test in `## Blocked` and wait. When the user accepts it, tick the last box, write `tests: 216/217 (accepted by user: <test name>)` in `## Done` and leave `## Blocked` empty for it; when the user does not accept it, the box stays unticked.
+   - **Green run** (exit 0): tick the last box and write `tests: <passed>/<total>` in `## Done` (`tests: green (exit 0)` when the output has no counts).
+   - **Session ends earlier** (more than one task still pending): write `tests: not run (paused: <k> tasks pending)` in `## Done`; this is not a blocker.
 
 7. **On completion or pause, show status**
 

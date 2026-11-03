@@ -22,6 +22,7 @@ rules:
     - "A quantitative Done-when check (grep -c, 'exactly N lines') must be consistent with the code or text that Do: of the same task prescribes."
     - "Do not hardcode volatile repo values (current version number, dates, 'top entry'); describe them as the current value plus a rule evaluated at apply time."
     - "Last task: build, lint, and tests pass."
+    - "Fix changes (name starts with `fix-` or the brief describes a bug fix): the first implementation task adds a regression test that fails on the unfixed code; its Done-when names the test and states that it fails before the fix and passes after. Guidance only, not a lint."
   specs:
     - "Delta format: ADDED / MODIFIED / REMOVED Requirements; every requirement uses SHALL or MUST and has at least one '#### Scenario:'."
     - "Keep each new requirement description (between '### Requirement:' and its first '#### Scenario:') at most 500 characters; headings and scenarios do not count. Use one behavior per requirement; put examples in scenarios and implementation details in design/tasks."
