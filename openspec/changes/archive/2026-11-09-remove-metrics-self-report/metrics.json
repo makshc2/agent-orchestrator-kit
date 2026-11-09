@@ -2,15 +2,17 @@
   "version": 2,
   "change": "remove-metrics-self-report",
   "createdAt": "2026-11-09T15:04:14.853Z",
-  "updatedAt": "2026-11-09T17:27:36.034Z",
-  "archivedAt": null,
+  "updatedAt": "2026-11-09T17:37:25.406Z",
+  "archivedAt": "2026-11-09T17:37:25.406Z",
   "spend": {
     "inputTokens": 51139212,
     "outputTokens": 336182,
     "totalTokens": 51475394,
     "costUsd": null,
     "costUsdEstimated": 52.1161,
-    "costUsdTotal": 52.1161
+    "costUsdTotal": 52.1161,
+    "cacheReadTokens": 37335324,
+    "cacheCreationTokens": 1140842
   },
   "spendByPlatform": {
     "cursor": {
@@ -21,6 +23,8 @@
       "ampCredits": null,
       "costUsdEstimated": 39.3261,
       "costUsdTotal": 39.3261,
+      "cacheReadTokens": null,
+      "cacheCreationTokens": null,
       "source": "cursor-hook"
     },
     "claude": {
@@ -31,6 +35,8 @@
       "ampCredits": null,
       "costUsdEstimated": 12.79,
       "costUsdTotal": 12.79,
+      "cacheReadTokens": 37335324,
+      "cacheCreationTokens": 1140842,
       "source": "claude-jsonl"
     },
     "amp": {
@@ -41,6 +47,8 @@
       "ampCredits": null,
       "costUsdEstimated": null,
       "costUsdTotal": null,
+      "cacheReadTokens": null,
+      "cacheCreationTokens": null,
       "source": "none"
     }
   },
@@ -54,7 +62,9 @@
       "costUsd": null,
       "ampCredits": null,
       "costUsdEstimated": 12.79,
-      "costUsdTotal": 12.79
+      "costUsdTotal": 12.79,
+      "cacheReadTokens": 37335324,
+      "cacheCreationTokens": 1140842
     },
     {
       "model": "gpt-6",
@@ -65,7 +75,9 @@
       "costUsd": null,
       "ampCredits": null,
       "costUsdEstimated": null,
-      "costUsdTotal": null
+      "costUsdTotal": null,
+      "cacheReadTokens": null,
+      "cacheCreationTokens": null
     },
     {
       "model": "grok-4.7-xhigh-fast",
@@ -76,13 +88,15 @@
       "costUsd": null,
       "ampCredits": null,
       "costUsdEstimated": 39.3261,
-      "costUsdTotal": 39.3261
+      "costUsdTotal": 39.3261,
+      "cacheReadTokens": null,
+      "cacheCreationTokens": null
     }
   ],
   "totals": {
-    "sessions": 7,
-    "durationMs": 3134640,
-    "leadTimeMs": 8587408,
+    "sessions": 8,
+    "durationMs": 3135601,
+    "leadTimeMs": 9190553,
     "cloudSessions": 0
   },
   "phases": {
@@ -98,6 +112,8 @@
       "costUsd": null,
       "costUsdEstimated": 2.1994,
       "costUsdTotal": 2.1994,
+      "cacheReadTokens": 3936685,
+      "cacheCreationTokens": 349462,
       "agents": [
         "Architect"
       ],
@@ -117,6 +133,8 @@
       "costUsd": null,
       "costUsdEstimated": 10.5906,
       "costUsdTotal": 10.5906,
+      "cacheReadTokens": 33398639,
+      "cacheCreationTokens": 791380,
       "agents": [
         "Spec Reviewer"
       ],
@@ -137,12 +155,33 @@
       "costUsd": null,
       "costUsdEstimated": 39.3261,
       "costUsdTotal": 39.3261,
+      "cacheReadTokens": null,
+      "cacheCreationTokens": null,
       "agents": [
         "Implementer"
       ],
       "models": [
         "grok-4.7-xhigh-fast"
       ]
+    },
+    "archive": {
+      "sessions": 1,
+      "durationMs": 961,
+      "startedAt": "2026-11-09T17:37:24.445Z",
+      "endedAt": "2026-11-09T17:37:25.406Z",
+      "leadTimeMs": 961,
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "costUsdEstimated": null,
+      "costUsdTotal": null,
+      "cacheReadTokens": null,
+      "cacheCreationTokens": null,
+      "agents": [
+        "Archiver"
+      ],
+      "models": []
     }
   },
   "sessions": [
@@ -829,6 +868,32 @@
       "cacheCreationTokens": null,
       "spendSource": "adapter",
       "costUsdTotal": 39.3261
+    },
+    {
+      "startedAt": "2026-11-09T17:37:24.445Z",
+      "endedAt": "2026-11-09T17:37:25.406Z",
+      "durationMs": 961,
+      "role": "Archiver",
+      "phase": "archive",
+      "runtime": "local",
+      "agentId": "none",
+      "model": null,
+      "platform": null,
+      "threadId": null,
+      "tasks": "19/19",
+      "sourceIds": [],
+      "sourceTotals": {},
+      "byModel": [],
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null,
+      "cacheReadTokens": null,
+      "cacheCreationTokens": null,
+      "spendSource": "unreported",
+      "costUsdTotal": null
     }
   ],
   "pending": null

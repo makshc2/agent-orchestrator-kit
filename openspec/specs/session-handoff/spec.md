@@ -21,18 +21,18 @@
 
 ### Requirement: Persist Memory and handoff on session exit
 
-Агент MUST NOT оголошувати фазу закритою, поки не виконає кроки **в цьому порядку в батьківській сесії**: (1) записати `openspec/changes/<name>/handoff.md`, включно із заповненою секцією `## Metrics`, (2) виконати `npx agent-orchestrator-kit handoff <name>` з exit 0 (CLI upsert memory.json абсолютним шляхом, записує сесію в `metrics.json` і друкує розширений промпт у stdout), (3) вставити stdout CLI у чат як один fenced промпт. Спавн `session-handoff` у режимі persist дозволений ЛИШЕ як fallback, коли крок (2) повернув помилку. Оновлення Memory MCP entities — опційне дзеркало (одним викликом, якщо tools доступні); його відсутність MUST NOT блокувати закриття. Вимоги до змісту промпта не змінюються: перший рядок `/opsx:<command>`, самодостатній, без службового ярлика; єдиний виняток — зелений apply, коли замість промпту CLI друкує один рядок `npx agent-orchestrator-kit archive <name> --sync` (вимога «Зелений apply друкує команду archive замість промпту»).
+Агент MUST NOT оголошувати фазу закритою, поки не виконає кроки **в цьому порядку в батьківській сесії**: (1) записати `openspec/changes/<name>/handoff.md`, (2) виконати `npx agent-orchestrator-kit handoff <name>` з exit 0 (CLI upsert memory.json абсолютним шляхом, записує сесію в `metrics.json` і друкує розширений промпт у stdout), (3) вставити stdout CLI у чат як один fenced промпт. Спавн `session-handoff` у режимі persist дозволений ЛИШЕ як fallback, коли крок (2) повернув помилку. Оновлення Memory MCP entities — опційне дзеркало (одним викликом, якщо tools доступні); його відсутність MUST NOT блокувати закриття. Вимоги до змісту промпта не змінюються: перший рядок `/opsx:<command>`, самодостатній, без службового ярлика; єдиний виняток — зелений apply, коли замість промпту CLI друкує один рядок `npx agent-orchestrator-kit archive <name> --sync` (вимога «Зелений apply друкує команду archive замість промпту»).
 
 #### Scenario: Exit без субагента
 
 - **WHEN** фаза завершена і `npx agent-orchestrator-kit handoff <name>` повернув exit 0
 - **THEN** батьківська сесія вставляє stdout-промпт і закривається без спавну `session-handoff`
 
-#### Scenario: Метрики заповнені до запуску CLI
+#### Scenario: Session Exit has no metrics step
 
-- **WHEN** батьківська сесія готує Session Exit
-- **THEN** протокол вимагає заповнити `## Metrics` у `handoff.md` до кроку (2)
-- **AND** CLI не використовується як спосіб «додати метрики пізніше»
+- **WHEN** the parent prepares Session Exit
+- **THEN** the protocol has no step that asks to fill a `## Metrics` section
+- **AND** session metrics reach `metrics.json` through the persist call (`--model`, optional `--platform` and spend flags, adapters)
 
 #### Scenario: Archive закриває пайплайн без next-prompt
 
@@ -81,16 +81,16 @@
 
 ### Requirement: Handoff file template
 
-Kit SHALL постачати шаблон `handoff.md` (у skill/команді) з секціями: Closed role, Change, Done, Decisions, Blocked, Next command, Next role, Attach, Subagents to spawn, Constraints, Runtime, Metrics, і готовий текст промпта наступної сесії (без ярлика `NEXT_SESSION_PROMPT`). Секція Runtime SHALL містити поля `runtime` (`local` або `cloud`) і `agent_id`. Секція Metrics SHALL містити рядки `platform`, `model`, `input_tokens`, `output_tokens`, `cost_usd`, `amp_credits` і опційно `spend_source`; її заповнює агент на виході сесії, а CLI persist зберігає її як самозвіт і лише дописує відсутні рядки зі значенням `unknown`. CLI MUST NOT перезаписувати секцію резолвленими значеннями (прапорці, env, host env, `--collect`) — вони живуть у `metrics.json`.
+Kit SHALL постачати шаблон `handoff.md` (у skill/команді) з секціями: Closed role, Change, Done, Decisions, Blocked, Next command, Next role, Attach, Subagents to spawn, Constraints, Runtime, і готовий текст промпта наступної сесії (без ярлика `NEXT_SESSION_PROMPT`). Секція Runtime SHALL містити поля `runtime` (`local` або `cloud`) і `agent_id`. Шаблон MUST NOT містити секцію `## Metrics`: метрики сесії приходять з прапорців і адаптерів persist-виклику.
 
-Правила, які шаблон і канонічний протокол MUST фіксувати: `model` у `## Metrics` і `--model` SHALL бути LLM product id (наприклад `cursor-grok-4.6-xhigh-fast`, `claude-opus-5`), не Closed role і не ім'я субагента; family-ярлик (`cursor-grok-4.6`) MAY бути fallback, коли product id невідомий, але CLI все одно візьме product id з adapter sources, коли вони є. Агент MUST NOT ставити `spend_source: self-report`, коли числові поля `unknown` / порожні — тоді `spend_source` SHALL бути `unknown` або рядок відсутній. Closed role у `handoff.md` MAY містити речення після `—`; metrics зберігає лише канонічний токен (`Explorer|Architect|Spec Reviewer|Implementer|Archiver|Design Intake`).
+Правила, які шаблон і канонічний протокол MUST фіксувати: `--model` SHALL бути LLM product id (наприклад `cursor-grok-4.6-xhigh-fast`, `claude-opus-5`), не Closed role і не ім'я субагента; family-ярлик (`cursor-grok-4.6`) MAY бути fallback, коли product id невідомий, але CLI все одно візьме product id з adapter sources, коли вони є. Closed role у `handoff.md` MAY містити речення після `—`; metrics зберігає лише канонічний токен (`Explorer|Architect|Spec Reviewer|Implementer|Archiver|Design Intake`).
 
-Наявні файли без секцій Runtime або Metrics лишаються валідними — секція дописується наступним persist-ом без помилки. Файл SHALL жити в `openspec/changes/<name>/handoff.md` (не в gitignored cache). Він не є артефактом схеми OpenSpec. CLI `npx agent-orchestrator-kit handoff <name>` SHALL перезаписувати секцію Prompt розширеним самодостатнім текстом мовою `project.agent_language`.
+Наявні файли без секції Runtime лишаються валідними — секція дописується наступним persist-ом без помилки; наявна секція `## Metrics` ігнорується і відкидається при наступному перезаписі файла (вимога «Legacy `## Metrics` section in handoff.md is ignored» у change-metrics). Файл SHALL жити в `openspec/changes/<name>/handoff.md` (не в gitignored cache). Він не є артефактом схеми OpenSpec. CLI `npx agent-orchestrator-kit handoff <name>` SHALL перезаписувати секцію Prompt розширеним самодостатнім текстом мовою `project.agent_language`.
 
 #### Scenario: Init documents the template
 
 - **WHEN** виконується init
-- **THEN** `.agents/skills/agent-orchestration/SKILL.md` або always-apply rule містить секції шаблону `handoff.md` (включно з Runtime і Metrics) і приклад промпта, що починається з `/opsx:`
+- **THEN** `.agents/skills/agent-orchestration/SKILL.md` або always-apply rule містить секції шаблону `handoff.md` (включно з Runtime, без Metrics) і приклад промпта, що починається з `/opsx:`
 
 #### Scenario: Handoff file is inside the change
 
@@ -109,18 +109,12 @@ Kit SHALL постачати шаблон `handoff.md` (у skill/команді)
 - **THEN** команда завершується з exit 0
 - **AND** секція Runtime присутня у файлі після запису
 
-#### Scenario: Файл без Metrics не блокує persist
+#### Scenario: A legacy Metrics section does not block persist
 
-- **GIVEN** наявний `handoff.md` містить усі обов'язкові секції, але не має `## Metrics`
-- **WHEN** виконується persist
-- **THEN** команда завершується з exit 0
-- **AND** секція Metrics присутня у файлі після запису зі значеннями `unknown`
-
-#### Scenario: Протокол забороняє self-report при unknown токенах
-
-- **WHEN** після `init`/`update` читається `.agents/rules/session-handoff.mdc`
-- **THEN** правило забороняє писати `spend_source: self-report`, коли `input_tokens` / `output_tokens` є `unknown`
-- **AND** каже, що placeholder самозвіт не є spend override для leftover
+- **GIVEN** an existing `handoff.md` has all required sections and a legacy `## Metrics` section
+- **WHEN** persist runs
+- **THEN** the command exits 0
+- **AND** the file after the write has no `## Metrics` section
 
 ### Requirement: Memory entity schema for handoff
 
@@ -252,57 +246,6 @@ Kit SHALL постачати команду `npx agent-orchestrator-kit handoff 
 - **GIVEN** активна зміна без decisions.md
 - **WHEN** виконується `gate-check` або pre-commit hook
 - **THEN** відсутність файлу не є помилкою і не впливає на exit code
-
-### Requirement: Session Exit вимагає самозвіт метрик у `## Metrics`
-
-Канонічний протокол Session Exit SHALL вимагати від батьківської сесії заповнити секцію `## Metrics` у `openspec/changes/<name>/handoff.md` **до** запуску `npx agent-orchestrator-kit handoff <name>`. Секція SHALL містити рядки `platform` (`cursor` | `claude` | `amp`), `model` (LLM product id цього чату), `input_tokens`, `output_tokens`, `cost_usd`, `amp_credits` і опційно `spend_source`.
-
-Правила заповнення, які текст протоколу MUST фіксувати: агент бере числа з того, що бачить сам; невідоме поле MUST записуватись як `unknown`, а не як `0` і не як вигадане число; `model` MUST бути LLM product id (`claude-opus-5`, `claude-fable-5`, `gpt-5.6-sol`, `cursor-grok-4.6-xhigh-fast`, `accounts/fireworks/models/glm-5p2`) і MUST NOT бути Closed role чи ім'ям субагента; family `cursor-grok-4.6` без суфікса tier/speed SHALL використовуватись лише коли точніший product id невідомий; `amp_credits` MUST лишатись окремо від `cost_usd`; `spend_source: self-report` MUST ставитись лише коли є хоч одне відоме число; при всіх `unknown` агент MUST NOT маркувати секцію як self-report — CLI тоді бере adapter leftover. Протокол MUST NOT казати, що самозвіт з `unknown` є первинним джерелом spend.
-
-Той самий протокол і той самий виклик CLI SHALL діяти в Cursor, Claude Code і Amp; жоден MUST NOT вимагати Cursor SDK, парсер Claude `/cost` або Amp billing API як обов'язковий крок. Канонічний текст живе в `templates/.agents/rules/session-handoff.mdc` і дзеркалиться в skill `agent-orchestration`, субагенті `session-handoff` і субагенті `spec-archiver`. Відсутність секції MUST NOT блокувати persist — CLI попереджає і пише сесію як `unreported`.
-
-Той самий протокол MUST фіксувати: `platform` і `model` є обов'язковими значеннями, не `unknown` (агент завжди знає свій клієнт і модель чату); перегенерація next-thread промпта після правки `handoff.md` виконується лише `npx agent-orchestrator-kit handoff <name> --no-metrics`, повторний повний persist у тій самій сесії MUST NOT запускатись (кожен повний persist = нова сесія в `metrics.json`); `decisions.md` MUST NOT редагуватись агентом напряму — лише через `## Decisions` і persist; після persist сесія зупиняється, будь-яка інша робота (хотфікс поза OpenSpec, наступна фаза, archive) — новий чат.
-
-#### Scenario: Правило описує секцію і порядок кроків
-
-- **WHEN** після `init`/`update` читається `.agents/rules/session-handoff.mdc`
-- **THEN** Session Exit містить крок «заповнити `## Metrics`» перед кроком запуску `handoff <name>`
-- **AND** перелічує ключі `platform`, `model`, `input_tokens`, `output_tokens`, `cost_usd`, `amp_credits`
-
-#### Scenario: Протокол забороняє вигадані числа і нулі
-
-- **WHEN** після `init`/`update` читається `.agents/rules/session-handoff.mdc`
-- **THEN** правило вимагає `unknown` для невідомих полів
-- **AND** забороняє підставляти `0` або вгадане значення
-
-#### Scenario: Протокол віддає перевагу product id над family
-
-- **WHEN** після `init`/`update` читається `.agents/rules/session-handoff.mdc`
-- **THEN** приклад `--model` / `model` містить product id, не лише family `cursor-grok-4.6`
-- **AND** правило каже, що adapter sources перемагають family, коли hook дав точніший id
-
-#### Scenario: Той самий самозвіт у трьох IDE
-
-- **WHEN** після `init`/`update` читаються `session-handoff.mdc`, skill `agent-orchestration` і субагент `session-handoff`
-- **THEN** усі три тексти описують ту саму секцію `## Metrics` і той самий виклик `npx agent-orchestrator-kit handoff <name>`
-- **AND** жоден не вимагає Cursor SDK, парсер Claude `/cost` або Amp billing API
-
-#### Scenario: Archiver самозвітує так само
-
-- **WHEN** після `init`/`update` читається субагент `spec-archiver` (fallback без CLI)
-- **THEN** текст вимагає заповнити `## Metrics` перед `npx agent-orchestrator-kit archive <name>`
-- **AND** описує фінальну зводку archive як завершення пайплайна
-- **WHEN** читається команда `/opsx:archive` (fallback над CLI)
-- **THEN** вона не містить кроку самозвіту `## Metrics` і блоку Session Start / Exit: лише викликає CLI, показує stdout, а на exit ≠ 0 друкує відмову і зупиняється
-
-#### Scenario: Правило забороняє повторний persist і ручний decisions.md
-
-- **WHEN** після `init`/`update` читається `.agents/rules/session-handoff.mdc`
-- **THEN** текст містить `--no-metrics` як єдиний спосіб перегенерувати промпт
-- **AND** містить заборону повторного повного persist у тій самій сесії
-- **AND** містить заборону ручного редагування `decisions.md`
-- **AND** вимагає новий чат для хотфіксу поза OpenSpec після persist
-- **AND** позначає `platform` і `model` як обов'язкові (не `unknown`)
 
 ### Requirement: Зелений apply друкує команду archive замість промпту
 
@@ -619,3 +562,55 @@ Building the briefing SHALL use only local files and read-only git commands with
 #### Scenario: Read-only
 - **WHEN** restore runs with `--no-metrics` on an unpersisted change
 - **THEN** no file under the project changes
+
+### Requirement: Session Exit protocol has no metrics self-report step
+
+The canonical Session Exit protocol (`session-handoff.mdc`) and its mirrors (skill `agent-orchestration`, subagents `session-handoff` and `spec-archiver`, templates `AGENTS.md` and `CLAUDE.md`) SHALL NOT ask the parent to write, fill or mention a `## Metrics` handoff section. Session metrics come from the persist call: `--model`, optional `--platform`, spend flags and adapters. The skill's `handoff.md` template SHALL have no Metrics block.
+
+#### Scenario: The rule has no Metrics step
+
+- **WHEN** `.agents/rules/session-handoff.mdc` is read after `init`/`update`
+- **THEN** Session Exit lists writing `handoff.md` and then running `npx agent-orchestrator-kit handoff <name>`
+- **AND** the text contains no `## Metrics`, `spend_source`, `amp_credits` or `self-report`
+
+#### Scenario: The mirrors agree
+
+- **WHEN** the skill `agent-orchestration`, the subagents `session-handoff` and `spec-archiver`, `AGENTS.md` and `CLAUDE.md` are read
+- **THEN** none asks to fill a `## Metrics` section
+- **AND** the skill's `handoff.md` template has no `## Metrics` block (its separate `## Metrics (health check per change)` section about the `metrics` command stays)
+
+#### Scenario: The Archiver fallback passes flags, not a section
+
+- **WHEN** the subagent `spec-archiver` is read
+- **THEN** it tells the parent to pass `--model` (and `--platform` when detection fails) to `npx agent-orchestrator-kit archive <name>` and has no step that fills `## Metrics`
+- **WHEN** the command `/opsx:archive` is read
+- **THEN** it has no `## Metrics` step and no Session Start / Exit block
+
+### Requirement: Session Exit keeps the model, persist-once and decisions rules
+
+The protocol SHALL state: pass `--model <llm-product-id>` (never a Closed role, subagent name or Amp mode) and never guess token counts; `--platform` only when client detection is wrong; regenerate the prompt only with `handoff <name> --no-metrics`; no second full persist in a session; only the CLI writes `decisions.md`, from `## Decisions`; stop after persist.
+
+#### Scenario: The protocol prefers a product id over a family
+
+- **WHEN** `.agents/rules/session-handoff.mdc` and the skill `agent-orchestration` are read after `init`/`update`
+- **THEN** the `--model` example contains product ids, not only the family `cursor-grok-4.6`
+- **AND** the skill says adapter sources win over a family `--model` when a hook gave a more exact id
+
+#### Scenario: The protocol forbids guessed token counts
+
+- **WHEN** `.agents/rules/session-handoff.mdc` is read after `init`/`update`
+- **THEN** it says the parent MUST NOT guess tokens
+- **AND** it asks for no token numbers in `handoff.md`
+
+#### Scenario: The protocol forbids a repeated persist and a manual decisions.md
+
+- **WHEN** `.agents/rules/session-handoff.mdc` is read after `init`/`update`
+- **THEN** it names `--no-metrics` as the only way to regenerate the prompt
+- **AND** it forbids a second full persist in the same session and manual edits of `decisions.md`
+- **AND** it requires a new chat for an out-of-OpenSpec hotfix after persist
+
+#### Scenario: The same call works in three IDEs
+
+- **WHEN** the rule, the skill `agent-orchestration` and the subagent `session-handoff` are read
+- **THEN** all three describe the same `npx agent-orchestrator-kit handoff <name>` call
+- **AND** none requires the Cursor SDK, a Claude `/cost` parser or an Amp billing API
