@@ -206,7 +206,7 @@ test('metricsLedgerInvariantIssues checks version and spend.costUsdTotal against
 
 // --- canonical roles -----------------------------------------------------------
 
-test('canonicalRole maps the spec-architect and code-writer subagents to their phases and leaves unknown roles raw', () => {
+test('canonicalRole maps the spec-architect, code-writer and bare Reviewer roles to their phases and leaves unknown roles raw', () => {
   assert.equal(canonicalRole('Spec Architect'), 'Architect');
   assert.equal(canonicalRole('Spec Architect — propose complete, ready for Spec Reviewer'), 'Architect');
   assert.equal(canonicalRole('spec architect'), 'Architect');
@@ -215,6 +215,9 @@ test('canonicalRole maps the spec-architect and code-writer subagents to their p
   assert.equal(canonicalRole('Code Writer (apply, 8/8 tasks)'), 'Implementer');
   assert.equal(canonicalRole('code-writer — apply done'), 'Implementer');
   assert.equal(canonicalRole('Code Writer'), 'Implementer');
+  assert.equal(canonicalRole('Reviewer'), 'Spec Reviewer');
+  assert.equal(canonicalRole('Reviewer — APPROVE'), 'Spec Reviewer');
+  assert.equal(canonicalRole('reviewer'), 'Spec Reviewer');
   assert.equal(canonicalRole('Conductor'), 'Conductor');
   assert.equal(canonicalRole('Code Reviewer — LGTM'), 'Code Reviewer');
   assert.equal(isCanonicalRole('Conductor'), false);

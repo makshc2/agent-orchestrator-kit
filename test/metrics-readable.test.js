@@ -182,13 +182,31 @@ test('formatMetricsCostLine shows billed and estimate without mixing credits', (
   assert.equal(mixed.includes('20'), false);
 });
 
-test('resolveSessionSpend keeps self-report and flags out of costUsdEstimated', () => {
-  const fromSelf = resolveSessionSpend({}, { costUsd: 0.42 }, []);
-  assert.equal(fromSelf.costUsd, 0.42);
-  assert.equal(fromSelf.costUsdEstimated, null);
-  const fromFlag = resolveSessionSpend({ costUsd: 9.99 }, {}, []);
+test('resolveSessionSpend keeps flags out of costUsdEstimated', () => {
+  const fromFlag = resolveSessionSpend({ costUsd: 9.99 }, []);
   assert.equal(fromFlag.costUsd, 9.99);
   assert.equal(fromFlag.costUsdEstimated, null);
+  assert.equal(fromFlag.spendSource, 'flag');
+  const empty = resolveSessionSpend({}, []);
+  assert.equal(empty.costUsd, null);
+  assert.equal(empty.costUsdEstimated, null);
+  assert.equal(empty.spendSource, 'unreported');
+});
+
+test('recomputeMetricsAggregates keeps ampCredits out of costUsd', () => {
+  const metrics = {
+    sessions: [{
+      phase: 'apply',
+      platform: 'amp',
+      role: 'Implementer',
+      ampCredits: 20,
+      costUsd: null,
+    }],
+  };
+  recomputeMetricsAggregates(metrics);
+  assert.equal(metrics.spend.costUsd, null);
+  assert.equal(metrics.sessions[0].costUsd, null);
+  assert.equal(metrics.spendByPlatform.amp.ampCredits, 20);
 });
 
 function ampNullCostSources(prefix, count) {

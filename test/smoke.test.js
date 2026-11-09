@@ -1506,7 +1506,7 @@ specs ready
 spec-reviewer
 `;
 
-function handoffWithMetrics(overrides = {}) {
+function handoffWithLegacyMetrics(overrides = {}) {
   const rows = {
     platform: 'unknown',
     model: 'unknown',
@@ -2834,14 +2834,14 @@ test('archive collects Cursor hook written after archive start into the Archiver
   }
 });
 
-test('archive ignores leftover apply ## Metrics that would double-count', () => {
+test('archive ignores a legacy ## Metrics section that repeats the apply numbers', () => {
   const dir = mkdtempSync(join(tmpdir(), 'aok-archive-stale-metrics-'));
   try {
     runInit(dir, '--profile generic --name ArchiveStale --lang en');
     const changeDir = makeArchiveFixture(dir, 'add-auth');
     writeFileSync(
       join(changeDir, 'handoff.md'),
-      handoffWithMetrics({
+      handoffWithLegacyMetrics({
         platform: 'cursor',
         model: 'cursor-grok-4.6',
         input_tokens: '1000',
@@ -2903,6 +2903,8 @@ test('archive ignores leftover apply ## Metrics that would double-count', () => 
       false,
       'Archiver must not steal leftover apply hook tokens',
     );
+    assert.equal(archiver.spendSource, 'unreported');
+    assert.doesNotMatch(readFileSync(join(archiveRoot, entry, 'handoff.md'), 'utf-8'), /## Metrics/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -2965,7 +2967,7 @@ test('persist prefers hook product id over --model family in session and spendBy
   }
 });
 
-test('leftover sources resync placeholder self-report totals to adapter', () => {
+test('leftover resyncs an unreported session whose handoff carried a legacy placeholder Metrics section', () => {
   const dir = mkdtempSync(join(tmpdir(), 'aok-leftover-resync-'));
   try {
     runInit(dir, '--profile generic --name LeftoverResync --lang en');
@@ -2973,7 +2975,7 @@ test('leftover sources resync placeholder self-report totals to adapter', () => 
     mkdirSync(changeDir, { recursive: true });
     writeFileSync(
       join(changeDir, 'handoff.md'),
-      handoffWithMetrics({ spend_source: 'self-report' }),
+      handoffWithLegacyMetrics({ spend_source: 'self-report' }),
     );
     cliExec(dir, 'handoff add-thing --model cursor-grok-4.6');
     const before = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
@@ -3218,20 +3220,18 @@ test('persist without pending uses createdAt then last.endedAt and ignores older
   }
 });
 
-test('archive unique ## Metrics still fills Archiver self-report', () => {
+test('archive ignores a unique legacy ## Metrics section', () => {
   const dir = mkdtempSync(join(tmpdir(), 'aok-archive-self-report-'));
   try {
     runInit(dir, '--profile generic --name ArchiveSelf --lang en');
     const changeDir = makeArchiveFixture(dir, 'add-auth');
     writeFileSync(
       join(changeDir, 'handoff.md'),
-      handoffWithMetrics({
+      handoffWithLegacyMetrics({
         platform: 'amp',
         model: 'claude-fable-5',
         input_tokens: '4000',
         output_tokens: '10',
-        cost_usd: 'unknown',
-        amp_credits: 'unknown',
         spend_source: 'self-report',
       }),
     );
@@ -3242,10 +3242,37 @@ test('archive unique ## Metrics still fills Archiver self-report', () => {
     const entry = readdirSync(archiveRoot).find((d) => d.endsWith('-add-auth'));
     const metrics = JSON.parse(readFileSync(join(archiveRoot, entry, 'metrics.json'), 'utf-8'));
     const archiver = metrics.sessions.find((session) => session.role === 'Archiver');
+    assert.equal(archiver.model, null);
+    assert.equal(archiver.inputTokens, null);
+    assert.equal(archiver.spendSource, 'unreported');
+    assert.doesNotMatch(readFileSync(join(archiveRoot, entry, 'handoff.md'), 'utf-8'), /## Metrics/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('archive takes platform, model and spend from flags', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aok-archive-flag-spend-'));
+  try {
+    runInit(dir, '--profile generic --name ArchiveFlags --lang en');
+    makeArchiveFixture(dir, 'add-auth');
+    installOpenspecStub(dir);
+    const result = cliSpawn(dir, [
+      'archive', 'add-auth', '--sync',
+      '--platform', 'amp',
+      '--model', 'claude-fable-5',
+      '--input-tokens', '4000',
+      '--output-tokens', '10',
+    ]);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const archiveRoot = join(dir, 'openspec/changes/archive');
+    const entry = readdirSync(archiveRoot).find((d) => d.endsWith('-add-auth'));
+    const metrics = JSON.parse(readFileSync(join(archiveRoot, entry, 'metrics.json'), 'utf-8'));
+    const archiver = metrics.sessions.find((session) => session.role === 'Archiver');
     assert.equal(archiver.platform, 'amp');
     assert.equal(archiver.model, 'claude-fable-5');
     assert.equal(archiver.inputTokens, 4000);
-    assert.equal(archiver.spendSource, 'self-report');
+    assert.equal(archiver.spendSource, 'flag');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -4227,13 +4254,13 @@ test('archive writes Runtime into the final handoff', () => {
   }
 });
 
-test('parseMetricsSection normalizes values and persist sums totalTokens without a section key', () => {
+test('persist takes totals from flags and ignores legacy values', () => {
   const dir = mkdtempSync(join(tmpdir(), 'aok-metrics-parse-'));
   try {
     runInit(dir, '--profile generic --name MetricsParse --lang en');
     const changeDir = join(dir, 'openspec/changes/add-thing');
     mkdirSync(changeDir, { recursive: true });
-    writeFileSync(join(changeDir, 'handoff.md'), handoffWithMetrics({
+    writeFileSync(join(changeDir, 'handoff.md'), handoffWithLegacyMetrics({
       platform: 'cursor',
       model: 'unknown',
       input_tokens: '128,000',
@@ -4243,7 +4270,7 @@ test('parseMetricsSection normalizes values and persist sums totalTokens without
       spend_source: 'self-report',
     }).replace('- spend_source: self-report', '- spend_source: self-report\n- duration_ms: 999'));
 
-    const result = cliSpawn(dir, ['handoff', 'add-thing']);
+    const result = cliSpawn(dir, ['handoff', 'add-thing', '--input-tokens', '128000', '--output-tokens', '9400', '--cost-usd', '1.25']);
     assert.equal(result.status, 0);
     const metrics = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
     const session = metrics.sessions[0];
@@ -4252,28 +4279,21 @@ test('parseMetricsSection normalizes values and persist sums totalTokens without
     assert.equal(session.totalTokens, 137400);
     assert.equal(session.costUsd, 1.25);
     assert.equal(session.model, null);
-    assert.equal(session.spendSource, 'self-report');
-    assert.ok(!Object.prototype.hasOwnProperty.call(session, 'durationMs') || session.durationMs !== 999);
-
-    writeFileSync(join(changeDir, 'handoff.md'), handoffWithMetrics({ platform: 'chatgpt', model: 'claude-opus-5' }));
-    const invalid = cliSpawn(dir, ['handoff', 'add-thing']);
-    assert.equal(invalid.status, 0);
-    const second = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions[1];
-    assert.equal(second.platform, null);
-    assert.match(`${invalid.stderr || ''}`, /invalid platform|chatgpt/i);
+    assert.equal(session.spendSource, 'flag');
+    assert.notEqual(session.durationMs, 999);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('persist resolve chains: flags beat self-report; self-report beats env; empty is unreported', () => {
+test('persist resolve chains: flags beat adapters; env fills gaps; empty is unreported; legacy section is ignored', () => {
   const dir = mkdtempSync(join(tmpdir(), 'aok-metrics-chain-'));
   try {
     runInit(dir, '--profile generic --name MetricsChain --lang en');
     const changeDir = join(dir, 'openspec/changes/add-thing');
     mkdirSync(changeDir, { recursive: true });
 
-    writeFileSync(join(changeDir, 'handoff.md'), handoffWithMetrics({
+    writeFileSync(join(changeDir, 'handoff.md'), handoffWithLegacyMetrics({
       platform: 'cursor',
       model: 'claude-opus-5',
       input_tokens: '100',
@@ -4288,10 +4308,9 @@ test('persist resolve chains: flags beat self-report; self-report beats env; emp
     assert.equal(flagged.model, 'cursor-grok-4.6');
     assert.equal(flagged.spendSource, 'flag');
     const afterFlag = readFileSync(join(changeDir, 'handoff.md'), 'utf-8');
-    assert.match(afterFlag, /input_tokens: 100/);
-    assert.doesNotMatch(afterFlag, /input_tokens: 7/);
+    assert.doesNotMatch(afterFlag, /## Metrics/);
 
-    writeFileSync(join(changeDir, 'handoff.md'), handoffWithMetrics({
+    writeFileSync(join(changeDir, 'handoff.md'), handoffWithLegacyMetrics({
       platform: 'amp',
       model: 'claude-opus-5',
       input_tokens: '40',
@@ -4300,22 +4319,21 @@ test('persist resolve chains: flags beat self-report; self-report beats env; emp
     }));
     cliExec(dir, 'handoff add-thing', { AOK_MODEL: 'gpt-5.6-sol', AOK_PLATFORM: 'cursor', CURSOR_AGENT: '1' });
     const self = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions[1];
-    assert.equal(self.model, 'claude-opus-5');
-    assert.equal(self.platform, 'amp');
-    assert.equal(self.inputTokens, 40);
-    assert.equal(self.spendSource, 'self-report');
+    assert.equal(self.model, 'gpt-5.6-sol');
+    assert.equal(self.platform, 'cursor');
+    assert.equal(self.inputTokens, null);
+    assert.equal(self.spendSource, 'unreported');
 
     writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
     const empty = cliSpawn(dir, ['handoff', 'add-thing']);
     assert.equal(empty.status, 0);
     assert.match(empty.stdout, /^\/opsx:/);
-    assert.match(empty.stderr, /unreported/);
+    assert.doesNotMatch(empty.stderr, /## Metrics|spend is unreported/);
     const third = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions[2];
     assert.equal(third.spendSource, 'unreported');
     assert.equal(third.totalTokens, null);
     const skeleton = readFileSync(join(changeDir, 'handoff.md'), 'utf-8');
-    assert.match(skeleton, /## Metrics/);
-    assert.match(skeleton, /input_tokens: unknown/);
+    assert.doesNotMatch(skeleton, /## Metrics/);
 
     writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
     cliExec(dir, 'handoff add-thing --restore');
@@ -4336,13 +4354,7 @@ test('persist resolve chains: flags beat self-report; self-report beats env; emp
     const skipped = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions.at(-1);
     assert.deepEqual(skipped.sourceIds, []);
 
-    writeFileSync(join(changeDir, 'handoff.md'), handoffWithMetrics({
-      platform: 'claude',
-      model: 'claude-opus-5',
-      input_tokens: '1000',
-      output_tokens: '0',
-      spend_source: 'self-report',
-    }));
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
     cliExec(dir, 'handoff add-thing --restore');
     writeClaudeJsonl(join(dir, '.aok-home'), dir, [
       {
@@ -4357,49 +4369,33 @@ test('persist resolve chains: flags beat self-report; self-report beats env; emp
         },
       },
     ]);
-    cliExec(dir, 'handoff add-thing --collect --model cursor-grok-4.6');
+    cliExec(dir, 'handoff add-thing --collect --model cursor-grok-4.6 --input-tokens 1000 --output-tokens 0');
     const collected = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8')).sessions.at(-1);
     assert.ok(collected.sourceIds.length >= 1);
     assert.equal(collected.inputTokens, 1000);
+    assert.equal(collected.spendSource, 'flag');
     assert.equal(collected.model, 'claude-opus-4-7');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('spendByPlatform uses self-report without doubling matching sources; metrics shows unreported', () => {
+test('spendByPlatform sums flag totals per platform without doubling matching sources; metrics shows unreported', () => {
   const dir = mkdtempSync(join(tmpdir(), 'aok-metrics-agg-'));
   try {
     runInit(dir, '--profile generic --name MetricsAgg --lang en');
     const changeDir = join(dir, 'openspec/changes/add-thing');
     mkdirSync(changeDir, { recursive: true });
 
-    writeFileSync(join(changeDir, 'handoff.md'), handoffWithMetrics({
-      platform: 'cursor',
-      model: 'cursor-grok-4.6',
-      input_tokens: '800',
-      output_tokens: '200',
-      cost_usd: '0.30',
-      spend_source: 'self-report',
-    }));
-    cliExec(dir, 'handoff add-thing');
-
-    writeFileSync(join(changeDir, 'handoff.md'), handoffWithMetrics({
-      platform: 'amp',
-      model: 'amp-sonnet',
-      input_tokens: '400',
-      output_tokens: '100',
-      amp_credits: '12',
-      spend_source: 'self-report',
-    }));
-    cliExec(dir, 'handoff add-thing');
+    writeFileSync(join(changeDir, 'handoff.md'), METRICS_HANDOFF);
+    cliExec(dir, 'handoff add-thing --platform cursor --model cursor-grok-4.6 --input-tokens 800 --output-tokens 200 --cost-usd 0.30');
+    cliExec(dir, 'handoff add-thing --platform amp --model amp-sonnet --input-tokens 400 --output-tokens 100');
 
     const metrics = JSON.parse(readFileSync(join(changeDir, 'metrics.json'), 'utf-8'));
     assert.equal(metrics.spendByPlatform.cursor.totalTokens, 1000);
     assert.equal(metrics.spendByPlatform.cursor.costUsd, 0.30);
     assert.equal(metrics.spendByPlatform.cursor.source, 'none');
     assert.equal(metrics.spendByPlatform.amp.totalTokens, 500);
-    assert.equal(metrics.spendByPlatform.amp.ampCredits, 12);
     assert.equal(metrics.spendByPlatform.amp.source, 'none');
 
     writeFileSync(
