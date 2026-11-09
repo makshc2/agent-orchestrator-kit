@@ -2,17 +2,17 @@
   "version": 2,
   "change": "instruction-mirror-consistency",
   "createdAt": "2026-11-09T17:50:28.718Z",
-  "updatedAt": "2026-11-09T18:44:40.089Z",
-  "archivedAt": null,
+  "updatedAt": "2026-11-09T18:57:09.537Z",
+  "archivedAt": "2026-11-09T18:57:09.537Z",
   "spend": {
-    "inputTokens": 44172167,
-    "outputTokens": 316060,
-    "totalTokens": 44488227,
+    "inputTokens": 44285974,
+    "outputTokens": 316816,
+    "totalTokens": 44602790,
     "costUsd": null,
-    "costUsdEstimated": 14.8296,
-    "costUsdTotal": 14.8296,
-    "cacheReadTokens": 43112687,
-    "cacheCreationTokens": 1058922
+    "costUsdEstimated": 14.8761,
+    "costUsdTotal": 14.8761,
+    "cacheReadTokens": 43224699,
+    "cacheCreationTokens": 1060715
   },
   "spendByPlatform": {
     "cursor": {
@@ -28,15 +28,15 @@
       "source": "none"
     },
     "claude": {
-      "inputTokens": 44172167,
-      "outputTokens": 316060,
-      "totalTokens": 44488227,
+      "inputTokens": 44285974,
+      "outputTokens": 316816,
+      "totalTokens": 44602790,
       "costUsd": null,
       "ampCredits": null,
-      "costUsdEstimated": 14.8296,
-      "costUsdTotal": 14.8296,
-      "cacheReadTokens": 43112687,
-      "cacheCreationTokens": 1058922,
+      "costUsdEstimated": 14.8761,
+      "costUsdTotal": 14.8761,
+      "cacheReadTokens": 43224699,
+      "cacheCreationTokens": 1060715,
       "source": "claude-jsonl"
     },
     "amp": {
@@ -69,21 +69,21 @@
     {
       "model": "claude-opus-5-5",
       "platform": "claude",
-      "inputTokens": 2165302,
-      "outputTokens": 18141,
-      "totalTokens": 2183443,
+      "inputTokens": 2279109,
+      "outputTokens": 18897,
+      "totalTokens": 2298006,
       "costUsd": null,
       "ampCredits": null,
-      "costUsdEstimated": 1.2115,
-      "costUsdTotal": 1.2115,
-      "cacheReadTokens": 2078774,
-      "cacheCreationTokens": 86480
+      "costUsdEstimated": 1.258,
+      "costUsdTotal": 1.258,
+      "cacheReadTokens": 2190786,
+      "cacheCreationTokens": 88273
     }
   ],
   "totals": {
-    "sessions": 5,
-    "durationMs": 2982741,
-    "leadTimeMs": 3251371,
+    "sessions": 6,
+    "durationMs": 2984035,
+    "leadTimeMs": 4000819,
     "cloudSessions": 0
   },
   "phases": {
@@ -136,20 +136,39 @@
       "startedAt": "2026-11-09T18:39:11.598Z",
       "endedAt": "2026-11-09T18:44:40.089Z",
       "leadTimeMs": 328491,
-      "inputTokens": 2112760,
-      "outputTokens": 17933,
-      "totalTokens": 2130693,
+      "inputTokens": 2226567,
+      "outputTokens": 18689,
+      "totalTokens": 2245256,
       "costUsd": null,
-      "costUsdEstimated": 1.0672,
-      "costUsdTotal": 1.0672,
-      "cacheReadTokens": 2053242,
-      "cacheCreationTokens": 59472,
+      "costUsdEstimated": 1.1137,
+      "costUsdTotal": 1.1137,
+      "cacheReadTokens": 2165254,
+      "cacheCreationTokens": 61265,
       "agents": [
         "Implementer"
       ],
       "models": [
         "claude-opus-5-5"
       ]
+    },
+    "archive": {
+      "sessions": 1,
+      "durationMs": 1294,
+      "startedAt": "2026-11-09T18:57:08.243Z",
+      "endedAt": "2026-11-09T18:57:09.537Z",
+      "leadTimeMs": 1294,
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "costUsdEstimated": null,
+      "costUsdTotal": null,
+      "cacheReadTokens": null,
+      "cacheCreationTokens": null,
+      "agents": [
+        "Archiver"
+      ],
+      "models": []
     }
   },
   "sessions": [
@@ -872,7 +891,8 @@
         "msg_011Cgsqzgfvbo5PJr16wv128",
         "msg_011Cgsr296vbqYgVDDEoJKwC",
         "msg_011CgsrAxqHkxpUZej9T8WkR",
-        "msg_011CgsrBDZ56Hff1i7nHh9Wn"
+        "msg_011CgsrBDZ56Hff1i7nHh9Wn",
+        "msg_011CgsrCAEv2Ju6L12TAfatd"
       ],
       "sourceTotals": {
         "msg_011CgsqmtkLsegt5FTp8ws3T": 56325,
@@ -897,32 +917,59 @@
         "msg_011Cgsqzgfvbo5PJr16wv128": 108428,
         "msg_011Cgsr296vbqYgVDDEoJKwC": 109186,
         "msg_011CgsrAxqHkxpUZej9T8WkR": 109973,
-        "msg_011CgsrBDZ56Hff1i7nHh9Wn": 113417
+        "msg_011CgsrBDZ56Hff1i7nHh9Wn": 113417,
+        "msg_011CgsrCAEv2Ju6L12TAfatd": 114563
       },
       "byModel": [
         {
           "model": "claude-opus-5-5",
           "platform": "claude",
-          "inputTokens": 2112760,
-          "outputTokens": 17933,
-          "totalTokens": 2130693,
+          "inputTokens": 2226567,
+          "outputTokens": 18689,
+          "totalTokens": 2245256,
           "costUsd": null,
-          "costUsdEstimated": 1.0672,
-          "cacheReadTokens": 2053242,
-          "cacheCreationTokens": 59472,
+          "costUsdEstimated": 1.1137,
+          "cacheReadTokens": 2165254,
+          "cacheCreationTokens": 61265,
           "costSource": "api-estimate"
         }
       ],
-      "inputTokens": 2112760,
-      "outputTokens": 17933,
-      "totalTokens": 2130693,
+      "inputTokens": 2226567,
+      "outputTokens": 18689,
+      "totalTokens": 2245256,
       "costUsd": null,
       "ampCredits": null,
-      "costUsdEstimated": 1.0672,
-      "cacheReadTokens": 2053242,
-      "cacheCreationTokens": 59472,
+      "costUsdEstimated": 1.1137,
+      "cacheReadTokens": 2165254,
+      "cacheCreationTokens": 61265,
       "spendSource": "adapter",
-      "costUsdTotal": 1.0672
+      "costUsdTotal": 1.1137
+    },
+    {
+      "startedAt": "2026-11-09T18:57:08.243Z",
+      "endedAt": "2026-11-09T18:57:09.537Z",
+      "durationMs": 1294,
+      "role": "Archiver",
+      "phase": "archive",
+      "runtime": "local",
+      "agentId": "none",
+      "model": null,
+      "platform": null,
+      "threadId": null,
+      "tasks": "12/12",
+      "sourceIds": [],
+      "sourceTotals": {},
+      "byModel": [],
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null,
+      "cacheReadTokens": null,
+      "cacheCreationTokens": null,
+      "spendSource": "unreported",
+      "costUsdTotal": null
     }
   ],
   "pending": null

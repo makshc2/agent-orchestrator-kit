@@ -6,7 +6,7 @@ Optional design-intake phase: capture UI design into a durable brief so apply se
 
 ### Requirement: Команда design-intake у шаблонах
 
-Kit SHALL постачати команду-шаблон `templates/.agents/commands/opsx-design.md`, яка визначає роль Design Intake: одноразовий захват дизайну з будь-якого джерела у durable-артефакт зміни.
+Kit SHALL постачати команду-шаблон `templates/.agents/commands/opsx-design.md`, яка визначає роль Design Intake: одноразовий захват дизайну з будь-якого джерела у durable-артефакт зміни. Порядок джерел і правила захоплення лежать у спеціалісті `templates/.agents/subagents/design-intake.md`, який команда лише викликає і не повторює.
 
 #### Scenario: Init встановлює команду
 
@@ -21,23 +21,25 @@ Kit SHALL постачати команду-шаблон `templates/.agents/comm
 
 #### Scenario: Fallback ladder джерел
 
-- **WHEN** агент читає команду `opsx-design.md`
-- **THEN** команда документує порядок джерел: Figma MCP (одним проходом) → експортовані зображення → скріншоти → фото
+- **WHEN** агент читає спеціаліста `design-intake.md`
+- **THEN** він документує порядок джерел: Figma MCP (одним проходом) → експортовані зображення → скріншоти → фото
 - **AND** інструктує зберігати захоплений контекст у brief негайно, без повторних запитів до Figma під час apply
+- **AND** команда `opsx-design.md` не містить цього порядку, а лише спавнить спеціаліста
 
 ### Requirement: Структура design brief
 
-Команда design-intake SHALL визначати структуру `design-brief.md` з секціями: Source (метадані джерела: file key, node ids, дата захвату), Structure (ієрархія layout), Tokens (кольори, типографіка, spacing), Reference images (перелік файлів у `assets/`), Constraints, Confidence notes.
+Спеціаліст design-intake (`templates/.agents/subagents/design-intake.md`) SHALL визначати структуру `design-brief.md` з секціями: Source (метадані джерела: file key, node ids, дата захвату), Structure (ієрархія layout), Tokens (кольори, типографіка, spacing), Reference images (перелік файлів у `assets/`), Constraints, Confidence notes. Команда `opsx-design.md` MUST NOT повторювати цей шаблон.
 
-#### Scenario: Шаблон brief у команді
+#### Scenario: Шаблон brief у спеціалісті
 
-- **WHEN** агент створює `design-brief.md` за командою
+- **WHEN** агент створює `design-brief.md` за `design-intake.md`
 - **THEN** файл містить щонайменше секції Source, Structure, Tokens, Reference images, Constraints
 
 #### Scenario: Позначки впевненості для растрових джерел
 
 - **WHEN** джерелом є скріншот або фото
 - **THEN** виведені (не виміряні) значення у brief позначаються маркером впевненості
+- **AND** правило маркерів лежить у `design-intake.md`, а не в команді
 
 ### Requirement: Роль design_intake у конфігурації
 
