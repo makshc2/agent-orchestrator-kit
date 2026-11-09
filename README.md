@@ -159,6 +159,8 @@ After init (and after every update):
 
 This copies `.agents/` to your local IDE directories (not committed to git).
 
+The CLI commands `init`, `update` and `sync` also regenerate the `session-start`, `session-exit` and `routing` blocks of `.agents/skills/agent-orchestration/SKILL.md` from `.agents/rules/session-handoff.mdc` and `agent-orchestration.mdc`; edit the rule, not the block. `./scripts/sync-local-agent-skills.sh` only copies files and does not regenerate the blocks, so after editing a rule run `npx agent-orchestrator-kit sync`. A project installed before the blocks existed has a skill without markers: run `npx agent-orchestrator-kit update` once.
+
 ## What Gets Installed
 
 ```
@@ -258,11 +260,11 @@ Or run `./scripts/sync-local-agent-skills.sh` — it creates `.amp/settings.json
 
 | Role | Recommended Amp mode |
 |------|---------------------|
-| explore | `rush` |
-| propose | `smart` or `deep` |
-| review | `smart` |
-| apply (complex) | `smart` or `deep` |
-| apply (simple task) | `rush` |
+| explore | `low` |
+| propose | `high` or `ultra` |
+| review | `high` or `ultra` |
+| apply (complex) | `high` or `ultra` |
+| apply (simple task) | `low` |
 
 Switch modes in Amp CLI: `Ctrl+O` → `mode`.
 
@@ -369,7 +371,7 @@ npx agent-orchestrator-kit gate-check --review <name>  # Tier 1 pre-gate: exit 0
 ### Role 3: Spec Reviewer — `/opsx:review <name>`
 
 **Mode:** read-only. No code edits.
-**Model:** medium or strong.
+**Model:** strong (same level as propose).
 **Purpose:** Review artifacts. Output **Approve ✓** or **Request Changes ✗**.
 
 Review is **two-tiered**. Tier 1 is deterministic: `npx agent-orchestrator-kit gate-check --review <name>` runs strict OpenSpec validation, the task-contract lint, and structural checks (Non-goals / Acceptance criteria in `proposal.md`, non-empty delta-spec sections); it also warns when the artifacts outgrow the size budget. If Tier 1 fails, the verdict is REQUEST CHANGES without spawning anyone. Only on a Tier 1 pass does the conductor spawn `spec-reviewer` (not `code-reviewer`) for Tier 2 judgment and verify its `review.md` with `gate-check --review-md <name>`. On APPROVE the reviewer also writes `apply-notes.md` (≤ 20 lines of constraints and pitfalls for the implementer).
@@ -392,7 +394,7 @@ Tier 2 checks (judgment only — no duplication of Tier 1):
 
 **Mode:** conductor; routed specialists write `src/` and tests. Only the conductor marks `tasks.md [x]` after a verified `Status: done` report.
 **Model:** strong. Use fast for simple mechanical tasks.
-**Purpose:** Implement tasks. One session = 1–3 tasks (not all 15 at once).
+**Purpose:** Implement tasks. One session covers the tasks of the change; split only at a blocker or a context limit.
 
 **Exit gate:**
 ```bash
@@ -983,7 +985,7 @@ Amp is the **primary target** of this kit. It reads `.agents/skills/` and `AGENT
 | `.agents/skills/` | All orchestration + domain skills |
 | `.amp/settings.json` (`amp.mcpServers`) | Memory MCP via `scripts/memory-mcp-launcher.cjs`; seeded from `.agents/amp.settings.json.example` by `init` / `sync` |
 | Subagents | Conductor routing + isolated `subagent-*` wrappers |
-| Amp modes (rush/smart/deep) | Per-role model hints in AGENTS.md |
+| Amp modes (low/medium/high/ultra) | Per-role model hints in AGENTS.md |
 
 **Amp generated wrapper** (`.agents/skills/subagent-codebase-explorer/SKILL.md`):
 

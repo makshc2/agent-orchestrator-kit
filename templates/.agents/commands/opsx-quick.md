@@ -72,7 +72,6 @@ Close via the canonical Session Exit protocol in `.agents/rules/session-handoff.
 **Green quick** (every task `[x]`, build/lint green): `## Blocked` `none`, `## Next command` the literal line `npx agent-orchestrator-kit archive <name> --sync`, `## Next role` `none`. `handoff <name>` then prints only that line — paste it as the one fenced block; it runs in a terminal after the PR is merged (for a throw-away demo it may be skipped). Otherwise record the blocker and use `/opsx:propose <name>` (artifacts or review failed) or `/opsx:apply <name>` (tasks remain). Do not start archive in this chat.
 
 **Guardrails**
-- Max ~3 hours of work — if bigger, switch to the full pipeline
 - Still run build/lint and the test step of `/opsx:apply` before declaring done
 - Do not skip OpenSpec — proposal, tasks and a minimal delta are always written
 - Never emit or request paste of a next-session prompt between propose, review and apply; emit exactly one only at final exit

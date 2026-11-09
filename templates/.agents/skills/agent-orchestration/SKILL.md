@@ -39,28 +39,30 @@ Read `.agents/orchestrator.yaml` for project-specific config (language, flags, M
 | Explorer | `/opsx:explore` | read-only | fast | chat only |
 | Design Intake | `/opsx:design <name>` | brief-only | strong | `design-brief.md`, `assets/` |
 | Architect | `/opsx:propose <name>` | specs-only | strong | `openspec/changes/` |
-| Spec Reviewer | `/opsx:review <name>` | read-only | medium | `review.md`, Approve / Request Changes |
+| Spec Reviewer | `/opsx:review <name>` | read-only | strong | `review.md`, Approve / Request Changes |
 | Implementer | `/opsx:apply <name>` | code | strong | `src/`, `tasks.md [x]` |
 | Quick (small change) | `/opsx:quick <name>` | specs+code | strong | `openspec/changes/` + `src/` |
 | Verifier | CI / local scripts | — | — | exit codes |
 
 ## Conductor Routing (Differentiated by Phase)
 
-The parent `/opsx:*` session is the conductor. Delegation cost must match phase uncertainty: **propose and review MUST spawn their specialist** (the parent never writes artifacts or the verdict); **apply is parent-driven** — the parent writes code and tests itself from `tasks.md` + `apply-notes.md`, subagents are optional; **archive is one CLI call** — phase subagents are forbidden.
+<!-- aok:mirror:begin routing (generated from .agents/rules/agent-orchestration.mdc; edit the source and run sync) -->
+The parent `/opsx:*` session is the **conductor**. Delegation is differentiated by phase: propose/review MUST spawn their specialist; apply is parent-driven with optional subagents; archive is a CLI call with phase subagents forbidden. Only the parent marks `tasks.md`. `spec-reviewer` ≠ `code-reviewer`.
 
 | Phase / signal | Subagent | Status |
-|----------------|------------|--------|
-| Status, gate failure, next command | `openspec-guide` | optional |
+|--------|------------|--------|
+| Status / gate / next command | `openspec-guide` | optional |
 | Restore/persist when handoff CLI failed | `session-handoff` | fallback only |
-| Broken kit, MCP, or generated-file sync | `setup-doctor` | on signal |
-| `/opsx:explore` repository investigation | `codebase-explorer` | mandatory |
+| Broken kit / MCP / sync | `setup-doctor` | on signal |
+| `/opsx:explore` | `codebase-explorer` | mandatory |
 | `/opsx:design` | `design-intake` | mandatory |
 | `/opsx:propose` | `spec-architect` | mandatory |
-| `/opsx:review` (Tier 2, after `gate-check --review` passes) | `spec-reviewer` | mandatory |
-| Apply task with design brief/Figma/image | `design-implementer` | mandatory on signal |
-| Apply: ≥ 2 independent tasks with no shared files, or explicit user request | `code-writer` / `test-writer` | optional |
-| Apply before PR/MR | `code-reviewer` | optional |
-| `/opsx:archive` (fallback) | — terminal/CI: `npx agent-orchestrator-kit archive <name>` | CLI; phase subagent forbidden (`spec-archiver` = CLI-failure fallback only) |
+| `/opsx:review` (after `gate-check --review` passes) | `spec-reviewer` | mandatory |
+| Apply + design brief/Figma/image | `design-implementer` | mandatory on signal |
+| Apply: ≥ 2 independent tasks, no shared files, or explicit request | `code-writer` / `test-writer` | optional |
+| Apply pre-PR | `code-reviewer` | optional |
+| `/opsx:archive` (fallback) | — terminal/CI: `npx agent-orchestrator-kit archive <name>` | CLI; subagent forbidden (`spec-archiver` = CLI-failure fallback only) |
+<!-- aok:mirror:end routing -->
 
 `spec-reviewer` is not `code-reviewer`. Spawned specialists MUST NOT edit `tasks.md`; the parent checks a box only after verifying the task's Done-when condition. If an apply task requires information beyond its Files/Do/Done-when contract + `apply-notes.md` + referenced artifacts, STOP: record the gap in `handoff.md` and route back to `/opsx:propose <name>` — improvisation is forbidden.
 
@@ -136,12 +138,11 @@ Archive is one deterministic CLI call — `npx agent-orchestrator-kit archive <n
 ## Session Rules
 
 **Start of each session:**
-1. Honor the pasted `/opsx:<phase> <name>` command and announce that role.
-2. Run `npx agent-orchestrator-kit status` (or `npx openspec list --json`) and read `orchestrator.yaml`; resolve the active change and gates.
-3. Run `npx agent-orchestrator-kit handoff --restore` (or `handoff <name> --restore`). The CLI briefing is canonical: Done, Attach and the last 10 entries of git-tracked `openspec/changes/<name>/decisions.md` (not Memory). No separate Memory MCP read step.
-4. If the restore CLI fails, read `openspec/changes/<name>/handoff.md`; Memory MCP availability is never a blocker.
-5. Spawn `session-handoff` in restore mode **only if** both `handoff --restore` and handoff.md failed (Amp: isolated `subagent-session-handoff`). Skip this spawn when CLI restore exits 0.
-6. Only after restoration, spawn the routed phase specialist. If the user said “continue” / “next” and exactly one active change has `Handoff.next_command`, execute it instead of asking for a phase.
+<!-- aok:mirror:begin session-start (generated from .agents/rules/session-handoff.mdc; edit the source and run sync) -->
+1. Honor pasted `/opsx:<phase> <name>` and announce the role.
+2. `npx agent-orchestrator-kit handoff <name> --restore` (or `handoff --restore` with one active change). The CLI briefing is canonical — it prints handoff.md (Done, Attach), the last 10 entries of git-tracked `openspec/changes/<name>/decisions.md` (older entries stay in the file) and the Memory JSON count. No separate Memory MCP read step. Restore also locks the session client (`cursor` / `claude` / `amp`) into `metrics.json` `pending` — persist will follow that client’s spend flow. Override with `--platform` when detection is wrong.
+3. Only if the restore CLI failed → read `openspec/changes/<name>/handoff.md` directly; spawn `session-handoff` in restore mode ONLY if both are unavailable (Amp: isolated `subagent-session-handoff`) — a fallback, never a routine step. Then start phase work (spawn a specialist when the phase routing requires one); free-form continue/next/«далі» with one active change → execute `Handoff.next_command`.
+<!-- aok:mirror:end session-start -->
 
 **During session:**
 - Stay in role — do not drift into next phase
@@ -149,12 +150,16 @@ Archive is one deterministic CLI call — `npx agent-orchestrator-kit archive <n
 - Never edit files outside your role's allowed output
 
 **End of each session (HARD STOP — you are NOT done):**
-1. Write `openspec/changes/<name>/handoff.md` in the parent using the template below.
-2. Put decisions in `## Decisions`; only the CLI writes `decisions.md`. Do not put token counts in `handoff.md`; metrics come from the persist call below.
-3. Run `npx agent-orchestrator-kit handoff <name> --model <llm-product-id>` and require exit 0. `--model` is the LLM product id of this chat (`claude-opus-5`, `claude-fable-5`, `gpt-5.6-sol`, `cursor-grok-4.6-xhigh-fast`) — NEVER pass a Closed role (`Architect`, `Implementer`, `Explorer`) or a subagent name (`spec-architect`, `session-handoff`) as `--model`. The parent SHOULD still pass `--model`. The parent MUST NOT guess tokens. `--input-tokens` / `--output-tokens` / `--total-tokens` / `--cost-usd` override session-level totals only and do not wipe platform maps. Optional `--platform cursor|claude|amp` or `AOK_PLATFORM`. Optional `--collect` also runs local spend adapters. The same command works in Cursor, Claude Code, and Amp and MUST NOT require Cursor SDK, a Claude `/cost` parser, or an Amp billing API as a required step. The CLI appends non-empty Decisions into append-only `openspec/changes/<name>/decisions.md` (the git canon), upserts Memory JSON with an absolute path (`Decision:*` is a file→Memory mirror only), and prints the expanded self-contained prompt on stdout. Spawn `session-handoff` in persist mode ONLY if this CLI step failed.
-4. If Memory MCP tools are available, mirror `Change:<name>`, `Handoff:<name>`, and new `Decision:<topic>` entities in one call — optional; its absence never blocks closing.
-5. Paste the CLI stdout as one fenced next-session prompt. First line is `/opsx:<next> <name>` (after a green apply the CLI prints only `npx agent-orchestrator-kit archive <name> --sync` — run it in a terminal after merge); body uses `project.agent_language`; keep Done/Blocked/Attach/spawn/HARD STOP complete (Decisions print from restore). No banner. Do not emit a thin “read Memory” stub.
-6. Do not start the next phase in this chat. Never run full persist twice; regenerate the prompt only with `handoff <name> --no-metrics`. Any out-of-OpenSpec hotfix after persist requires a new chat. If apply, include build/lint status in Done.
+<!-- aok:mirror:begin session-exit (generated from .agents/rules/session-handoff.mdc; edit the source and run sync) -->
+1. The parent writes `openspec/changes/<name>/handoff.md` itself: Closed role, Change, Done, Decisions, Blocked, Next command, Next role, Attach, Subagents to spawn, Constraints, Runtime.
+2. Put decisions in `## Decisions`; only the CLI writes `decisions.md`. Do not put token counts in `handoff.md`.
+3. `npx agent-orchestrator-kit handoff <name> --model <llm-product-id>` — require exit 0 (appends non-empty Decisions into append-only `openspec/changes/<name>/decisions.md`, upserts absolute-path Memory JSON, records the session into `openspec/changes/<name>/metrics.json`, prints the expanded prompt on stdout). `--model` is the LLM product id of this chat (`claude-opus-5`, `claude-fable-5`, `gpt-5.6-sol`, `cursor-grok-4.6-xhigh-fast`, `accounts/fireworks/models/glm-5p2`) — NEVER pass a Closed role, a subagent name, or an Amp **mode** (`low`, `medium`, `high`, `ultra`) as `--model`. The parent SHOULD still pass `--model`. The parent MUST NOT guess tokens. Persist collects spend for the client locked at restore (Amp: `amp threads export` + local threads; Cursor: hook file; Claude: JSONL). Where the client has no adapter data (Cursor gaps), `--model`, `--platform` and the spend flags are the manual fallback: `--input-tokens` / `--output-tokens` / `--total-tokens` / `--cost-usd` override session-level totals only and do not wipe platform maps. Optional `--platform cursor|claude|amp` or `AOK_PLATFORM`. Optional `--collect` runs all three adapters, not only the locked client. The same `npx agent-orchestrator-kit handoff <name>` works in Cursor, Claude Code, and Amp. `decisions.md` is the git canon of change decisions; Memory `Decision:*` is a file→Memory mirror only. Cloud sessions pass `--runtime cloud` (or set `AOK_RUNTIME=cloud` / `AOK_AGENT_ID` in the cloud-agent environment).
+4. Spawn `session-handoff` in persist mode ONLY if step 3 failed (Amp: isolated `subagent-session-handoff`). Fallback, never routine; the CLI prompt names it only when `handoff.spawn_handoff_subagent: true` in `orchestrator.yaml`.
+5. Memory MCP is an optional mirror: if tools are available, update `Change:<name>`, `Handoff:<name>`, `Decision:*` in one call; unavailability never blocks closing.
+6. Paste CLI stdout as one fenced block. First line `/opsx:…` (green apply: the CLI prints one archive line for a terminal). Body uses `project.agent_language`. Self-contained (Done/Blocked/Attach/spawn/HARD STOP; Decisions come from restore, not from the prompt). No banner.
+7. If runtime is cloud: after persist, `git add openspec/changes/<name>/` → `git commit` → `git push` → `npx agent-orchestrator-kit handoff <name> --cloud-check` (exit 0 required). Closing without this is an incomplete handoff. Persist prints these steps on stderr; the CLI never runs `git commit` / `git push`.
+8. Stop. Next role and any out-of-OpenSpec hotfix = new chat. Never run full persist twice; regenerate the prompt only with `handoff <name> --no-metrics`.
+<!-- aok:mirror:end session-exit -->
 
 `handoff.md` template:
 
@@ -211,19 +216,17 @@ The Prompt section is overwritten by `npx agent-orchestrator-kit handoff <name>`
 
 | Phase | Use case | Recommended |
 |-------|----------|-------------|
-| explore | Q&A, brainstorm | fast (rush/flash) |
+| explore | Q&A, brainstorm | fast (Amp `low`) |
 | design | Vision / layout capture | strong (vision-capable) |
 | propose | Architecture decisions | strong (opus/sonnet) |
-| review | Artifact analysis | medium or strong |
+| review | Artifact analysis | strong (same level as propose) |
 | apply complex | Multi-file refactor | strong |
 | apply simple | 1–2 file change | medium or fast |
 | fix lint | Mechanical | fast |
 
 ## Mandatory Memory and Handoff Protocol
 
-Before specialist work, the parent MUST restore context in order: honor the pasted `/opsx:*` command; run `npx agent-orchestrator-kit handoff --restore` (the CLI briefing is canonical — no separate Memory MCP read step); if the CLI failed, read `openspec/changes/<name>/handoff.md`; spawn `session-handoff` in restore mode ONLY when both failed. Missing Memory MCP never blocks a session. With one active change, free-form “continue” uses `Handoff.next_command` instead of asking for the phase. Amp spawns any needed subagent as an isolated `subagent-*` skill.
-
-Before declaring a session closed, the parent MUST, in order: (1) write `openspec/changes/<name>/handoff.md` itself. `--model` is the LLM product id (example `cursor-grok-4.6-xhigh-fast`); family `cursor-grok-4.6` is only a fallback; the CLI takes the product id from hook sources when they exist; Closed role MAY have a sentence after `—`; metrics stores the canonical token. (2) run `npx agent-orchestrator-kit handoff <name> --model <llm-product-id>` (exit 0) — NEVER pass a Closed role or subagent name as `--model`; the parent SHOULD still pass `--model` and MUST NOT guess tokens; spend flags override session totals only; optional `--platform`; optional `--collect` for local adapters; the same CLI works in Cursor, Claude Code, and Amp and MUST NOT require Cursor SDK, Claude `/cost`, or Amp billing as a required step; this CLI appends `decisions.md` and mirrors `Decision:*` file→Memory; spawn `session-handoff` persist ONLY if this CLI step failed, (3) paste the CLI stdout prompt whose first line is `/opsx:<next> <name>` (after a green apply: the single archive line instead). Memory MCP mirroring is an optional single call. Never write Memory back into `decisions.md`. The prompt has no `NEXT_SESSION_PROMPT` label, uses `project.agent_language`, and MUST be self-contained (Done, Blocked, Attach, spawn, HARD STOP; Decisions come from restore) so the next thread can run if Memory MCP is ignored. Never start the next phase in the current chat. Write session artifacts only to git-tracked paths (never `/tmp`, never gitignored caches). If runtime is cloud: after persist, commit → push → `npx agent-orchestrator-kit handoff <name> --cloud-check` with exit 0; closing without that is an incomplete handoff.
+The canonical Session Start and Session Exit protocol is the generated blocks under Session Rules (source: `.agents/rules/session-handoff.mdc`). Write session artifacts only to git-tracked paths (never `/tmp`, never gitignored caches). `--model` is the LLM product id (example `cursor-grok-4.6-xhigh-fast`); family `cursor-grok-4.6` is only a fallback; the CLI takes the product id from hook sources when they exist. Closed role MAY have a sentence after `—`; metrics stores the canonical token. Missing Memory MCP never blocks a session. Never write Memory back into `decisions.md`.
 
 | Entity | Required fields |
 |--------|-----------------|
@@ -249,7 +252,6 @@ Before declaring a session closed, the parent MUST, in order: (1) write `openspe
 | Explore + propose in one chat | Architect has stale exploration context |
 | Apply without review | ~60% chance of rework |
 | Live Figma MCP in apply session | Token/quota loss; context not durable across sessions |
-| All tasks in one apply session | Context overload; model drifts |
 | No archive after merge | Next propose has stale domain specs |
 | Strong model on lint fixes | 5–10x cost with no quality gain |
 | Skip Memory MCP / skip `handoff` CLI | Next thread has no context; Amp looks like it “ignored the rules” |

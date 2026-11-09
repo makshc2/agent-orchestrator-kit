@@ -699,8 +699,7 @@ test('templates: skills and subagents tell the same terminal-first story', () =>
   assert.ok(section.includes('`/opsx:archive <name>` in chat is only the fallback'));
 
   assert.ok(skill.includes('| `/opsx:archive` (fallback) | — terminal/CI:'));
-  assert.ok(skill.includes('after a green apply the CLI prints only'));
-  assert.ok(skill.includes('after a green apply: the single archive line instead'));
+  assert.ok(skill.includes('green apply: the CLI prints one archive line for a terminal'));
   assert.ok(/^- \[ \] `npx agent-orchestrator-kit archive <name> --sync` run after merge/m.test(skill), 'checklist item');
   assert.ok(!/^- \[ \] `\/opsx:archive` run after merge/m.test(skill), 'old checklist item is gone');
 

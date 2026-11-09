@@ -237,11 +237,12 @@ test('templates agree with the parent-driven protocol', () => {
   assert.doesNotMatch(skill, /Read Memory entities/);
   assert.doesNotMatch(skill, /Memory is empty/);
   assert.doesNotMatch(skill, /Done\/Decisions\/Blocked/);
-  assert.doesNotMatch(skill, /Done, Decisions, Blocked/);
+  const skillOutsideMirrors = skill.replace(/<!-- aok:mirror:begin [^\n]*-->[\s\S]*?<!-- aok:mirror:end [^\n]*-->/g, '');
+  assert.doesNotMatch(skillOutsideMirrors, /Done, Decisions, Blocked/);
   assert.doesNotMatch(skill, /restore at start, persist at exit/);
-  assert.equal((skill.match(/no separate Memory MCP read step/gi) || []).length, 2, 'Session Rules and the protocol paragraph agree');
+  assert.equal((skill.match(/no separate Memory MCP read step/gi) || []).length, 1, 'only the session-start mirror carries it');
   const sessionStart = skill.slice(skill.indexOf('**Start of each session:**'), skill.indexOf('**During session:**'));
-  assert.equal((sessionStart.match(/^\d+\. /gm) || []).length, 6);
+  assert.equal((sessionStart.match(/^\d+\. /gm) || []).length, 3);
 
   const sub = readFileSync(join(KIT_ROOT, 'templates/.agents/subagents/session-handoff.md'), 'utf-8');
   const restore = sub.slice(sub.indexOf('## Restore mode'), sub.indexOf('## Persist mode'));

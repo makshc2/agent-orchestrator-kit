@@ -62,56 +62,9 @@ plus the absence of `## Checklist`; then fix only those gate-check errors.
 
 2. **Spawn the specialist**
 
-   Spawn `spec-architect` with a self-contained prompt and require `## Subagent report: spec-architect`. Delegate steps 3–5 to it; do not perform artifact creation in the parent session.
+   Spawn `spec-architect` with a self-contained prompt and require `## Subagent report: spec-architect`. The specialist runs the artifact build loop from its own file (`spec-architect.md`); the parent does not create artifacts.
 
-3. **Create the change directory**
-   ```bash
-   npx openspec new change "<name>"
-   ```
-   This creates a scaffolded change in the planning home resolved by the CLI with `.openspec.yaml`.
-
-4. **Get the artifact build order**
-   ```bash
-   npx openspec status --change "<name>" --json
-   ```
-   Parse the JSON to get:
-   - `applyRequires`: array of artifact IDs needed before implementation (e.g., `["tasks"]`)
-   - `artifacts`: list of all artifacts with their status and dependencies
-   - `planningHome`, `changeRoot`, `artifactPaths`, and `actionContext`: path and scope context. Use these instead of assuming repo-local paths.
-
-5. **Create artifacts in sequence until apply-ready**
-
-   Use the **TodoWrite tool** to track progress through the artifacts.
-
-   Loop through artifacts in dependency order (artifacts with no pending dependencies first):
-
-   a. **For each artifact that is `ready` (dependencies satisfied)**:
-      - Get instructions:
-        ```bash
-        npx openspec instructions <artifact-id> --change "<name>" --json
-        ```
-      - The instructions JSON includes:
-        - `context`: Project background (constraints for you - do NOT include in output)
-        - `rules`: Artifact-specific rules (constraints for you - do NOT include in output)
-        - `template`: The structure to use for your output file
-        - `instruction`: Schema-specific guidance for this artifact type
-        - `resolvedOutputPath`: Resolved path or pattern to write the artifact
-        - `dependencies`: Completed artifacts to read for context
-      - Read any completed dependency files for context
-      - Create the artifact file using `template` as the structure and write it to `resolvedOutputPath`
-      - Apply `context` and `rules` as constraints - but do NOT copy them into the file
-      - Show brief progress: "Created <artifact-id>"
-
-   b. **Continue until all `applyRequires` artifacts are complete**
-      - After creating each artifact, re-run `npx openspec status --change "<name>" --json`
-      - Check if every artifact ID in `applyRequires` has `status: "done"` in the artifacts array
-      - Stop when all `applyRequires` artifacts are done
-
-   c. **If an artifact requires user input** (unclear context):
-      - Use **AskUserQuestion tool** to clarify
-      - Then continue with creation
-
-6. **Verify the report, run the Tier 1 pre-gate, and show final status**
+3. **Verify the report, run the Tier 1 pre-gate, and show final status**
 
    The conductor verifies `Status: done`, the `**Gate:**` line (informational only: whatever it says, including `not run` or nothing, the conductor's own run below decides), and each reported artifact path, then runs:
    ```bash
@@ -131,16 +84,6 @@ After completing all artifacts, summarize:
 ## Session Exit (HARD STOP)
 
 Close via the canonical Session Exit protocol in `.agents/rules/session-handoff.mdc`. First line of the pasted prompt is `/opsx:review <name>` only after `gate-check --review` exit 0; if the pre-gate still fails after the one re-spawn, it is `/opsx:propose <name>` and `handoff.md` has `## Blocked`. Do not start review in this chat.
-
-**Artifact Creation Guidelines**
-
-- Follow the `instruction` field from `openspec instructions` for each artifact type
-- The schema defines what each artifact should contain - follow it
-- Read dependency artifacts for context before creating new ones
-- Use `template` as the structure for your output file - fill in its sections
-- **IMPORTANT**: `context` and `rules` are constraints for YOU, not content for the file
-  - Do NOT copy `<context>`, `<rules>`, `<project_context>` blocks into the artifact
-  - These guide what you write, but should never appear in the output
 
 **Guardrails**
 - Create ALL artifacts needed for implementation (as defined by schema's `apply.requires`)

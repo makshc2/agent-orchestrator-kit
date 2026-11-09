@@ -11,6 +11,7 @@ import { resolveRestoreClient, ampThreadIdFromEnv } from './session-client.js';
 import { validateProjectedSpecs } from './spec-preflight.js';
 import { collectRecoverySources } from './recovery-sources.js';
 import { buildRecoveryBriefing } from './session-recovery.js';
+import { syncInstructionMirrors } from './instruction-mirrors.js';
 import {
   CHECKPOINT_DECISIONS_TOTAL,
   CHECKPOINT_TMP,
@@ -4227,6 +4228,16 @@ function generateAmpSubagentSkills(projectDir) {
   }
 }
 
+function applyInstructionMirrors(projectDir) {
+  const result = syncInstructionMirrors(projectDir);
+  if (result.changed.length > 0) {
+    log.ok('.agents/skills/agent-orchestration/SKILL.md (mirror blocks: ' + result.changed.join(', ') + ')');
+  }
+  if (result.skipped.length > 0 && !(result.skipped.length === 1 && result.skipped[0] === 'target')) {
+    log.warn('mirror blocks skipped: ' + result.skipped.join(', ') + ' (run `update` to reinstall the skill and rules that carry the markers and sources)');
+  }
+}
+
 function syncAmp(projectDir) {
   log.info('Amp Code reads .agents/ natively — subagents exposed via skill wrappers');
   mkdirSync(join(projectDir, '.amp'), { recursive: true });
@@ -4279,6 +4290,7 @@ program
     if (existsSync(join(profileDir, '.agents'))) {
       copyDir(join(profileDir, '.agents'), join(projectDir, '.agents'), { overwrite: opts.force });
     }
+    applyInstructionMirrors(projectDir);
     generateAmpSubagentSkills(projectDir);
 
     log.title('Installing scripts/');
@@ -4381,6 +4393,7 @@ program
       }
     }
 
+    applyInstructionMirrors(projectDir);
     generateAmpSubagentSkills(projectDir);
 
     for (const rel of CI_WORKFLOW_PATHS) {
@@ -4434,6 +4447,7 @@ program
     const syncClaude = ['claude', 'all'].includes(opts.target);
     const syncAmpTarget = ['amp', 'all'].includes(opts.target);
 
+    applyInstructionMirrors(projectDir);
     generateAmpSubagentSkills(projectDir);
 
     // Amp skill wrappers are redundant in Cursor/Claude (they get native

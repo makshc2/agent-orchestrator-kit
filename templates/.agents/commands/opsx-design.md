@@ -32,81 +32,9 @@ Announce: "Design intake for change: **<name>**"
 
 ### 2. Spawn the specialist
 
-Spawn `design-intake` and delegate steps 3–6 below. Require `## Subagent report: design-intake`. Do not perform those steps in the parent session.
+Spawn `design-intake` with the change name and the source (user text, URL or paths); it follows the capture rules in its own file. Require `## Subagent report: design-intake`. Do not capture the source in the parent session.
 
-### 3. Choose source (fallback ladder)
-
-Use the first available source; do not climb the ladder twice:
-
-1. **Figma MCP** — one pass only (`get_design_context` / screenshot / metadata). Capture everything needed immediately; never call Figma again during later apply. If MCP fails, check `npx agent-orchestrator-kit figma-status`. If the token is missing, tell the user to run `figma-setup` and edit `.agents/figma.local.env` locally — **never ask them to paste the token into chat**. Optional REST dump: `npx agent-orchestrator-kit figma-fetch --url "<figma-url>" --out openspec/changes/<name>/assets/figma-nodes.json`.
-2. **Exported images** — PNG/SVG already in the repo or attached by the user.
-3. **Screenshots** — UI captures (desktop/mobile).
-4. **Photos** — physical mockups or whiteboard photos.
-
-Ask the user for the source if unclear. Prefer Figma when a `figma.com` URL is given.
-
-### 4. Capture into assets/
-
-Save reference images under `openspec/changes/<name>/assets/`:
-- Prefer compressed PNG; ~1–2 images per breakpoint
-- Do not commit raw video, PSD, or huge originals
-- Name files clearly: `desktop.png`, `mobile.png`, `hero-detail.png`
-
-### 5. Write design-brief.md
-
-Create or overwrite `openspec/changes/<name>/design-brief.md` using this template:
-
-```markdown
-# Design Brief
-
-**Change:** <name>
-**Captured:** <ISO date>
-
-## Source
-
-- Type: Figma | export | screenshot | photo
-- URL / path: <figma URL or file path>
-- File key / node ids: <if Figma>
-- Capture date: <ISO date>
-- Notes: <auth, branch, frame names>
-
-## Structure
-
-- Layout hierarchy (sections, regions, key components)
-- Responsive breakpoints if known
-- Navigation / interaction notes relevant to implementation
-
-## Tokens
-
-- Colors: <hex or token names>
-- Typography: <families, sizes, weights>
-- Spacing: <scale or measured gaps>
-- Radii / shadows / borders: <as observed>
-
-## Reference images
-
-- `assets/<file>` — <what it shows>
-
-## Constraints
-
-- Must match: <hard constraints from design>
-- Out of scope / approximate OK: <soft areas>
-- Non-UI change? If this change has no UI, put `Design: none` in `proposal.md` instead of this brief.
-
-## Confidence notes
-
-- Measured / from Figma: <list>
-- Inferred (screenshot/photo): mark each inferred value with a confidence marker, e.g. `~8px (medium confidence)` or `color ≈ #1a1a1a (low confidence)`
-```
-
-### 6. Confidence markers for raster sources
-
-When the source is a **screenshot** or **photo** (not Figma MCP / vector export):
-- Do not present guessed spacing, colors, or type sizes as facts
-- Mark every inferred token/value with a confidence note in **Confidence notes** and inline in **Tokens** where useful
-- Prefer ranges or approximations over fake precision
-
-### 7. Verify report and handoff
+### 3. Verify report and handoff
 
 The conductor verifies `Status: done` and that every reported brief/asset path exists, then outputs the handoff summary.
 
