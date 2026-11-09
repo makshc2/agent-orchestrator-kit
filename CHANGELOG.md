@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-11-09
+
+### Added
+- **Skill mirror blocks are generated from the rules.** The `session-start`, `session-exit` and `routing` blocks of `.agents/skills/agent-orchestration/SKILL.md` are now copied from `.agents/rules/session-handoff.mdc` and `agent-orchestration.mdc` between `<!-- aok:mirror:begin/end <id> -->` markers by the new `bin/instruction-mirrors.js`. `init`, `update` and `sync` regenerate them before the IDE copy, so a rule edit reaches the skill and `.claude/` / `.cursor/` on the next `sync`; only the text between the markers changes. A skill without markers is left byte-identical and `sync` warns `mirror blocks skipped … (run `update` …)`. The hand-written duplicates of Session Start/Exit and the routing table in the skill are gone. New capability: instruction-mirrors. Tests: `test/instruction-mirrors.test.js`, `test/instruction-text-consistency.test.js`. (`openspec/changes/instruction-mirror-consistency`)
+
+### Changed
+- **Specialists own their steps.** `spec-architect` carries the artifact build loop (`openspec new change`, `status --json`, `openspec instructions` per ready artifact); `/opsx:propose` and the propose skill only point to it. `design-intake` carries the capture details (source ladder, assets rules, the `design-brief.md` template, confidence markers); `/opsx:design` keeps select, spawn and verify. (`openspec/changes/instruction-mirror-consistency`)
+- **`code-reviewer` is on request and diff-gated.** It is used on request or before a PR/MR (no longer `ALWAYS`), stops with `Blocked: no implementation diff` when `git diff HEAD`, the target-branch diff and untracked files under `pipeline.src_glob` are all empty, and reads `apply-notes.md` + `tasks.md` first. (`openspec/changes/instruction-mirror-consistency`)
+- **Rules that contradicted the session data are removed.** `/opsx:quick` loses the «Max ~3 hours» guardrail; the skill drops the «All tasks in one apply session» anti-pattern and README the «1–3 tasks per session» line; review is `strong (same level as propose)`; Amp model hints use `low` / `high` / `ultra` instead of `rush` / `smart` / `deep`. (`openspec/changes/instruction-mirror-consistency`)
+- **`handoff.md` has no `## Metrics` section and Session Exit has no self-report step.** The CLI collects model, platform and spend itself: model from adapters, then `--model`, then `AOK_MODEL`; spend from flags, then Amp usage, then adapters; `spendSource` is `flag`, `amp-usage`, `adapter` or `unreported` and never `self-report`. Only a `flag` session is frozen; the archive stale-copy guard and the `fill ## Metrics` warnings are gone. A legacy `## Metrics` section is ignored and dropped on the next rewrite — no migration needed. Rules, the skill, `session-handoff` / `spec-archiver` subagents, `AGENTS.md`, `CLAUDE.md` and README follow. (`openspec/changes/remove-metrics-self-report`)
+- Upgrade: run `update` once — it reinstalls the skill with the mirror markers and refreshes the rules, commands, skills, subagents, `AGENTS.md` and `CLAUDE.md`; until then `sync` prints the `mirror blocks skipped` warning. `./scripts/sync-local-agent-skills.sh` only copies files; after editing a rule run `npx agent-orchestrator-kit sync`. No `orchestrator.yaml` key changes.
+
+### Fixed
+- **A bare `Reviewer` Closed role is canonicalized to `Spec Reviewer`**, as `Code Writer` already maps to `Implementer`, so the metrics ledger test no longer fails on it. (`openspec/changes/remove-metrics-self-report`)
+
 ## [0.21.0] - 2026-11-03
 
 ### Added

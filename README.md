@@ -80,7 +80,7 @@ npx agent-orchestrator-kit@latest init --profile generic --ci gitlab --spec-veri
 
 See [Installation](#installation) for profile/CI options.
 
-**🔄 Already have the kit installed? Upgrade to latest (v0.21.0: `/opsx:apply` runs the tests once before the last box; new `checkpoint` command and a recovery briefing on `handoff --restore`):**
+**🔄 Already have the kit installed? Upgrade to latest (v0.22.0: skill Session Start/Exit and routing are generated from the rules on `init`/`update`/`sync`; `handoff.md` drops `## Metrics`; specialists own their build steps):**
 
 ```bash
 npx agent-orchestrator-kit@latest update
@@ -1191,6 +1191,14 @@ The kit moves toward an Agentic Factory in four phases. **One phase = one OpenSp
 Phase bounds and non-goals: [`openspec/specs/agentic-factory-roadmap/spec.md`](openspec/specs/agentic-factory-roadmap/spec.md).
 
 ## Changelog
+
+### 0.22.0
+- **Generated skill mirror blocks.** `init`, `update` and `sync` regenerate the `session-start`, `session-exit` and `routing` blocks of the `agent-orchestration` skill from `session-handoff.mdc` and `agent-orchestration.mdc`; edit the rule, not the block. See [Sync to local IDEs](#sync-to-local-ides).
+- **Specialists own their steps.** The artifact build loop lives in `spec-architect`, the design capture details in `design-intake`; `/opsx:propose` and `/opsx:design` only spawn and verify.
+- **`code-reviewer` is on request and diff-gated** — `Blocked: no implementation diff` when nothing changed under `pipeline.src_glob`.
+- **No `## Metrics` in `handoff.md`, no self-report step.** The CLI resolves model, platform and spend from adapters, flags and env; `spendSource` is never `self-report`; a legacy section is ignored. A bare `Reviewer` Closed role maps to `Spec Reviewer`.
+- **Contradicting rules removed:** no quick-mode hour limit, no per-session task cap, review is `strong`, Amp hints use `low`/`high`/`ultra`.
+- Upgrade: run `update` once to get the skill with mirror markers (until then `sync` warns `mirror blocks skipped`); it also refreshes rules, commands, skills, subagents, `AGENTS.md` and `CLAUDE.md`. No `orchestrator.yaml` key changes.
 
 ### 0.21.0
 - **`/opsx:apply` runs the tests once, before the last box.** New step 6.5 reads `verifier.test_command`, runs it once and shows the last 20 lines. The outcome table fixes the last box and the `tests:` line in Done for every case: green and narrowed-green tick, an empty command is skipped with a warning and ticks, a red run stops with the box unticked, a pre-existing failure waits for the user, and a session that pauses earlier writes `tests: not run (paused: <k> tasks pending)`. Session Exit carries the `tests:` line; `/opsx:quick` inherits it. No hard gate.
