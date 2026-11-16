@@ -2,8 +2,8 @@
   "version": 2,
   "change": "fix-mandatory-tech-skill-loading",
   "createdAt": "2026-11-16T08:12:21.686Z",
-  "updatedAt": "2026-11-16T08:12:21.686Z",
-  "archivedAt": null,
+  "updatedAt": "2026-11-16T08:16:33.713Z",
+  "archivedAt": "2026-11-16T08:16:33.713Z",
   "spend": {
     "inputTokens": null,
     "outputTokens": null,
@@ -54,9 +54,9 @@
   },
   "spendByModel": [],
   "totals": {
-    "sessions": 1,
-    "durationMs": 0,
-    "leadTimeMs": 0,
+    "sessions": 2,
+    "durationMs": 1070,
+    "leadTimeMs": 252027,
     "cloudSessions": 0
   },
   "phases": {
@@ -78,6 +78,25 @@
         "Implementer"
       ],
       "models": []
+    },
+    "archive": {
+      "sessions": 1,
+      "durationMs": 1070,
+      "startedAt": "2026-11-16T08:16:32.643Z",
+      "endedAt": "2026-11-16T08:16:33.713Z",
+      "leadTimeMs": 1070,
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "costUsdEstimated": null,
+      "costUsdTotal": null,
+      "cacheReadTokens": null,
+      "cacheCreationTokens": null,
+      "agents": [
+        "Archiver"
+      ],
+      "models": []
     }
   },
   "sessions": [
@@ -87,6 +106,32 @@
       "durationMs": 0,
       "role": "Implementer",
       "phase": "apply",
+      "runtime": "local",
+      "agentId": "none",
+      "model": null,
+      "platform": null,
+      "threadId": null,
+      "tasks": "4/4",
+      "sourceIds": [],
+      "sourceTotals": {},
+      "byModel": [],
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null,
+      "cacheReadTokens": null,
+      "cacheCreationTokens": null,
+      "spendSource": "unreported",
+      "costUsdTotal": null
+    },
+    {
+      "startedAt": "2026-11-16T08:16:32.643Z",
+      "endedAt": "2026-11-16T08:16:33.713Z",
+      "durationMs": 1070,
+      "role": "Archiver",
+      "phase": "archive",
       "runtime": "local",
       "agentId": "none",
       "model": null,
