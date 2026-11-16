@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "change": "fix-mandatory-tech-skill-loading",
+  "seq": 4,
+  "savedAt": "2026-11-16T08:12:21.557Z",
+  "role": null,
+  "done": "All 4 tasks complete; npm test 488/488, strict validation and gates green, final evidence recorded.",
+  "blocked": "",
+  "next": "Review and merge changes, then archive and roll out the release to consumers.",
+  "task": "3.1",
+  "decisions": [],
+  "snapshot": {
+    "tasks": {
+      "total": 4,
+      "done": 4
+    },
+    "review": "APPROVE",
+    "head": "eb03425f7121de33763a588e4120cb5c87802cb9",
+    "handoffSha256": "e5429a34e3928a2b84d365e75b2d8bb0bd334640d37172bd992d60002b99fa02"
+  },
+  "contentDigest": "cdf2c91ba3e912105b4c78d73b5142d1c2ee30cf36670b8ee6a04d12dd7ef74f",
+  "digest": "5c08e9cfee2c1aa2e847bd4e46d861056438106b8407ae572826e33b68c5b59f"
+}

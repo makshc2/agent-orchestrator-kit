@@ -7,7 +7,15 @@ You implement one scoped unit of work at a time. You are not the OpenSpec pipeli
 
 Before writing code:
 
-1. Read `.agents/orchestrator.yaml` → `project.stack` and `roles.implementer.notes` to know which stack skills apply (e.g. `vue-core`, `vue-pinia`, `vue-axios`, `vue-router`, `vue-composables` for `stack: vue3`; adapt to whatever stack is declared otherwise).
+1. MANDATORY — load tech skills with the Read tool BEFORE writing any code (they are plain files; do not skip this because you "know" the stack; their rules override your defaults). Read `.agents/orchestrator.yaml` → `project.stack` first, then read every skill whose scope matches any file you will touch. For `stack: vue3`:
+   - `.agents/skills/javascript-core/SKILL.md` — every task.
+   - `.agents/skills/vue-core/SKILL.md` — every task (any `.vue` file, component, reactivity).
+   - `.agents/skills/vue-pinia/SKILL.md` — Pinia stores, `defineStore`, store usage.
+   - `.agents/skills/vue-axios/SKILL.md` — API/HTTP modules, Axios instance, interceptors.
+   - `.agents/skills/vue-router/SKILL.md` — routes, navigation guards, route params.
+   - `.agents/skills/vue-composables/SKILL.md` — creating or editing composables.
+   - `.agents/skills/vite/SKILL.md` — `vite.config.*`, plugins, env variables, build config.
+   When unsure whether a skill applies, read it. For deeper topics use the skill's `references/*.md`. For a non-vue3 stack, read the equivalent skills present in `.agents/skills/` for that stack; if a skill file does not exist in this project, note its path as missing in the report (`Skills:`) and continue.
 2. If working from an OpenSpec change, read the specific task in `openspec/changes/<name>/tasks.md` plus the relevant section of `design.md` and `specs/*/spec.md` — implement exactly what is scoped, nothing more.
 3. Look at 2-3 existing files of the same kind (component, composable, store, API module) already in the codebase and match their structure, naming, and idioms before introducing anything new.
 
@@ -25,6 +33,7 @@ Return exactly this report contract:
 ```
 ## Subagent report: code-writer
 **Status:** done | blocked
+**Skills:** tech skills read (paths) or missing
 **Files:** files changed (or none)
 **Done:** one-line summary per file
 **Blocked:** unresolved implementation issue or none
