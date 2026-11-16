@@ -5,6 +5,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { approvalRevision, tasksDigestText } from '../recovery-sources.js';
 import { createStore } from './store.js';
 
 export const TOKEN_TTL_MS = 60 * 60 * 1000;
@@ -35,6 +36,34 @@ export function taskFiles(projectDir, change, task) {
   return [];
 }
 
+async function approvalSnapshot(projectDir, change) {
+  let tasksDigest = null;
+  try {
+    const text = readFileSync(join(projectDir, 'openspec', 'changes', change, 'tasks.md'), 'utf8');
+    tasksDigest = createHash('sha256').update(tasksDigestText('tasks.md', text)).digest('hex');
+  } catch {
+    tasksDigest = null;
+  }
+  let approval = null;
+  try {
+    const { readHooksConfig } = await import('./adapters/shared.js');
+    if (readHooksConfig(projectDir).pipeline.require_spec_review !== false) {
+      const revision = approvalRevision(projectDir, change);
+      if (revision.state === 'current' && /^approve/i.test(revision.verdict || '')) {
+        approval = {
+          reviewSha: revision.reviewSha,
+          reviewDigest: revision.reviewDigest,
+          digest: revision.digest,
+          files: revision.files,
+        };
+      }
+    }
+  } catch {
+    approval = null;
+  }
+  return { approval, tasksDigest };
+}
+
 export async function bindSession({ projectDir, ids, change, role, task, session, agent = null, now = Date.now() }) {
   if (!NAME_RE.test(String(change || ''))) fail('--change must be a kebab-case change name');
   if (!existsSync(join(projectDir, 'openspec', 'changes', change))) fail(`change "${change}" does not exist (archived or misspelled)`);
@@ -42,7 +71,19 @@ export async function bindSession({ projectDir, ids, change, role, task, session
   if (!/^\d+(\.\d+)*$/.test(String(task || ''))) fail('--task must be a task id such as 3.4');
   if (!ID_RE.test(String(session || ''))) fail('--session must be the native session id echoed by the runtime');
   if (agent != null && !ID_RE.test(String(agent))) fail('--agent is not a valid id');
-  const binding = { changeId: change, role: role.toLowerCase(), task, files: taskFiles(projectDir, change, task), sessionId: session, agentId: agent, boundAt: new Date(now).toISOString(), via: 'explicit' };
+  const snapshot = await approvalSnapshot(projectDir, change);
+  const binding = {
+    changeId: change,
+    role: role.toLowerCase(),
+    task,
+    files: taskFiles(projectDir, change, task),
+    sessionId: session,
+    agentId: agent,
+    boundAt: new Date(now).toISOString(),
+    via: 'explicit',
+    approval: snapshot.approval,
+    tasksDigest: snapshot.tasksDigest,
+  };
   const store = worktreeStore(projectDir, ids);
   await store.transact('bindings', bindingKey(session, agent), () => binding);
   const token = `aok-bind-${randomBytes(16).toString('hex')}`;
@@ -56,7 +97,7 @@ export async function linkChild({ projectDir, ids, token, session, agent = null,
   if (!session) return { ok: false, reason: 'child session id unavailable' };
   const store = worktreeStore(projectDir, ids);
   let outcome = { ok: false, reason: 'unknown token' };
-  await store.transact('binding-tokens', token, (prior) => {
+  await store.transact('binding-tokens', token, async (prior) => {
     if (!prior) return prior;
     if (prior.used) { outcome = { ok: false, reason: 'token already used' }; return prior; }
     if (now > prior.expiresAt) { outcome = { ok: false, reason: 'token expired' }; return { ...prior, used: true }; }
@@ -64,7 +105,8 @@ export async function linkChild({ projectDir, ids, token, session, agent = null,
       outcome = { ok: false, reason: 'token presented by the parent identity' };
       return prior;
     }
-    outcome = { ok: true, binding: { ...prior.parent, role: role ?? prior.parent.role, sessionId: session, agentId: agent, boundAt: new Date(now).toISOString(), via: 'token', parentSessionId: prior.parent.sessionId, parentAgentId: prior.parent.agentId ?? null } };
+    const snapshot = await approvalSnapshot(projectDir, prior.parent.changeId);
+    outcome = { ok: true, binding: { ...prior.parent, role: role ?? prior.parent.role, sessionId: session, agentId: agent, boundAt: new Date(now).toISOString(), via: 'token', parentSessionId: prior.parent.sessionId, parentAgentId: prior.parent.agentId ?? null, approval: snapshot.approval, tasksDigest: snapshot.tasksDigest } };
     return { ...prior, used: true };
   });
   if (outcome.ok) await store.transact('bindings', bindingKey(session, agent), () => outcome.binding);

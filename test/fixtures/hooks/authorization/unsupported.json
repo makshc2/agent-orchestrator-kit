@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "kind": "user-authorization",
+  "clients": {
+    "claude": {
+      "observedAuthorization": false,
+      "receipt": null
+    },
+    "cursor": {
+      "observedAuthorization": false,
+      "receipt": null
+    },
+    "amp": {
+      "observedAuthorization": false,
+      "receipt": null
+    }
+  }
+}

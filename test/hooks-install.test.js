@@ -16,10 +16,12 @@ import {
   disableHooksClient,
   hooksStatus,
   refreshOwnedHookAssets,
+  hookConfigDefaults,
   parseHookConfig,
   resolveHookStateRoot,
   ownedHookEvents,
 } from '../bin/hooks/install.js';
+import { readHooksConfig } from '../bin/hooks/adapters/shared.js';
 
 const execFileAsync = promisify(execFile);
 const KIT_ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -60,18 +62,135 @@ async function withCursorSpendHooks(dir) {
   return hooks;
 }
 
-test('all shipped profile configs declare disabled observe hook defaults', async () => {
-  const yamlFiles = [
-    'templates/orchestrator.yaml',
-    'profiles/generic/orchestrator.yaml',
-    'profiles/vue3/orchestrator.yaml',
-    'profiles/node/orchestrator.yaml',
-    'profiles/mvp/orchestrator.yaml',
-  ];
-  for (const rel of yamlFiles) {
-    const config = parseHookConfig(await readFile(join(KIT_ROOT, ...rel.split('/')), 'utf8'));
-    assert.deepEqual(config, { enabled: false, mode: 'observe', policies: {} }, rel);
+const DISABLED_POLICY = { enabled: false, mode: 'observe', options: {} };
+const SIX_POLICIES = {
+  verification: { ...DISABLED_POLICY },
+  completion: { ...DISABLED_POLICY },
+  scope: { ...DISABLED_POLICY },
+  checks: { ...DISABLED_POLICY },
+  'owned-sync': { ...DISABLED_POLICY },
+  'workflow-notifications': { ...DISABLED_POLICY },
+};
+const SHIPPED_HOOK_CONFIGS = [
+  'templates/orchestrator.yaml',
+  'profiles/generic/orchestrator.yaml',
+  'profiles/vue3/orchestrator.yaml',
+  'profiles/node/orchestrator.yaml',
+  'profiles/mvp/orchestrator.yaml',
+];
+
+async function projectWithOrchestrator(yaml) {
+  const dir = await mkdtemp(join(tmpdir(), 'aok-hooks-config-'));
+  await mkdir(join(dir, '.agents'), { recursive: true });
+  const text = yaml.includes('\n') ? yaml : await readFile(join(KIT_ROOT, ...yaml.split('/')), 'utf8');
+  await writeFile(join(dir, '.agents', 'orchestrator.yaml'), text);
+  return dir;
+}
+
+test('all shipped profile configs declare six disabled observe policies', async () => {
+  assert.deepEqual(hookConfigDefaults(), { enabled: false, mode: 'observe', policies: {} });
+  for (const rel of SHIPPED_HOOK_CONFIGS) {
+    const dir = await projectWithOrchestrator(rel);
+    const config = readHooksConfig(dir);
+    assert.deepEqual(config.hooks, { enabled: false, mode: 'observe', policies: SIX_POLICIES, findings: [] }, rel);
+    assert.equal(config.pipeline.require_spec_review, rel.includes('/mvp/') ? false : true, rel);
+    await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('nested policy keys cannot change global hooks settings and options round-trip from a file', async () => {
+  const command = {
+    id: 'lint',
+    executable: 'npm',
+    args: ['run', 'lint'],
+    globs: ['src/**/*.js'],
+    writablePaths: ['src'],
+  };
+  const dir = await projectWithOrchestrator(`
+hooks:
+  enabled: false
+  mode: observe
+  policies:
+    verification:
+      enabled: true
+      mode: enforce
+      extra:
+        enabled: true
+        mode: enforce
+    checks:
+      enabled: true
+      mode: enforce
+      options: ${JSON.stringify({ commands: [command], debounceMs: 250, timeoutMs: 10000 })}
+pipeline:
+  require_spec_review: true
+  nested:
+    require_spec_review: false
+`);
+  const config = readHooksConfig(dir);
+  assert.equal(config.hooks.enabled, false);
+  assert.equal(config.hooks.mode, 'observe');
+  assert.deepEqual(config.hooks.policies.verification, { enabled: true, mode: 'enforce', options: {} });
+  assert.deepEqual(config.hooks.policies.checks.options, { commands: [command], debounceMs: 250, timeoutMs: 10000 });
+  assert.equal(config.pipeline.require_spec_review, true);
+  await rm(dir, { recursive: true, force: true });
+});
+
+test('invalid policy options produce a finding and a disabled entry', async () => {
+  const dir = await projectWithOrchestrator(`
+hooks:
+  enabled: true
+  mode: enforce
+  policies:
+    verification:
+      enabled: true
+      mode: enforce
+      options: {"timeoutMs":
+    completion:
+      enabled: true
+      mode: enforce
+      options:
+        validationTimeoutMs: 1000
+    checks:
+      enabled: true
+      mode: enforce
+      options: {"timeoutMs":"30000","commands":[]}
+    scope:
+      enabled: true
+      mode: enforce
+      options: [1, 2]
+`);
+  const config = readHooksConfig(dir);
+  assert.equal(config.hooks.enabled, true);
+  assert.equal(config.hooks.mode, 'enforce');
+  for (const id of ['verification', 'completion', 'checks', 'scope']) {
+    assert.equal(config.hooks.policies[id].enabled, false, id);
+  }
+  assert.ok(config.hooks.findings.length >= 4);
+  assert.ok(config.hooks.findings.every((finding) => finding.code === 'hooks.policy.config.invalid'));
+  await rm(dir, { recursive: true, force: true });
+});
+
+test('require_spec_review defaults true when absent, commented, nested or invalid', async () => {
+  const cases = [
+    ['missing-file', null],
+    ['absent-key', 'hooks:\n  enabled: false\n  mode: observe\n  policies: {}\n'],
+    ['commented', 'pipeline:\n  # require_spec_review: false\n  max_active_changes: 1\n'],
+    ['nested-lookalike', 'verifier:\n  require_spec_review: false\npipeline:\n  max_active_changes: 1\n'],
+    ['invalid', 'pipeline:\n  require_spec_review: maybe\n'],
+    ['explicit-false', 'pipeline:\n  require_spec_review: false\n'],
+  ];
+  for (const [name, yaml] of cases) {
+    const dir = await mkdtemp(join(tmpdir(), 'aok-hooks-review-'));
+    if (yaml !== null) {
+      await mkdir(join(dir, '.agents'), { recursive: true });
+      await writeFile(join(dir, '.agents', 'orchestrator.yaml'), yaml);
+    }
+    const expected = name === 'explicit-false' ? false : true;
+    assert.equal(readHooksConfig(dir).pipeline.require_spec_review, expected, name);
+    await rm(dir, { recursive: true, force: true });
+  }
+  const emptyPolicies = parseHookConfig('hooks:\n  enabled: false\n  mode: observe\n  policies: {}\n');
+  assert.deepEqual(emptyPolicies.policies, {});
 });
 
 test('hooks-disabled projects retain prior behavior and report a distinct status', async () => {

@@ -1,51 +1,52 @@
 # Session Handoff
 
 ## Closed role
-Architect — proposal complete, ready for spec review
+Implementer
 
 ## Change
 - name: add-agent-workflow-automation
-- status: proposed
-- tasks: 0/11
-- review: pending
-- last_role: Architect
+- status: applied
+- tasks: 15/15
+- review: APPROVE
+- last_role: Implementer
 
 ## Done
-- Created proposal, design, two delta specs and eleven implementation tasks.
-- Strict change validation and conductor-run Tier 1 review gate passed; all four planning artifacts are complete.
-- Scoped test evidence and freshness, optional completion and phase/scope enforcement, bounded checks, owned-file synchronization and local notifications.
-- Aligned policy registration, dispatch, scoped store and capability handling with add-agent-hook-runtime.
+- All 15 tasks are checked. The hook runtime stays opt-in: shipped profiles keep hooks disabled and observe, and enforcement is an explicit config change.
+- Verification runs only from `hooks verify`. A write marks evidence stale and does not spawn `verifier.test_command`. Evidence omits handoff, checkpoint, metrics, and decisions, and stores no command text or output.
+- `hooks complete --confirm-handoff` is the only receipt. A later verification outcome invalidates it. Agent end stays pending until the worker rechecks the fingerprint. One follow-up per work epoch and two per intent. `user_cancelled` drops pending correction. Claude prints the manual CLI fallback.
+- Scope allows checkbox-only `tasks.md` and `handoff.md` for a direct explicit bind of implementer, conductor, or implementation on the bound change. Token-linked children and other roles stay denied. The hook does not tick tasks.
+- Owned sync renders into staging, preserves conflicts, and is reached by `sync --owned` and `update --sync`. Unflagged sync and the update hint line stay. The worker starts from enqueue, an enabled event, lease release, or `hooks worker --recover`.
+- `npm test -- --test-concurrency=1` passed 652/652. `npm pack --dry-run` packed `agent-orchestrator-kit@0.22.1` (116 files). Strict OpenSpec validation of this change passed. Results are in `verification.md`.
 
 ## Decisions
-- Dependency: apply only after add-agent-hook-runtime has been merged and archived; review the shared contract with that proposal.
-- Verification: bind command results to relevant working-tree inputs and execution stability; checkbox and handoff progress alone do not invalidate test evidence.
-- Enforcement: explicit opt-in, bounded follow-ups and cancellation handling; preserve the default nonblocking test-discipline behavior.
-- Sync: use explicit ownership for automated update/sync; preserve foreign files and existing legacy sync behavior.
-- Delivery scope: reuse existing opt-in CI archive; no automatic approvals, task completion, commits, npm publishing or fleet updates.
+- A completion receipt is written only with `--confirm-handoff`. Verification outcomes advance the sequence that invalidates it; completion outcomes do not, so persisting validation does not immediately stale the receipt.
+- The follow-up budget is one store record per intent: one claim per work epoch and two claims total. `user_cancelled` is a stop bypass and cancels pending completion work.
+- Owned sync compares staged bytes and never calls the legacy live-tree sync. Conflicts stay on disk and the CLI exits nonzero.
+- No lifecycle fixture or config switch enables user authorization. Unverified payloads keep deny and follow-up downgraded.
+- Policy `options` stay a single-line JSON object. Invalid options disable that policy.
 
 ## Blocked
-none — planning is complete; runtime merge/archive is an apply prerequisite
+none
 
 ## Next command
-`/opsx:review add-agent-workflow-automation`
+`npx agent-orchestrator-kit archive add-agent-workflow-automation --sync`
 
 ## Next role
-Spec Reviewer
+none
 
 ## Attach
-- openspec/changes/add-agent-workflow-automation/proposal.md
-- openspec/changes/add-agent-workflow-automation/design.md
-- openspec/changes/add-agent-workflow-automation/tasks.md
-- openspec/changes/add-agent-workflow-automation/specs/
-- openspec/changes/add-agent-hook-runtime/design.md
+- `openspec/changes/add-agent-workflow-automation/tasks.md`
+- `openspec/changes/add-agent-workflow-automation/verification.md`
+- `openspec/changes/add-agent-workflow-automation/apply-notes.md`
 
 ## Subagents to spawn
-- spec-reviewer — independent semantic review after the Tier 1 gate passes
+- none
 
 ## Constraints
-- Planning only; implementation tasks remain unchecked.
-- Runtime dependency must be merged and archived before applying this change.
-- Existing unrelated main-spec length INFO notices do not originate in this change; no artifact-budget warnings.
+- language: en
+- do not mix phases; the archive command runs in a terminal after the PR is merged
+- retain frozen v1 contract; no auto-approve, auto-commit, publishing, fleet rollout, or Phase 4
+- archive and CI templates were not modified
 
 ## Runtime
 - runtime: local
@@ -54,46 +55,5 @@ Spec Reviewer
 ## Prompt
 
 ```text
-/opsx:review add-agent-workflow-automation
-
-You are the conductor for the next role session of change `add-agent-workflow-automation`.
-Reply language: English (`project.agent_language: en`). Do not mix phases: the next role starts in a NEW chat after HARD STOP.
-
-## Role
-- Next role / phase subagent: `spec-reviewer`
-- Amp: spawn isolated skill `subagent-spec-reviewer` with fresh context — the specialist body never runs in Amp's main thread.
-- Cursor / Claude: spawn `.cursor/agents/spec-reviewer.md` / `.claude/agents/spec-reviewer.md`.
-- The parent is conductor-only: verify the report, do not do the specialist's work.
-
-## Start
-`npx agent-orchestrator-kit handoff add-agent-workflow-automation --restore` is the canonical briefing (handoff.md, decisions.md, Attach). Read `openspec/changes/add-agent-workflow-automation/handoff.md` only if restore failed. Only then spawn the phase specialist. Free-form "continue" / "next" with one active change = `Handoff.next_command`.
-
-## Context (self-contained)
-- Closed role: Architect — proposal complete, ready for spec review
-- Change: add-agent-workflow-automation (status: proposed; tasks: 0/11; review: pending; last_role: Architect)
-- Done:
-- Created proposal, design, two delta specs and eleven implementation tasks.
-- Strict change validation and conductor-run Tier 1 review gate passed; all four planning artifacts are complete.
-- Scoped test evidence and freshness, optional completion and phase/scope enforcement, bounded checks, owned-file synchronization and local notifications.
-- Aligned policy registration, dispatch, scoped store and capability handling with add-agent-hook-runtime.
-- Blocked:
-none — planning is complete; runtime merge/archive is an apply prerequisite
-- Attach:
-- openspec/changes/add-agent-workflow-automation/proposal.md
-- openspec/changes/add-agent-workflow-automation/design.md
-- openspec/changes/add-agent-workflow-automation/tasks.md
-- openspec/changes/add-agent-workflow-automation/specs/
-- openspec/changes/add-agent-hook-runtime/design.md
-- Subagents for this session:
-- spec-reviewer — independent semantic review after the Tier 1 gate passes
-- Constraints:
-- Planning only; implementation tasks remain unchecked.
-- Runtime dependency must be merged and archived before applying this change.
-- Existing unrelated main-spec length INFO notices do not originate in this change; no artifact-budget warnings.
-- status: in-progress
-- tasks: 0/11
-
-## Exit HARD STOP (you are NOT done until this succeeds)
-Write `openspec/changes/add-agent-workflow-automation/handoff.md` → `npx agent-orchestrator-kit handoff add-agent-workflow-automation` (exit 0) → paste CLI stdout as one fenced block (first line `/opsx:…`, not shortened, no banner) → stop.
-Full protocol: `.agents/rules/session-handoff.mdc`. OpenSpec files are the source of truth.
+npx agent-orchestrator-kit archive add-agent-workflow-automation --sync
 ```

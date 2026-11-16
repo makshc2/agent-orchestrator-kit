@@ -23,6 +23,9 @@ import { bindSession, linkChild, resolveBinding, seenSessions } from './hooks/bi
 import { captureSnapshot } from './hooks/policies/recovery.js';
 import { scopeIds } from './hooks/adapters/shared.js';
 import { createStore as createHookStore } from './hooks/store.js';
+import { recoverWorker, runWorker } from './hooks/workflow/worker.js';
+import { registerCompletionIntent } from './hooks/workflow/completion.js';
+import { runVerification } from './hooks/workflow/evidence.js';
 import {
   CHECKPOINT_DECISIONS_TOTAL,
   CHECKPOINT_TMP,
@@ -4385,7 +4388,9 @@ program
 program
   .command('update')
   .description('Update kit files without overwriting project overlay (orchestrator.yaml, project-conventions)')
-  .action(() => {
+  .option('--sync', 'deliver owned IDE copies in this command and skip the shell sync hint')
+  .option('--target <target>', 'cursor | claude | amp | all', 'all')
+  .action(async (opts) => {
     const projectDir = process.cwd();
     const templateDir = join(KIT_ROOT, 'templates');
 
@@ -4443,7 +4448,14 @@ program
     mergeGitignore(projectDir, GITIGNORE_LINES);
 
     log.ok(`Updated to v${KIT_VERSION}`);
-    log.info('Run ./scripts/sync-local-agent-skills.sh to sync to local IDE');
+    if (opts.sync) {
+      const { ownedSync } = await import('./hooks/workflow/owned-sync.js');
+      const synced = await ownedSync({ projectDir, ids: scopeIds(projectDir), target: opts.target || 'all', log });
+      for (const conflict of synced.conflicts) log.warn(`owned conflict: ${conflict}`);
+      if (synced.conflicts.length > 0) process.exitCode = 1;
+    } else {
+      log.info('Run ./scripts/sync-local-agent-skills.sh to sync to local IDE');
+    }
     log.info('Optional MCP: npx agent-orchestrator-kit mcp-setup');
     log.info('Optional Figma: npx agent-orchestrator-kit figma-setup');
     log.info('Optional pre-commit gate: npx agent-orchestrator-kit hooks-setup');
@@ -4453,8 +4465,19 @@ program
   .command('sync')
   .description('Sync .agents/ to local IDE directories (Cursor, Claude Code, Amp)')
   .option('--target <target>', 'cursor | claude | amp | all', 'all')
-  .action((opts) => {
+  .option('--owned', 'update only owned IDE copies and preserve local edits')
+  .action(async (opts) => {
     const projectDir = process.cwd();
+
+    if (opts.owned) {
+      log.title('agent-orchestrator sync --owned');
+      const { ownedSync } = await import('./hooks/workflow/owned-sync.js');
+      const synced = await ownedSync({ projectDir, ids: scopeIds(projectDir), target: opts.target || 'all', log });
+      for (const conflict of synced.conflicts) log.warn(`owned conflict: ${conflict}`);
+      if (synced.conflicts.length > 0) process.exitCode = 1;
+      else log.ok('Owned sync complete');
+      return;
+    }
 
     log.title('agent-orchestrator sync');
 
@@ -5077,6 +5100,90 @@ hooksCommand
     const store = createHookStore({ projectDir, scope: { level, ...ids, changeId: binding.changeId, sessionId: opts.session, agentId: opts.agent ?? null, eventId: event.eventId }, pruneIntervalMs: 10 ** 9 });
     const snapshot = await captureSnapshot({ projectDir, event, store, binding, trigger: 'explicit' });
     log.ok(`snapshot captured at ${snapshot.capturedAt} (technical observation only; semantic files untouched)`);
+  });
+
+hooksCommand
+  .command('worker', { hidden: true })
+  .option('--job <id>', 'queue envelope to drain')
+  .option('--reservation <token>', 'startup reservation token')
+  .option('--recover', 'recover an expired reservation or lease and start queued work')
+  .action(async (opts) => {
+    const projectDir = process.cwd();
+    const ids = scopeIds(projectDir);
+    if (opts.recover) {
+      await recoverWorker({ projectDir, ids });
+      return;
+    }
+    await runWorker({
+      projectDir,
+      ids,
+      jobId: opts.job ?? null,
+      reservationToken: opts.reservation ?? null,
+    });
+  });
+
+hooksCommand
+  .command('verify')
+  .description('Run the configured verifier for the bound change and record local evidence')
+  .requiredOption('--change <name>', 'bound OpenSpec change')
+  .requiredOption('--session <id>', 'native session id')
+  .option('--agent <id>', 'native subagent id')
+  .option('--narrow-command <command>', 'narrow verifier command; requires --reason')
+  .option('--reason <text>', 'why the verifier command is narrowed')
+  .action(async (opts) => {
+    if (opts.narrowCommand && !opts.reason) {
+      log.err('--reason is required with --narrow-command');
+      process.exitCode = 1;
+      return;
+    }
+    const projectDir = process.cwd();
+    const result = await runVerification({
+      projectDir,
+      ids: scopeIds(projectDir),
+      changeId: opts.change,
+      sessionId: opts.session,
+      agentId: opts.agent ?? null,
+      narrowCommand: opts.narrowCommand ?? null,
+      reason: opts.reason ?? null,
+    });
+    if (!result.ok) {
+      log.err(result.reason || 'verification failed');
+      process.exitCode = 1;
+      return;
+    }
+    log.ok(`verification ${result.record?.status ?? 'done'}`);
+    if (result.record?.reason) log.info(result.record.reason);
+  });
+
+hooksCommand
+  .command('complete')
+  .description('Confirm the bound task handoff and print completion findings')
+  .requiredOption('--change <name>', 'bound OpenSpec change')
+  .requiredOption('--session <id>', 'native session id')
+  .option('--agent <id>', 'native subagent id')
+  .option('--task <id>', 'must match the bound task id')
+  .option('--confirm-handoff', 'record a semantic handoff receipt for the current inputs')
+  .action(async (opts) => {
+    const projectDir = process.cwd();
+    try {
+      const result = await registerCompletionIntent({
+        projectDir,
+        ids: scopeIds(projectDir),
+        change: opts.change,
+        session: opts.session,
+        agent: opts.agent ?? null,
+        task: opts.task ?? null,
+        confirmHandoff: Boolean(opts.confirmHandoff),
+      });
+      for (const finding of result.findings ?? []) log.warn(`${finding.id}: ${finding.reason}`);
+      log.warn('Claude parent Stop cannot request a follow-up; run hooks complete again from the CLI');
+      if (result.receipt?.confirmationId) log.ok(`handoff receipt ${result.receipt.confirmationId}`);
+      else log.err('completion was not confirmed');
+      if (!result.accepted) process.exitCode = 1;
+    } catch (error) {
+      log.err(String(error.message || error));
+      process.exitCode = 1;
+    }
   });
 
 program
@@ -5744,4 +5851,7 @@ export {
   isGreenApplyExit,
   artifactBudgetFindings,
   checkReviewMd,
+  buildAmpSubagentSkillContent,
+  parseAmpSubagentSource,
+  AMP_SUBAGENT_SKILL_PREFIX,
 };

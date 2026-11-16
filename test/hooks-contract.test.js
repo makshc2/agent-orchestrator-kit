@@ -426,5 +426,14 @@ test('context budget keeps whole items up to 32 KiB, skips the rest, and reports
 test('builtinPolicies is the same registered list from both entry points', () => {
   assert.equal(Array.isArray(builtinPolicies), true);
   assert.equal(builtinPolicies, builtinPoliciesList);
-  assert.deepEqual(builtinPolicies.map((policy) => policy.id), ['recovery', 'context']);
+  assert.deepEqual(builtinPolicies.map((policy) => policy.id), [
+    'recovery',
+    'context',
+    'verification',
+    'completion',
+    'scope',
+    'checks',
+    'owned-sync',
+    'workflow-notifications',
+  ]);
 });

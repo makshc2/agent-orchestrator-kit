@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "change": "add-agent-workflow-automation",
+  "seq": 8,
+  "savedAt": "2026-11-16T17:31:51.298Z",
+  "role": "Implementer",
+  "done": "5.3 docs, 652 tests, pack dry-run, and strict validation",
+  "blocked": "",
+  "next": "archive after merge",
+  "task": "5.3",
+  "decisions": [],
+  "snapshot": {
+    "tasks": {
+      "total": 15,
+      "done": 13
+    },
+    "review": "APPROVE",
+    "head": "ebc6891c81ef03a5e7d55921ceabdd6cc9f50519",
+    "handoffSha256": "a7b872829e33e27522ea4e19be58e08eb263f100d31fcd20496b54337d136369"
+  },
+  "contentDigest": "f3313a902e515fcccae103d8b3595d28d849a18efbf1f2321a5089acbca885e4",
+  "digest": "e47e363415128d1e9749a3b9cf57c77b45a372092aabcf3af47c72f54f588276"
+}

@@ -579,6 +579,28 @@ Run `hooks-setup` on each machine (`git config` is local), same as `figma-setup`
 
 Separate from the Git pre-commit gate above. With `hooks.enabled: true` and `npx agent-orchestrator-kit hooks enable --client claude|cursor|amp`, lifecycle events deliver bound stack skills, give a metrics-neutral recovery briefing and keep a local audit. `hooks bind`, `hooks snapshot`, `hooks status` and `hooks disable` complete the set. Delivery is not compliance: the mandatory manual Read fallback stays. See [docs/agent-hooks.md](docs/agent-hooks.md).
 
+Workflow checks, verification, completion, owned sync, and local notices stay off until each policy is enabled. `mode: observe` reports findings and does not block. `mode: enforce` applies a decision only when that client's verified capability can carry it. Policy `options` are a single-line JSON object. There is no supported switch that turns a lifecycle event into user authorization; Claude, Cursor, and Amp still need the manual resolution below.
+
+Local observe-mode trial, from a project that already has the kit installed:
+
+```bash
+npx agent-orchestrator-kit hooks enable --client cursor
+npx agent-orchestrator-kit hooks bind --change <name> --role implementer --task 1.1 --session <native-session-id>
+npx agent-orchestrator-kit hooks verify --change <name> --session <native-session-id>
+npx agent-orchestrator-kit hooks complete --change <name> --session <native-session-id> --confirm-handoff
+npx agent-orchestrator-kit sync --owned --target all
+```
+
+Set `hooks.enabled: true` and `hooks.mode: observe` before the trial. `hooks verify` runs `verifier.test_command` when the session is bound and reuses a fresh record; an ordinary file write does not start that command. `hooks complete` only stores a receipt with `--confirm-handoff` after you have read the handoff. A later substantive outcome invalidates it, and an agent end stays pending until the worker rechecks. Cursor and Amp can ask for at most one follow-up per work epoch and two for that task and session. Claude's parent stop cannot do that, so rerun `hooks complete` yourself. `sync --owned` keeps a local edit and exits nonzero on a conflict; `update --sync` does the same delivery and skips the shell-sync hint.
+
+Disable the trial without removing the Git pre-commit gate:
+
+```bash
+npx agent-orchestrator-kit hooks disable --client cursor
+```
+
+Then set `hooks.enabled: false`. Pending outcomes stay on disk until they expire. Notices are local diagnostics only. Merging a pull request, publishing the package, and rolling the kit out to other repositories stay separate actions. The opt-in after-merge archive job is the existing `archive --if-ready` workflow in [CI archive](#ci-archive-opt-in); this runtime does not call it.
+
 ### Optional MCP: GitHub, GitLab, browser
 
 Same pattern as Figma: stdio launcher + gitignored env + committed `.example`. Tokens never go in chat or committed MCP JSON.

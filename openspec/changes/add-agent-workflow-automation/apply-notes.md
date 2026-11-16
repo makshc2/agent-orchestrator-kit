@@ -1,0 +1,8 @@
+Progress allowance: direct bind only (`via: 'explicit'`, no token) with role implementer, conductor, or implementation. Deny token-linked children even when the copied role is implementer, and deny direct binds for test-writer, code-writer, design-implementer, and testing.
+Allowed paths of the bound change only: `tasks.md` (checkbox toggles; tool.after digest must match) and `handoff.md`. Deny other changes, proposal.md, design.md, design-brief.md, specs/**, review.md, decisions.md, and symlink escapes. The hook must not tick tasks.
+Do not rename or extend frozen v1 (EventV1, ResultV1, store levels, ctx fields, capability names). Policy decisions are `{action, reason}` objects; a string deny is ignored. Do not change the dispatcher.
+Follow-ups: one per work epoch, two per intent. Do not reset that budget from commands, fingerprints, progress writes, worker edits, or unknown-origin edits.
+`verifier.test_command` runs only from `hooks verify`. Writes may invalidate evidence and enqueue configured scoped work. Do not call legacy unflagged sync from automation.
+No auto-approve, auto-commit, publishing, fleet rollout, or Phase 4. Ship no supported user-authorization provenance; claude, cursor, and amp stay on manual resolution.
+Reuse `reviewCurrency` and `tasksDigestText`. `handoff.md` is outside the approval digest. Keep both apply twins on `--role implementer`. Do not edit always-apply rules or templates/AGENTS.md.
+Claude has no parent Stop, no agent.end followup, and no file.changed: report the gap. Verify with `node --test` on the new hooks-workflow suites plus test/restore-recovery-briefing.test.js and test/hooks-recovery.test.js. Full `npm test` only when memory and load allow.

@@ -5,7 +5,7 @@ import { isAbsolute, relative, resolve } from 'node:path';
 
 import { dispatch, builtinPolicies } from '../index.js';
 import { createStore } from '../store.js';
-import { parseHookConfig } from '../install.js';
+import { hookConfigDefaults, parseHookConfig, readRequireSpecReview } from '../install.js';
 import { commitContextDelivery } from '../policies/context.js';
 import { TOKEN_RE, linkChild, recordSeenSession, resolveBinding } from '../binding.js';
 
@@ -50,12 +50,20 @@ export function scopeIds(projectDir) {
 }
 
 export function readHooksConfig(projectDir) {
+  const absent = () => ({
+    hooks: { ...hookConfigDefaults(), findings: [] },
+    pipeline: { require_spec_review: true },
+  });
   const orchPath = resolve(projectDir, '.agents', 'orchestrator.yaml');
-  if (!existsSync(orchPath)) return {};
+  if (!existsSync(orchPath)) return absent();
   try {
-    return { hooks: parseHookConfig(readFileSync(orchPath, 'utf8')) };
+    const content = readFileSync(orchPath, 'utf8');
+    return {
+      hooks: parseHookConfig(content),
+      pipeline: { require_spec_review: readRequireSpecReview(content) },
+    };
   } catch {
-    return {};
+    return absent();
   }
 }
 

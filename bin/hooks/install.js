@@ -453,24 +453,365 @@ export function hookConfigDefaults() {
   return { enabled: false, mode: 'observe', policies: {} };
 }
 
-export function parseHookConfig(content) {
-  const config = hookConfigDefaults();
-  let inHooks = false;
-  for (const line of String(content || '').split(/\r?\n/)) {
-    if (/^hooks:\s*$/.test(line)) {
-      inHooks = true;
+export const WORKFLOW_POLICY_IDS = [
+  'verification',
+  'completion',
+  'scope',
+  'checks',
+  'owned-sync',
+  'workflow-notifications',
+];
+
+const POLICY_OPTION_KEYS = {
+  verification: new Set(['timeoutMs', 'ignoredInputs', 'generatedOutputs', 'environmentNames']),
+  completion: new Set(['validationTimeoutMs']),
+  scope: new Set(),
+  checks: new Set(['commands', 'debounceMs', 'timeoutMs']),
+  'owned-sync': new Set(['target', 'debounceMs', 'timeoutMs']),
+  'workflow-notifications': new Set(['dedupMs']),
+};
+
+const TIMEOUT_RANGE = { min: 1, max: 300000 };
+const DEBOUNCE_RANGE = { min: 0, max: 5000 };
+const DEDUP_RANGE = { min: 1, max: 300000 };
+const SYNC_TARGETS = new Set(['all', 'cursor', 'claude', 'amp']);
+
+function readYamlScalar(raw) {
+  const value = String(raw || '').trim();
+  const quoted = value.match(/^"([^"]*)"|^'([^']*)'/);
+  if (quoted) return quoted[1] !== undefined ? quoted[1] : quoted[2];
+  return value.replace(/(^|\s)#.*$/, '').trim();
+}
+
+function integerIn(value, range) {
+  return Number.isInteger(value) && value >= range.min && value <= range.max;
+}
+
+function isRelativePath(value) {
+  if (typeof value !== 'string' || value === '') return false;
+  if (value.startsWith('/') || value.startsWith('\\') || /^[A-Za-z]:[\\/]/.test(value)) return false;
+  return !value.split(/[\\/]/).includes('..');
+}
+
+function isStringArray(value, paths) {
+  return Array.isArray(value) && value.every((item) => (paths ? isRelativePath(item) : typeof item === 'string'));
+}
+
+function validCheckCommand(command) {
+  if (!command || typeof command !== 'object' || Array.isArray(command)) return false;
+  const keys = Object.keys(command);
+  if (keys.length !== 5 || keys.some((key) => !['id', 'executable', 'args', 'globs', 'writablePaths'].includes(key))) return false;
+  if (typeof command.id !== 'string' || command.id === '') return false;
+  if (typeof command.executable !== 'string' || command.executable === '' || !isRelativePath(command.executable) && command.executable.includes('/')) return false;
+  if (command.executable.split(/[\\/]/).includes('..') || command.executable.startsWith('/') || /^[A-Za-z]:/.test(command.executable)) return false;
+  return isStringArray(command.args, false) && isStringArray(command.globs, true) && isStringArray(command.writablePaths, true);
+}
+
+export function policyOptionDefaults(id) {
+  switch (id) {
+    case 'verification':
+      return { timeoutMs: 30000, ignoredInputs: [], generatedOutputs: [], environmentNames: [] };
+    case 'completion':
+      return { validationTimeoutMs: 30000 };
+    case 'scope':
+      return {};
+    case 'checks':
+      return { commands: [], debounceMs: 500, timeoutMs: 30000 };
+    case 'owned-sync':
+      return { target: 'all', debounceMs: 500, timeoutMs: 30000 };
+    case 'workflow-notifications':
+      return { dedupMs: 60000 };
+    default:
+      return {};
+  }
+}
+
+export function validatePolicyOptions(id, options) {
+  if (options == null) return { ok: true, options: {} };
+  if (typeof options !== 'object' || Array.isArray(options)) {
+    return { ok: false, message: `policy ${id} options must be a JSON object` };
+  }
+  const allowed = POLICY_OPTION_KEYS[id];
+  if (!allowed) return { ok: true, options: { ...options } };
+  for (const key of Object.keys(options)) {
+    if (!allowed.has(key)) return { ok: false, message: `policy ${id} option ${key} is not supported` };
+  }
+  if (id === 'verification') {
+    if (options.timeoutMs !== undefined && !integerIn(options.timeoutMs, TIMEOUT_RANGE)) {
+      return { ok: false, message: 'verification timeoutMs must be an integer from 1 to 300000' };
+    }
+    for (const key of ['ignoredInputs', 'generatedOutputs']) {
+      if (options[key] !== undefined && !isStringArray(options[key], true)) {
+        return { ok: false, message: `verification ${key} must be relative path strings` };
+      }
+    }
+    if (options.environmentNames !== undefined && !isStringArray(options.environmentNames, false)) {
+      return { ok: false, message: 'verification environmentNames must be strings' };
+    }
+  } else if (id === 'completion') {
+    if (options.validationTimeoutMs !== undefined && !integerIn(options.validationTimeoutMs, TIMEOUT_RANGE)) {
+      return { ok: false, message: 'completion validationTimeoutMs must be an integer from 1 to 300000' };
+    }
+  } else if (id === 'checks') {
+    if (options.commands !== undefined && (!Array.isArray(options.commands) || !options.commands.every(validCheckCommand))) {
+      return { ok: false, message: 'checks commands must be objects with id, executable, args, globs and writablePaths' };
+    }
+    if (options.debounceMs !== undefined && !integerIn(options.debounceMs, DEBOUNCE_RANGE)) {
+      return { ok: false, message: 'checks debounceMs must be an integer from 0 to 5000' };
+    }
+    if (options.timeoutMs !== undefined && !integerIn(options.timeoutMs, TIMEOUT_RANGE)) {
+      return { ok: false, message: 'checks timeoutMs must be an integer from 1 to 300000' };
+    }
+  } else if (id === 'owned-sync') {
+    if (options.target !== undefined && !SYNC_TARGETS.has(options.target)) {
+      return { ok: false, message: 'owned-sync target must be all, cursor, claude or amp' };
+    }
+    if (options.debounceMs !== undefined && !integerIn(options.debounceMs, DEBOUNCE_RANGE)) {
+      return { ok: false, message: 'owned-sync debounceMs must be an integer from 0 to 5000' };
+    }
+    if (options.timeoutMs !== undefined && !integerIn(options.timeoutMs, TIMEOUT_RANGE)) {
+      return { ok: false, message: 'owned-sync timeoutMs must be an integer from 1 to 300000' };
+    }
+  } else if (id === 'workflow-notifications') {
+    if (options.dedupMs !== undefined && !integerIn(options.dedupMs, DEDUP_RANGE)) {
+      return { ok: false, message: 'workflow-notifications dedupMs must be an integer from 1 to 300000' };
+    }
+  }
+  return { ok: true, options: { ...options } };
+}
+
+export function resolvePolicyOptions(id, options = {}) {
+  const validation = validatePolicyOptions(id, options ?? {});
+  if (!validation.ok) return validation;
+  return { ok: true, options: { ...policyOptionDefaults(id), ...validation.options } };
+}
+
+function scalarToken(raw) {
+  const value = readYamlScalar(raw);
+  if (value === 'true' || value === 'false') return { kind: 'bool', value: value === 'true' };
+  if ((value === 'observe' || value === 'enforce') && !/^['"]/.test(String(raw || '').trim())) return { kind: 'word', value };
+  const quoted = String(raw || '').trim().match(/^(['"])(observe|enforce)\1/);
+  if (quoted) return { kind: 'word', value: quoted[2] };
+  return { kind: 'other', value };
+}
+
+function extractJsonObject(text) {
+  if (!text.startsWith('{')) return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (inString) {
+      if (escape) escape = false;
+      else if (ch === '\\') escape = true;
+      else if (ch === '"') inString = false;
       continue;
     }
-    if (inHooks && /^\S/.test(line)) break;
-    if (!inHooks) continue;
-    const enabled = line.match(/^\s+enabled:\s*(true|false)\s*$/);
-    if (enabled) config.enabled = enabled[1] === 'true';
-    const mode = line.match(/^\s+mode:\s*(\w+)\s*$/);
-    if (mode) config.mode = mode[1];
-    const policies = line.match(/^\s+policies:\s*(\{\}\s*)?$/);
-    if (policies) config.policies = {};
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === '{') depth += 1;
+    else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        const rest = text.slice(i + 1).trim();
+        if (rest !== '' && !rest.startsWith('#')) return null;
+        return text.slice(0, i + 1);
+      }
+    }
   }
-  return config;
+  return null;
+}
+
+function configFinding(message, policyId = null) {
+  return { code: 'hooks.policy.config.invalid', severity: 'error', message, policyId, paths: [] };
+}
+
+// Direct child of the top-level pipeline block only. Comments, nested
+// lookalikes and values outside that block cannot flip the default.
+export function readRequireSpecReview(content) {
+  let inPipeline = false;
+  let childIndent = null;
+  let found = false;
+  let value = null;
+  for (const line of String(content || '').split(/\r?\n/)) {
+    if (/^pipeline:\s*(#.*)?$/.test(line)) {
+      found = true;
+      inPipeline = true;
+      childIndent = null;
+      continue;
+    }
+    if (inPipeline && /^#/.test(line)) continue;
+    if (inPipeline && /^\S/.test(line)) break;
+    if (!inPipeline || /^\s*$/.test(line) || /^\s*#/.test(line)) continue;
+    const entry = line.match(/^(\s+)([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/);
+    if (!entry) continue;
+    if (childIndent === null) childIndent = entry[1];
+    if (entry[1] !== childIndent) continue;
+    if (entry[2] !== 'require_spec_review') continue;
+    const raw = readYamlScalar(entry[3]);
+    value = raw === 'true' ? true : raw === 'false' ? false : null;
+  }
+  if (!found || value === null) return true;
+  return value;
+}
+
+export function parseHookConfig(content) {
+  const config = hookConfigDefaults();
+  const findings = [];
+  const lines = String(content || '').split(/\r?\n/);
+  const start = lines.findIndex((line) => /^hooks:\s*(#.*)?$/.test(line));
+  if (start < 0) return { ...config, findings };
+
+  let hooksIndent = null;
+  let policiesIndent = null;
+  let policyIndent = null;
+  let state = 'hooks';
+  let currentId = null;
+
+  const entryFor = (id) => {
+    if (!config.policies[id]) config.policies[id] = { enabled: false, mode: 'observe', options: {} };
+    return config.policies[id];
+  };
+  const invalidate = (id, message) => {
+    entryFor(id).enabled = false;
+    findings.push(configFinding(message, id));
+  };
+  const consumeDeeper = (parentIndent, from) => {
+    let cursor = from;
+    while (cursor < lines.length) {
+      const line = lines[cursor];
+      if (/^\s*$/.test(line) || /^\s*#/.test(line)) {
+        cursor += 1;
+        continue;
+      }
+      if (/^\S/.test(line)) break;
+      if (line.match(/^\s*/)[0].length <= parentIndent.length) break;
+      cursor += 1;
+    }
+    return cursor;
+  };
+
+  for (let i = start + 1; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (/^\s*$/.test(line) || /^\s*#/.test(line)) continue;
+    if (/^\S/.test(line)) break;
+    const indent = line.match(/^\s*/)[0];
+    const body = line.slice(indent.length);
+    if (hooksIndent === null) hooksIndent = indent;
+    if (indent.length < hooksIndent.length) break;
+
+    if (indent === hooksIndent) {
+      state = 'hooks';
+      currentId = null;
+    } else if (state === 'policy' && policiesIndent && indent === policiesIndent) {
+      state = 'policies';
+      currentId = null;
+      policyIndent = null;
+    }
+
+    if (state === 'hooks' && indent === hooksIndent) {
+      const enabled = body.match(/^enabled:\s*(.+)$/);
+      if (enabled) {
+        const token = scalarToken(enabled[1]);
+        if (token.kind === 'bool') config.enabled = token.value;
+        else findings.push(configFinding('hooks.enabled must be a boolean'));
+        continue;
+      }
+      const mode = body.match(/^mode:\s*(.+)$/);
+      if (mode) {
+        const token = scalarToken(mode[1]);
+        if (token.kind === 'word') config.mode = token.value;
+        else findings.push(configFinding('hooks.mode must be observe or enforce'));
+        continue;
+      }
+      if (/^policies:\s*\{\s*\}\s*(#.*)?$/.test(body)) {
+        config.policies = {};
+        state = 'hooks';
+        continue;
+      }
+      if (/^policies:\s*(#.*)?$/.test(body)) {
+        state = 'policies';
+        policiesIndent = null;
+        currentId = null;
+        continue;
+      }
+      if (/^policies:/.test(body)) findings.push(configFinding('hooks.policies must be {} or a nested map'));
+      continue;
+    }
+
+    if ((state === 'policies' || state === 'policy') && policiesIndent === null && indent.length > hooksIndent.length) {
+      policiesIndent = indent;
+    }
+    if ((state === 'policies' || state === 'policy') && policiesIndent && indent === policiesIndent) {
+      const named = body.match(/^([A-Za-z0-9][A-Za-z0-9_-]*):\s*(.*)$/);
+      if (!named) continue;
+      currentId = named[1];
+      entryFor(currentId);
+      state = 'policy';
+      policyIndent = null;
+      const inline = readYamlScalar(named[2]);
+      if (inline === '' ) continue;
+      if (inline === '{}') continue;
+      invalidate(currentId, `policy ${currentId} must be a nested mapping`);
+      i = consumeDeeper(indent, i + 1) - 1;
+      continue;
+    }
+
+    if (state === 'policy' && currentId && indent.length > (policiesIndent ? policiesIndent.length : hooksIndent.length)) {
+      if (policyIndent === null) policyIndent = indent;
+      if (indent !== policyIndent) continue;
+      const enabled = body.match(/^enabled:\s*(.+)$/);
+      if (enabled) {
+        const token = scalarToken(enabled[1]);
+        if (token.kind === 'bool') entryFor(currentId).enabled = token.value;
+        else invalidate(currentId, `policy ${currentId} enabled must be a boolean`);
+        continue;
+      }
+      const mode = body.match(/^mode:\s*(.+)$/);
+      if (mode) {
+        const token = scalarToken(mode[1]);
+        if (token.kind === 'word') entryFor(currentId).mode = token.value;
+        else invalidate(currentId, `policy ${currentId} mode must be observe or enforce`);
+        continue;
+      }
+      const options = body.match(/^options:\s*(.*)$/);
+      if (!options) continue;
+      const raw = String(options[1] || '').replace(/\s+#.*$/, '').trim();
+      if (raw === '' || raw.startsWith('|') || raw.startsWith('>')) {
+        invalidate(currentId, `policy ${currentId} options must be a single-line JSON object`);
+        i = consumeDeeper(indent, i + 1) - 1;
+        continue;
+      }
+      const jsonText = extractJsonObject(raw);
+      if (!jsonText) {
+        invalidate(currentId, `policy ${currentId} options JSON is malformed or multiline`);
+        continue;
+      }
+      let parsed;
+      try {
+        parsed = JSON.parse(jsonText);
+      } catch {
+        invalidate(currentId, `policy ${currentId} options JSON is malformed`);
+        continue;
+      }
+      const validated = validatePolicyOptions(currentId, parsed);
+      if (!validated.ok) {
+        entryFor(currentId).options = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+        invalidate(currentId, validated.message);
+        continue;
+      }
+      entryFor(currentId).options = validated.options;
+    }
+  }
+
+  const invalidIds = new Set(findings.map((finding) => finding.policyId).filter(Boolean));
+  for (const id of invalidIds) {
+    if (config.policies[id]) config.policies[id].enabled = false;
+  }
+  return { ...config, findings };
 }
 
 export function ownedHookEvents(client) {

@@ -17,6 +17,17 @@ ok()   { printf "${GREEN}  ✓${RESET} %s\n" "$1"; }
 info() { printf "${CYAN}  →${RESET} %s\n" "$1"; }
 warn() { printf "${YELLOW}  !${RESET} %s\n" "$1"; }
 
+if [ "${1:-}" = "--owned" ]; then
+  if [ -x "$ROOT/node_modules/.bin/agent-orchestrator-kit" ]; then
+    exec "$ROOT/node_modules/.bin/agent-orchestrator-kit" sync --owned
+  fi
+  if [ -f "$ROOT/bin/agent-orchestrator.js" ]; then
+    exec node "$ROOT/bin/agent-orchestrator.js" sync --owned
+  fi
+  echo "local agent-orchestrator-kit CLI not found" >&2
+  exit 1
+fi
+
 echo ""
 echo "sync-local-agent-skills"
 echo "-----------------------"

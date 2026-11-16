@@ -33,17 +33,14 @@ export function extractMirrorSource(text, spec) {
   return body.join('\n');
 }
 
-export function syncInstructionMirrors(root, { check = false } = {}) {
-  const result = { changed: [], drift: [], skipped: [] };
+export function renderInstructionMirrors(root) {
+  const result = { changed: [], drift: [], skipped: [], text: null };
   const targetPath = join(root, MIRROR_TARGET);
   if (!existsSync(targetPath)) {
     result.skipped.push('target');
     return result;
   }
-  const original = readFileSync(targetPath, 'utf8');
-  let lines = original.split('\n');
-  const changedIds = [];
-
+  let lines = readFileSync(targetPath, 'utf8').split('\n');
   for (const spec of MIRRORS) {
     const sourcePath = join(root, spec.source);
     if (!existsSync(sourcePath)) {
@@ -71,15 +68,21 @@ export function syncInstructionMirrors(root, { check = false } = {}) {
     const oldBlock = lines.slice(beginIdx, endIdx + 1);
     if (oldBlock.join('\n') === newBlock.join('\n')) continue;
     result.drift.push(spec.id);
-    if (!check) {
-      lines = [...lines.slice(0, beginIdx), ...newBlock, ...lines.slice(endIdx + 1)];
-      changedIds.push(spec.id);
-    }
+    result.changed.push(spec.id);
+    lines = [...lines.slice(0, beginIdx), ...newBlock, ...lines.slice(endIdx + 1)];
   }
-
-  if (!check && changedIds.length > 0) {
-    writeFileSync(targetPath, lines.join('\n'));
-    result.changed.push(...changedIds);
-  }
+  result.text = lines.join('\n');
   return result;
+}
+
+export function syncInstructionMirrors(root, { check = false } = {}) {
+  const rendered = renderInstructionMirrors(root);
+  if (!check && rendered.text != null && rendered.changed.length > 0) {
+    writeFileSync(join(root, MIRROR_TARGET), rendered.text);
+  }
+  return {
+    changed: check ? [] : rendered.changed,
+    drift: rendered.drift,
+    skipped: rendered.skipped,
+  };
 }

@@ -49,7 +49,7 @@ function isPlanningPath(relative) {
   return relative.startsWith('specs/') && relative.endsWith('.md');
 }
 
-function tasksDigestText(relative, text) {
+export function tasksDigestText(relative, text) {
   if (relative !== 'tasks.md') return text;
   return text.replace(/^(\s*)- \[[xX]\]/gm, '$1- [ ]');
 }
@@ -410,4 +410,97 @@ function currentPlanningPaths(changeDir) {
   };
   walk(join(changeDir, 'specs'), 'specs/');
   return found.filter(isPlanningPath);
+}
+
+function hashPlanning(projectDir, relChangeDir, changeDir, sha) {
+  let baseline = [];
+  if (sha && HASH_RE.test(sha)) {
+    try {
+      baseline = git(projectDir, ['ls-tree', '-r', '--name-only', sha, '--', relChangeDir.replace(/\/$/, '')])
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.startsWith(relChangeDir))
+        .map((line) => line.slice(relChangeDir.length))
+        .filter(isPlanningPath);
+    } catch {
+      baseline = [];
+    }
+  }
+  const current = currentPlanningPaths(changeDir);
+  const compared = Array.from(new Set([...baseline, ...current])).sort();
+  const lines = [];
+  for (const relative of compared) {
+    const basePresent = baseline.includes(relative);
+    let baseText = '';
+    if (basePresent) {
+      try {
+        baseText = git(projectDir, ['show', `${sha}:./${relChangeDir}${relative}`]);
+      } catch {
+        baseText = '';
+      }
+    }
+    let currentText = '';
+    let currentPresent = false;
+    try {
+      currentText = readFileSync(join(changeDir, relative), 'utf8');
+      currentPresent = true;
+    } catch {
+      currentPresent = false;
+    }
+    const baseMark = basePresent ? sha256(tasksDigestText(relative, baseText)) : 'absent';
+    const currentMark = currentPresent ? sha256(tasksDigestText(relative, currentText)) : 'absent';
+    lines.push(`${relative}\0${baseMark}\0${currentMark}`);
+  }
+  return { digest: sha256(lines.join('\n')), files: compared };
+}
+
+export function approvalRevision(projectDir, changeName) {
+  const changeDir = join(projectDir, 'openspec', 'changes', changeName);
+  const relChangeDir = `openspec/changes/${changeName}/`;
+  const unknown = (extra = {}) => ({
+    state: 'unknown',
+    verdict: null,
+    reviewSha: null,
+    reviewDigest: null,
+    digest: null,
+    files: [],
+    ...extra,
+  });
+  if (!existsSync(changeDir)) return unknown();
+  let verdict = null;
+  let reviewDigest = null;
+  try {
+    const reviewPath = join(changeDir, 'review.md');
+    if (existsSync(reviewPath)) {
+      const reviewText = readFileSync(reviewPath, 'utf8');
+      reviewDigest = sha256(reviewText);
+      const match = /^\s*(?:[-*]\s*)?(?:\*\*)?Verdict(?:\*\*)?\s*:\s*(.+)$/im.exec(reviewText);
+      verdict = match ? match[1].replace(/\*/g, '').trim() : null;
+    }
+  } catch {
+    return unknown();
+  }
+  let gitAvailable = false;
+  try {
+    git(projectDir, ['rev-parse', '--is-inside-work-tree']);
+    gitAvailable = true;
+  } catch {
+    gitAvailable = false;
+  }
+  const currency = reviewCurrency(projectDir, relChangeDir, changeDir, gitAvailable);
+  const planning = hashPlanning(projectDir, relChangeDir, changeDir, currency.sha);
+  const approved = Boolean(verdict && /^approve/i.test(verdict));
+  let state = 'unknown';
+  if (!verdict) state = 'unknown';
+  else if (!approved) state = 'rejected';
+  else if (currency.state === 'current') state = 'current';
+  else if (currency.state === 'stale') state = 'stale';
+  return {
+    state,
+    verdict,
+    reviewSha: currency.sha,
+    reviewDigest,
+    digest: planning.digest,
+    files: planning.files,
+  };
 }

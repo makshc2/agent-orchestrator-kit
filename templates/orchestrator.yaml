@@ -93,7 +93,25 @@ figma:
 hooks:
   enabled: false
   mode: observe
-  policies: {}
+  policies:
+    verification:
+      enabled: false
+      mode: observe
+    completion:
+      enabled: false
+      mode: observe
+    scope:
+      enabled: false
+      mode: observe
+    checks:
+      enabled: false
+      mode: observe
+    owned-sync:
+      enabled: false
+      mode: observe
+    workflow-notifications:
+      enabled: false
+      mode: observe
 
 verifier:
   lint_command: "npm run lint"
