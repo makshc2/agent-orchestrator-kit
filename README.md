@@ -575,6 +575,10 @@ npx agent-orchestrator-kit hooks-setup
 
 Run `hooks-setup` on each machine (`git config` is local), same as `figma-setup`.
 
+### Agent hook runtime (optional, off by default)
+
+Separate from the Git pre-commit gate above. With `hooks.enabled: true` and `npx agent-orchestrator-kit hooks enable --client claude|cursor|amp`, lifecycle events deliver bound stack skills, give a metrics-neutral recovery briefing and keep a local audit. `hooks bind`, `hooks snapshot`, `hooks status` and `hooks disable` complete the set. Delivery is not compliance: the mandatory manual Read fallback stays. See [docs/agent-hooks.md](docs/agent-hooks.md).
+
 ### Optional MCP: GitHub, GitLab, browser
 
 Same pattern as Figma: stdio launcher + gitignored env + committed `.example`. Tokens never go in chat or committed MCP JSON.

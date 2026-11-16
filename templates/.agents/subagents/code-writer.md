@@ -16,6 +16,7 @@ Before writing code:
    - `.agents/skills/vue-composables/SKILL.md` — creating or editing composables.
    - `.agents/skills/vite/SKILL.md` — `vite.config.*`, plugins, env variables, build config.
    When unsure whether a skill applies, read it. For deeper topics use the skill's `references/*.md`. For a non-vue3 stack, read the equivalent skills present in `.agents/skills/` for that stack; if a skill file does not exist in this project, note its path as missing in the report (`Skills:`) and continue.
+   Agent hooks: when the spawn prompt carries a binding token (`aok-bind-…`) and hooks are enabled, run `npx agent-orchestrator-kit hooks bind --token <token> [--agent <id>]` first; without a token or with hooks disabled the mandatory Read above applies. Injected skill content replaces that Read only with full current contents plus a valid same-context receipt.
 2. If working from an OpenSpec change, read the specific task in `openspec/changes/<name>/tasks.md` plus the relevant section of `design.md` and `specs/*/spec.md` — implement exactly what is scoped, nothing more.
 3. Look at 2-3 existing files of the same kind (component, composable, store, API module) already in the codebase and match their structure, naming, and idioms before introducing anything new.
 
@@ -33,7 +34,7 @@ Return exactly this report contract:
 ```
 ## Subagent report: code-writer
 **Status:** done | blocked
-**Skills:** tech skills read (paths) or missing
+**Skills:** read (paths), injected (paths), or missing (paths)
 **Files:** files changed (or none)
 **Done:** one-line summary per file
 **Blocked:** unresolved implementation issue or none

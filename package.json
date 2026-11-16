@@ -38,6 +38,7 @@
     "!templates/.cursor",
     "profiles/",
     "README.md",
+    "docs/agent-hooks.md",
     "CHANGELOG.md",
     "LICENSE"
   ],

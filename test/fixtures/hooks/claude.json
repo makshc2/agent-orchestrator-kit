@@ -1,0 +1,123 @@
+{
+  "source": "https://code.claude.com/docs/en/hooks",
+  "recordedAt": "2026-11-16",
+  "version": "shape-verified (hook_event_name input; no in-band version field)",
+  "fixtures": [
+    {
+      "name": "session-start-startup",
+      "input": {
+        "session_id": "sess-claude-1",
+        "transcript_path": "/home/user/.claude/projects/p/sess-claude-1.jsonl",
+        "cwd": "/home/user/project",
+        "hook_event_name": "SessionStart",
+        "source": "startup"
+      },
+      "expected": { "kind": "session.start", "sessionId": "sess-claude-1" }
+    },
+    {
+      "name": "session-start-resume",
+      "input": {
+        "session_id": "sess-claude-1",
+        "cwd": "/home/user/project",
+        "hook_event_name": "SessionStart",
+        "source": "resume"
+      },
+      "expected": { "kind": "session.resume", "sessionId": "sess-claude-1" }
+    },
+    {
+      "name": "session-start-compact-reset",
+      "input": {
+        "session_id": "sess-claude-1",
+        "cwd": "/home/user/project",
+        "hook_event_name": "SessionStart",
+        "source": "compact"
+      },
+      "expected": { "kind": "context.reset", "sessionId": "sess-claude-1" }
+    },
+    {
+      "name": "subagent-start",
+      "input": {
+        "session_id": "sess-claude-1",
+        "agent_id": "agent-claude-7",
+        "agent_type": "code-writer",
+        "cwd": "/home/user/project",
+        "hook_event_name": "SubagentStart"
+      },
+      "expected": { "kind": "agent.start", "sessionId": "sess-claude-1", "agentId": "agent-claude-7" }
+    },
+    {
+      "name": "subagent-stop",
+      "input": {
+        "session_id": "sess-claude-1",
+        "agent_id": "agent-claude-7",
+        "agent_type": "code-writer",
+        "cwd": "/home/user/project",
+        "hook_event_name": "SubagentStop"
+      },
+      "expected": { "kind": "agent.end", "agentId": "agent-claude-7" }
+    },
+    {
+      "name": "pre-tool-use-read",
+      "input": {
+        "session_id": "sess-claude-1",
+        "transcript_path": "/home/user/.claude/projects/p/sess-claude-1.jsonl",
+        "cwd": "/home/user/project",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Read",
+        "tool_input": { "file_path": "/home/user/project/src/app.js" },
+        "tool_use_id": "toolu_01ABC"
+      },
+      "expected": { "kind": "tool.before", "operation": "read", "files": ["src/app.js"], "toolId": "toolu_01ABC" }
+    },
+    {
+      "name": "pre-tool-use-bash-unknown-writes",
+      "input": {
+        "session_id": "sess-claude-1",
+        "cwd": "/home/user/project",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": { "command": "npm test", "description": "Run test suite" },
+        "tool_use_id": "toolu_02DEF"
+      },
+      "expected": { "kind": "tool.before", "operation": "shell", "files": [], "toolId": "toolu_02DEF" }
+    },
+    {
+      "name": "post-tool-use-write",
+      "input": {
+        "session_id": "sess-claude-1",
+        "cwd": "/home/user/project",
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Edit",
+        "tool_input": { "file_path": "/home/user/project/src/app.js", "old_string": "a", "new_string": "b" },
+        "tool_use_id": "toolu_03GHI"
+      },
+      "expected": { "kind": "tool.after", "operation": "write", "files": ["src/app.js"], "outcome": "success" }
+    },
+    {
+      "name": "pre-compact",
+      "input": {
+        "session_id": "sess-claude-1",
+        "cwd": "/home/user/project",
+        "hook_event_name": "PreCompact",
+        "trigger": "auto"
+      },
+      "expected": { "kind": "context.compacting" }
+    },
+    {
+      "name": "session-end",
+      "input": {
+        "session_id": "sess-claude-1",
+        "cwd": "/home/user/project",
+        "hook_event_name": "SessionEnd",
+        "reason": "prompt_input_exit"
+      },
+      "expected": { "kind": "session.end", "stopReason": null }
+    },
+    {
+      "name": "unknown-event",
+      "input": { "session_id": "sess-claude-1", "cwd": "/home/user/project", "hook_event_name": "SomethingNew" },
+      "expected": { "kind": null }
+    }
+  ]
+}

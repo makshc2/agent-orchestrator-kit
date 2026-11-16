@@ -83,6 +83,13 @@ figma:
   token_key: FIGMA_ACCESS_TOKEN
   mcp_launcher: scripts/figma-mcp-launcher.cjs
 
+# Opt-in local agent hook runtime (context delivery + local diagnostics).
+# Distinct from the Git pre-commit hooks-setup/init --hooks gate.
+hooks:
+  enabled: false
+  mode: observe
+  policies: {}
+
 verifier:
   lint_command: ""
   build_command: ""

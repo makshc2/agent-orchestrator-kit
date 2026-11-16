@@ -13,6 +13,17 @@ import { collectRecoverySources } from './recovery-sources.js';
 import { buildRecoveryBriefing } from './session-recovery.js';
 import { syncInstructionMirrors } from './instruction-mirrors.js';
 import {
+  HOOK_CLIENTS,
+  enableHooksClient,
+  disableHooksClient,
+  hooksStatus,
+  refreshOwnedHookAssets,
+} from './hooks/install.js';
+import { bindSession, linkChild, resolveBinding, seenSessions } from './hooks/binding.js';
+import { captureSnapshot } from './hooks/policies/recovery.js';
+import { scopeIds } from './hooks/adapters/shared.js';
+import { createStore as createHookStore } from './hooks/store.js';
+import {
   CHECKPOINT_DECISIONS_TOTAL,
   CHECKPOINT_TMP,
   buildRecord,
@@ -4420,6 +4431,10 @@ program
     refreshFigmaManagedFiles(projectDir);
     log.title('Refreshing MCP launchers and hook script');
     refreshOptionalMcpManagedFiles(projectDir);
+    log.title('Refreshing agent hook assets (opt-in)');
+    const hookAssets = refreshOwnedHookAssets({ projectDir, kitRoot: KIT_ROOT, log });
+    for (const conflict of hookAssets.conflicts) log.warn(conflict);
+    if (!hookAssets.changed) log.info('no owned hook assets to refresh (hooks not enabled or already current)');
     log.title('Configuring Memory MCP');
     refreshMemoryManagedFiles(projectDir);
     ensureMemoryMcpEntry(projectDir);
@@ -4926,6 +4941,142 @@ program
     log.title('agent-orchestrator hooks-setup');
     const result = runHooksSetup(projectDir);
     if (!result.ok) process.exitCode = 1;
+  });
+
+const hooksCommand = program
+  .command('hooks')
+  .description('Opt-in local agent hook runtime (context delivery, local diagnostics) — distinct from the Git pre-commit hooks-setup gate');
+
+hooksCommand
+  .command('enable')
+  .description('Install kit-owned agent hook entries for one client (preserve foreign/spend/Git hooks)')
+  .requiredOption('--client <client>', `client: ${HOOK_CLIENTS.join(' | ')}`)
+  .action((opts) => {
+    const projectDir = process.cwd();
+    const client = String(opts.client || '').toLowerCase();
+    log.title(`agent-orchestrator hooks enable  (${client})`);
+    if (!HOOK_CLIENTS.includes(client)) {
+      log.err(`invalid --client "${client}" (use ${HOOK_CLIENTS.join(' | ')})`);
+      process.exitCode = 1;
+      return;
+    }
+    const result = enableHooksClient({ projectDir, kitRoot: KIT_ROOT, client, log });
+    for (const note of result.adopted) log.ok(`adopted owned entry ${note}`);
+    for (const conflict of result.conflicts) log.warn(conflict);
+    if (!result.ok) {
+      log.err('hooks enable stopped — resolve the conflicts above, bytes left unchanged');
+      process.exitCode = 1;
+      return;
+    }
+    log.info('mode stays observe by default; enforcement requires explicit config opt-in');
+    log.info('hook state is local (never committed); only .agents/hooks/ownership.json is git-tracked');
+  });
+
+hooksCommand
+  .command('disable')
+  .description('Remove kit-owned agent hook entries for one client (never touches foreign or modified files)')
+  .requiredOption('--client <client>', `client: ${HOOK_CLIENTS.join(' | ')}`)
+  .action((opts) => {
+    const projectDir = process.cwd();
+    const client = String(opts.client || '').toLowerCase();
+    log.title(`agent-orchestrator hooks disable  (${client})`);
+    if (!HOOK_CLIENTS.includes(client)) {
+      log.err(`invalid --client "${client}" (use ${HOOK_CLIENTS.join(' | ')})`);
+      process.exitCode = 1;
+      return;
+    }
+    const result = disableHooksClient({ projectDir, kitRoot: KIT_ROOT, client, log });
+    for (const conflict of result.conflicts) log.warn(conflict);
+    if (!result.ok) {
+      log.err('hooks disable stopped — owned entries left in place');
+      process.exitCode = 1;
+      return;
+    }
+  });
+
+hooksCommand
+  .command('status')
+  .description('Report agent hook runtime state per client (labels it distinctly from the Git pre-commit gate)')
+  .option('--json', 'machine-readable JSON status')
+  .action(async (opts) => {
+    const projectDir = process.cwd();
+    const status = hooksStatus({ projectDir, kitRoot: KIT_ROOT });
+    try {
+      // Advisory: injected start context is authoritative when several sessions share a worktree.
+      status.sessions = await seenSessions({ projectDir, ids: scopeIds(projectDir) });
+    } catch {
+      status.sessions = [];
+    }
+    if (opts.json) {
+      console.log(JSON.stringify(status, null, 2));
+      return;
+    }
+    log.title('agent-orchestrator hooks status  (agent hook runtime)');
+    console.log(`  git pre-commit gate (hooks-setup): unchanged, managed separately`);
+    for (const client of HOOK_CLIENTS) {
+      const entry = status.clients[client];
+      const state = entry.enabled
+        ? `enabled${entry.adopted ? ' (adopted committed entries)' : ''}`
+        : 'disabled';
+      const version = entry.version ? `  version: ${entry.version}` : '';
+      console.log(`  ${client.padEnd(7)} ${state}${version}`);
+      for (const conflict of entry.conflicts) console.log(`          ! ${conflict}`);
+    }
+    console.log(`  state root: ${status.runtime.stateRoot}${status.runtime.fallbackStateRoot ? ' (non-Git fallback)' : ''}`);
+  });
+
+hooksCommand
+  .command('bind')
+  .description('Bind an explicit change/role/task to a native session id (or link a child with --token)')
+  .option('--change <name>', 'active OpenSpec change name')
+  .option('--role <role>', 'implementer | test-writer | code-writer | design-implementer | conductor')
+  .option('--task <id>', 'task id from tasks.md, e.g. 3.4')
+  .option('--session <id>', 'native session id echoed in injected start context or hooks status --json')
+  .option('--agent <id>', 'native subagent id, when the client reports one')
+  .option('--token <token>', 'single-use binding token printed by the parent bind')
+  .option('--json', 'machine-readable output')
+  .action(async (opts) => {
+    const projectDir = process.cwd();
+    const ids = scopeIds(projectDir);
+    try {
+      if (opts.token) {
+        const linked = await linkChild({ projectDir, ids, token: opts.token, session: opts.session, agent: opts.agent ?? null, role: opts.role ?? null });
+        if (opts.json) console.log(JSON.stringify(linked));
+        else if (linked.ok) log.ok(`child linked to ${linked.binding.changeId} task ${linked.binding.task}`);
+        else log.warn(`token not linked (${linked.reason}); child identity stays null — manually Read the resolved skill paths`);
+        if (!linked.ok) process.exitCode = 1;
+        return;
+      }
+      const result = await bindSession({ projectDir, ids, change: opts.change, role: opts.role, task: opts.task, session: opts.session, agent: opts.agent ?? null });
+      if (opts.json) { console.log(JSON.stringify(result)); return; }
+      log.ok(`bound ${result.binding.changeId} task ${result.binding.task} (${result.binding.role}) to session ${result.binding.sessionId}`);
+      console.log(`  binding token (single use, expires ${result.expiresAt}): ${result.token}`);
+      console.log('  pass the token in each child spawn prompt; children never inherit a binding without it');
+    } catch (error) {
+      log.err(String(error.message || error));
+      process.exitCode = 1;
+    }
+  });
+
+hooksCommand
+  .command('snapshot')
+  .description('Capture a technical snapshot (HEAD, changed paths, bound task, artifact digests) into local hook storage')
+  .requiredOption('--session <id>', 'native session id of the bound session')
+  .option('--agent <id>', 'native subagent id')
+  .action(async (opts) => {
+    const projectDir = process.cwd();
+    const ids = scopeIds(projectDir);
+    const binding = await resolveBinding({ projectDir, ids, sessionId: opts.session, agentId: opts.agent ?? null });
+    if (!binding) {
+      log.warn('no explicit binding for this session; nothing captured (run hooks bind first)');
+      process.exitCode = 1;
+      return;
+    }
+    const event = { eventId: `cli-snapshot-${Date.now()}`, kind: 'snapshot', scope: { changeId: binding.changeId, sessionId: opts.session, agentId: opts.agent ?? null }, data: {} };
+    const level = opts.agent ? 'agent' : 'session';
+    const store = createHookStore({ projectDir, scope: { level, ...ids, changeId: binding.changeId, sessionId: opts.session, agentId: opts.agent ?? null, eventId: event.eventId }, pruneIntervalMs: 10 ** 9 });
+    const snapshot = await captureSnapshot({ projectDir, event, store, binding, trigger: 'explicit' });
+    log.ok(`snapshot captured at ${snapshot.capturedAt} (technical observation only; semantic files untouched)`);
   });
 
 program

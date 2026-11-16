@@ -1,0 +1,182 @@
+{
+  "source": "https://cursor.com/docs/hooks",
+  "recordedAt": "2026-11-16",
+  "version": "3.22.12",
+  "fixtures": [
+    {
+      "name": "session-start-local",
+      "input": {
+        "conversation_id": "conv-cursor-1",
+        "generation_id": "gen-1",
+        "hook_event_name": "sessionStart",
+        "cursor_version": "3.22.12",
+        "workspace_roots": ["/home/user/project"],
+        "session_id": "conv-cursor-1",
+        "is_background_agent": false,
+        "composer_mode": "agent"
+      },
+      "expected": { "kind": "session.start", "sessionId": "conv-cursor-1" }
+    },
+    {
+      "name": "session-start-cloud",
+      "input": {
+        "conversation_id": "conv-cursor-cloud",
+        "generation_id": "gen-2",
+        "hook_event_name": "sessionStart",
+        "cursor_version": "3.22.12",
+        "session_id": "conv-cursor-cloud",
+        "is_background_agent": true
+      },
+      "expected": { "kind": "session.start", "cloud": true }
+    },
+    {
+      "name": "session-end-completed",
+      "input": {
+        "conversation_id": "conv-cursor-1",
+        "generation_id": "gen-9",
+        "hook_event_name": "sessionEnd",
+        "cursor_version": "3.22.12",
+        "session_id": "conv-cursor-1",
+        "reason": "completed",
+        "duration_ms": 45000,
+        "is_background_agent": false
+      },
+      "expected": { "kind": "session.end", "stopReason": "completed" }
+    },
+    {
+      "name": "session-end-aborted",
+      "input": {
+        "conversation_id": "conv-cursor-1",
+        "generation_id": "gen-9",
+        "hook_event_name": "sessionEnd",
+        "cursor_version": "3.22.12",
+        "session_id": "conv-cursor-1",
+        "reason": "aborted",
+        "is_background_agent": false
+      },
+      "expected": { "kind": "session.end", "stopReason": "user_cancelled" }
+    },
+    {
+      "name": "before-read-file",
+      "input": {
+        "conversation_id": "conv-cursor-1",
+        "generation_id": "gen-3",
+        "hook_event_name": "beforeReadFile",
+        "cursor_version": "3.22.12",
+        "file_path": "/home/user/project/src/store.ts",
+        "content": "export const counter = 1;\n",
+        "attachments": []
+      },
+      "expected": { "kind": "tool.before", "operation": "read", "files": ["src/store.ts"] }
+    },
+    {
+      "name": "after-file-edit",
+      "input": {
+        "conversation_id": "conv-cursor-1",
+        "generation_id": "gen-4",
+        "hook_event_name": "afterFileEdit",
+        "cursor_version": "3.22.12",
+        "file_path": "/home/user/project/src/store.ts",
+        "edits": [{ "old_string": "counter = 1", "new_string": "counter = 2" }]
+      },
+      "expected": { "kind": "file.changed", "files": ["src/store.ts"] }
+    },
+    {
+      "name": "post-tool-use-shell",
+      "input": {
+        "conversation_id": "conv-cursor-1",
+        "generation_id": "gen-5",
+        "hook_event_name": "postToolUse",
+        "cursor_version": "3.22.12",
+        "tool_name": "Shell",
+        "tool_input": { "command": "npm test" },
+        "tool_output": "{\"exitCode\":0,\"stdout\":\"ok\"}",
+        "tool_use_id": "tu-1",
+        "cwd": "/home/user/project",
+        "duration": 5432
+      },
+      "expected": { "kind": "tool.after", "operation": "shell", "files": [], "outcome": "success" }
+    },
+    {
+      "name": "subagent-start-permission-only",
+      "input": {
+        "conversation_id": "conv-cursor-1",
+        "generation_id": "gen-6",
+        "hook_event_name": "subagentStart",
+        "cursor_version": "3.22.12",
+        "subagent_id": "sub-77",
+        "subagent_type": "generalPurpose",
+        "task": "Explore the authentication flow",
+        "parent_conversation_id": "conv-cursor-1",
+        "tool_call_id": "tc-789"
+      },
+      "expected": { "kind": "agent.start", "agentId": "sub-77", "inject": false }
+    },
+    {
+      "name": "subagent-stop",
+      "input": {
+        "conversation_id": "conv-cursor-1",
+        "generation_id": "gen-7",
+        "hook_event_name": "subagentStop",
+        "cursor_version": "3.22.12",
+        "subagent_type": "generalPurpose",
+        "status": "completed",
+        "summary": "done",
+        "duration_ms": 45000,
+        "modified_files": ["src/auth.ts"],
+        "agent_transcript_path": "/tmp/sub.txt"
+      },
+      "expected": { "kind": "agent.end", "stopReason": "completed" }
+    },
+    {
+      "name": "stop-event",
+      "input": {
+        "conversation_id": "conv-cursor-1",
+        "generation_id": "gen-8",
+        "hook_event_name": "stop",
+        "cursor_version": "3.22.12",
+        "status": "error",
+        "loop_count": 0
+      },
+      "expected": { "kind": "agent.end", "stopReason": "error" }
+    },
+    {
+      "name": "pre-compact",
+      "input": {
+        "conversation_id": "conv-cursor-1",
+        "generation_id": "gen-9",
+        "hook_event_name": "preCompact",
+        "cursor_version": "3.22.12",
+        "trigger": "auto",
+        "context_usage_percent": 85,
+        "context_tokens": 120000,
+        "context_window_size": 128000,
+        "message_count": 45,
+        "messages_to_compact": 30,
+        "is_first_compaction": true
+      },
+      "expected": { "kind": "context.compacting" }
+    },
+    {
+      "name": "unknown-version",
+      "input": {
+        "conversation_id": "conv-cursor-1",
+        "generation_id": "gen-10",
+        "hook_event_name": "sessionStart",
+        "cursor_version": "99.0.0",
+        "session_id": "conv-cursor-1",
+        "is_background_agent": false
+      },
+      "expected": { "kind": "session.start", "versionStatus": "unverified" }
+    },
+    {
+      "name": "unknown-event",
+      "input": {
+        "conversation_id": "conv-cursor-1",
+        "hook_event_name": "brandNewHook",
+        "cursor_version": "3.22.12"
+      },
+      "expected": { "kind": null }
+    }
+  ]
+}

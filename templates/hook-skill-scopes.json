@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "stacks": {
+    "vue3": {
+      "roles": {
+        "implementation": ["javascript-core", "vue-core"],
+        "testing": ["javascript-core", "vue-testing"]
+      },
+      "fileScopes": [
+        {
+          "skills": ["vue-pinia"],
+          "globs": ["**/stores/**", "**/store/**", "**/*.store.{js,ts}", "**/store/{index,setup}.{js,ts}"]
+        },
+        {
+          "skills": ["vue-axios"],
+          "globs": ["**/api/**", "**/axios.{js,ts}", "**/http-client.{js,ts}"]
+        },
+        {
+          "skills": ["vue-router"],
+          "globs": ["**/router/**", "**/routes.{js,ts}", "**/guards.{js,ts}"]
+        },
+        {
+          "skills": ["vue-composables"],
+          "globs": ["**/composables/**", "**/use[A-Z]*.{js,ts}"]
+        },
+        {
+          "skills": ["vite"],
+          "globs": ["vite.config.{js,ts,mjs}", "**/.env*", "**/env.d.ts"]
+        }
+      ],
+      "componentGlobs": ["**/*.vue"]
+    }
+  },
+  "roleAliases": {
+    "implementer": "implementation",
+    "implement": "implementation",
+    "code-writer": "implementation",
+    "test-writer": "testing",
+    "verifier": "testing",
+    "apply": "implementation"
+  },
+  "unscopedRoles": ["implementation", "testing"]
+}

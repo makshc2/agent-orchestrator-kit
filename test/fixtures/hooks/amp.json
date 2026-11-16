@@ -1,0 +1,67 @@
+{
+  "source": "https://ampcode.com/docs/plugin-api",
+  "recordedAt": "2026-11-16",
+  "version": "PluginEventMap shape-verified (no in-band version field)",
+  "fixtures": [
+    {
+      "name": "session-start",
+      "event": "session.start",
+      "input": { "thread": { "id": "T-amp-thread-1" } },
+      "expected": { "kind": "session.start", "sessionId": "T-amp-thread-1", "inject": false }
+    },
+    {
+      "name": "agent-start",
+      "event": "agent.start",
+      "input": { "thread": { "id": "T-amp-thread-1" }, "message": "Fix the failing test", "id": "msg-1" },
+      "expected": { "kind": "agent.start", "sessionId": "T-amp-thread-1" }
+    },
+    {
+      "name": "agent-end-done",
+      "event": "agent.end",
+      "input": {
+        "thread": { "id": "T-amp-thread-1" },
+        "message": "Fix the failing test",
+        "id": "msg-1",
+        "status": "done",
+        "messages": []
+      },
+      "expected": { "kind": "agent.end", "stopReason": "completed" }
+    },
+    {
+      "name": "agent-end-cancelled",
+      "event": "agent.end",
+      "input": { "thread": { "id": "T-amp-thread-1" }, "message": "Fix the failing test", "id": "msg-1", "status": "cancelled", "messages": [] },
+      "expected": { "kind": "agent.end", "stopReason": "user_cancelled" }
+    },
+    {
+      "name": "tool-call-edit-file",
+      "event": "tool.call",
+      "input": { "toolUseID": "toolu_amp_1", "tool": "edit_file", "input": { "file_path": "/home/user/project/src/app.ts" }, "thread": { "id": "T-amp-thread-1" } },
+      "expected": { "kind": "tool.before", "operation": "write", "files": ["src/app.ts"], "toolId": "toolu_amp_1" }
+    },
+    {
+      "name": "tool-call-shell-unknown-writes",
+      "event": "tool.call",
+      "input": { "toolUseID": "toolu_amp_2", "tool": "shell", "input": { "command": "npm run build" }, "thread": { "id": "T-amp-thread-1" } },
+      "expected": { "kind": "tool.before", "operation": "shell", "files": [] }
+    },
+    {
+      "name": "tool-result-error",
+      "event": "tool.result",
+      "input": { "toolUseID": "toolu_amp_2", "tool": "shell", "input": { "command": "npm run build" }, "output": "exit 1", "status": "error", "thread": { "id": "T-amp-thread-1" } },
+      "expected": { "kind": "tool.after", "outcome": "failure" }
+    },
+    {
+      "name": "no-session-end-event",
+      "event": "session.end",
+      "input": { "thread": { "id": "T-amp-thread-1" } },
+      "expected": { "kind": null }
+    },
+    {
+      "name": "unknown-event",
+      "event": "future.event",
+      "input": { "thread": { "id": "T-amp-thread-1" } },
+      "expected": { "kind": null }
+    }
+  ]
+}

@@ -15,6 +15,14 @@ Implement tasks from an OpenSpec change.
 
 **Parent-driven apply:** the parent reads `tasks.md` + `apply-notes.md` (open `design.md`/`proposal.md` only when a task explicitly references them or a contract field is incomplete) and writes code and tests itself, task by task, checking its own `tasks.md` checkboxes. Subagents are optional: spawn `code-writer`/`test-writer` for ≥ 2 independent tasks with no shared files (parallelization) or on explicit user request. `design-implementer` remains mandatory for tasks with a design-brief/Figma signal.
 
+<!-- aok-hooks:parent-delivery -->
+**Skill delivery (parent and writers):** after task selection, resolve the tech skills for the task's `Files:` (same lists as `code-writer`/`test-writer`).
+- Agent hooks disabled, or the native session id is unavailable → mandatory manual Read of every resolved skill path.
+- Agent hooks enabled → before implementing run `npx agent-orchestrator-kit hooks bind --change <name> --role implementer --task <id> --session <native-id>`. Take `<native-id>` from the `[aok-hooks] native session id:` line in the injected start context (authoritative); `hooks status --json` is advisory when several sessions share a worktree. Pass the printed single-use binding token in every child spawn prompt. Injected skill content counts only with a current same-context receipt (full contents, same session/agent, current digest); otherwise manually Read the path.
+- The platform has no context-capable event → manual Read fallback.
+Report `Skills:` immediately after `Status:` as read (paths), injected (paths), or missing (paths). Delivery never proves compliance.
+<!-- /aok-hooks:parent-delivery -->
+
 **Escape valve (STOP — improvisation is forbidden):** if a task requires information beyond its Files/Do/Done-when + `apply-notes.md` + artifacts it explicitly references, STOP: record the gap in `handoff.md`, set the next command to `/opsx:propose <name>` (plan amendment), and end the session. Do not guess.
 
 **Steps**
