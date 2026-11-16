@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.22.1] - 2026-11-16
+
+### Fixed
+- **Implementation and test writers explicitly load tech skills.** `code-writer` now requires reading applicable skill files before writing code, with explicit Vue 3 paths for JavaScript, Vue core, Pinia, Axios, Router, composables, and Vite. `test-writer` requires Vue testing and JavaScript skills before writing tests. Both select equivalent skills for other stacks, report missing files without blocking, and include a `Skills:` audit field immediately after `Status:`.
+- Existing generation propagates the updated prompts to Claude/Cursor agents and Amp skill wrappers for all four profiles. Upgrade each consumer with `npx agent-orchestrator-kit update`, then `sh scripts/sync-local-agent-skills.sh`. No configuration changes are required.
+
 ## [0.22.0] - 2026-11-09
 
 ### Added

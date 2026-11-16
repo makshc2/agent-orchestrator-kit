@@ -1192,6 +1192,10 @@ Phase bounds and non-goals: [`openspec/specs/agentic-factory-roadmap/spec.md`](o
 
 ## Changelog
 
+### 0.22.1
+- **Writers explicitly read tech skills before authoring.** Code and test writers name the applicable Vue 3 skill files, use equivalent skills for other stacks, and report missing files without blocking. Both reports include `Skills:` immediately after `Status:`.
+- Upgrade: run `npx agent-orchestrator-kit update`, then `sh scripts/sync-local-agent-skills.sh` to refresh Claude/Cursor agents and Amp wrappers. No configuration changes are required.
+
 ### 0.22.0
 - **Generated skill mirror blocks.** `init`, `update` and `sync` regenerate the `session-start`, `session-exit` and `routing` blocks of the `agent-orchestration` skill from `session-handoff.mdc` and `agent-orchestration.mdc`; edit the rule, not the block. See [Sync to local IDEs](#sync-to-local-ides).
 - **Specialists own their steps.** The artifact build loop lives in `spec-architect`, the design capture details in `design-intake`; `/opsx:propose` and `/opsx:design` only spawn and verify.
