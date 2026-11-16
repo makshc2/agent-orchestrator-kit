@@ -2,25 +2,25 @@
   "version": 2,
   "change": "add-agent-workflow-automation",
   "createdAt": "2026-11-16T09:19:34.715Z",
-  "updatedAt": "2026-11-16T17:36:35.880Z",
-  "archivedAt": null,
+  "updatedAt": "2026-11-16T19:26:28.201Z",
+  "archivedAt": "2026-11-16T19:26:23.186Z",
   "spend": {
-    "inputTokens": 26937339,
-    "outputTokens": 183237,
-    "totalTokens": 27120576,
+    "inputTokens": 27318782,
+    "outputTokens": 187495,
+    "totalTokens": 27506277,
     "costUsd": null,
-    "costUsdEstimated": 65.6392,
-    "costUsdTotal": 65.6392
+    "costUsdEstimated": 66.8473,
+    "costUsdTotal": 66.8473
   },
   "spendByPlatform": {
     "cursor": {
-      "inputTokens": 20080307,
-      "outputTokens": 92695,
-      "totalTokens": 20173002,
+      "inputTokens": 20461750,
+      "outputTokens": 96953,
+      "totalTokens": 20558703,
       "costUsd": null,
       "ampCredits": null,
-      "costUsdEstimated": 61.6314,
-      "costUsdTotal": 61.6314,
+      "costUsdEstimated": 62.8395,
+      "costUsdTotal": 62.8395,
       "source": "cursor-hook"
     },
     "claude": {
@@ -59,19 +59,19 @@
     {
       "model": "grok-4.7-xhigh-fast",
       "platform": "cursor",
-      "inputTokens": 20080307,
-      "outputTokens": 92695,
-      "totalTokens": 20173002,
+      "inputTokens": 20461750,
+      "outputTokens": 96953,
+      "totalTokens": 20558703,
       "costUsd": null,
       "ampCredits": null,
-      "costUsdEstimated": 61.6314,
-      "costUsdTotal": 61.6314
+      "costUsdEstimated": 62.8395,
+      "costUsdTotal": 62.8395
     }
   ],
   "totals": {
-    "sessions": 12,
-    "durationMs": 11510040,
-    "leadTimeMs": 29804569,
+    "sessions": 13,
+    "durationMs": 11511034,
+    "leadTimeMs": 36408471,
     "cloudSessions": 0
   },
   "phases": {
@@ -120,17 +120,36 @@
       "startedAt": "2026-11-16T15:23:36.318Z",
       "endedAt": "2026-11-16T17:36:19.284Z",
       "leadTimeMs": 7962966,
-      "inputTokens": 16913460,
-      "outputTokens": 52826,
-      "totalTokens": 16966286,
+      "inputTokens": 17125299,
+      "outputTokens": 55737,
+      "totalTokens": 17181036,
       "costUsd": null,
-      "costUsdEstimated": 51.5328,
-      "costUsdTotal": 51.5328,
+      "costUsdEstimated": 52.2119,
+      "costUsdTotal": 52.2119,
       "agents": [
         "Implementer"
       ],
       "models": [
-        "grok-4.7"
+        "grok-4.7-xhigh-fast"
+      ]
+    },
+    "archive": {
+      "sessions": 1,
+      "durationMs": 994,
+      "startedAt": "2026-11-16T19:26:22.192Z",
+      "endedAt": "2026-11-16T19:26:23.186Z",
+      "leadTimeMs": 994,
+      "inputTokens": 169604,
+      "outputTokens": 1347,
+      "totalTokens": 170951,
+      "costUsd": null,
+      "costUsdEstimated": 0.529,
+      "costUsdTotal": 0.529,
+      "agents": [
+        "Archiver"
+      ],
+      "models": [
+        "grok-4.7-xhigh-fast"
       ]
     }
   },
@@ -726,38 +745,87 @@
       "phase": "apply",
       "runtime": "local",
       "agentId": "none",
-      "model": "grok-4.7",
+      "model": "grok-4.7-xhigh-fast",
       "platform": "cursor",
       "threadId": "ac34fb62-1839-4c61-bafd-9c45a37a8006",
       "tasks": "15/15",
       "sourceIds": [
-        "41005b20-aeea-4181-bc5b-f9d71c557780"
+        "41005b20-aeea-4181-bc5b-f9d71c557780",
+        "698d7e6f-3063-498e-96be-7636a7dfd946",
+        "9e5f775c-5d3a-40b2-8a22-96c48e6a6b84",
+        "fc978c6d-61a9-4969-9443-5f18f80143c5"
       ],
       "sourceTotals": {
-        "41005b20-aeea-4181-bc5b-f9d71c557780": 16966286
+        "41005b20-aeea-4181-bc5b-f9d71c557780": 16966286,
+        "698d7e6f-3063-498e-96be-7636a7dfd946": 52222,
+        "9e5f775c-5d3a-40b2-8a22-96c48e6a6b84": 107336,
+        "fc978c6d-61a9-4969-9443-5f18f80143c5": 55192
       },
       "byModel": [
         {
           "model": "grok-4.7-xhigh-fast",
           "platform": "cursor",
-          "inputTokens": 16913460,
-          "outputTokens": 52826,
-          "totalTokens": 16966286,
+          "inputTokens": 17125299,
+          "outputTokens": 55737,
+          "totalTokens": 17181036,
           "costUsd": null,
-          "costUsdEstimated": 51.5328,
+          "costUsdEstimated": 52.2119,
+          "cacheReadTokens": 163328,
+          "cacheCreationTokens": 0,
           "costSource": "api-estimate-fallback"
         }
       ],
-      "inputTokens": 16913460,
-      "outputTokens": 52826,
-      "totalTokens": 16966286,
+      "inputTokens": 17125299,
+      "outputTokens": 55737,
+      "totalTokens": 17181036,
       "costUsd": null,
       "ampCredits": null,
-      "costUsdEstimated": 51.5328,
+      "costUsdEstimated": 52.2119,
+      "cacheReadTokens": 163328,
+      "cacheCreationTokens": 0,
+      "spendSource": "adapter",
+      "costUsdTotal": 52.2119
+    },
+    {
+      "startedAt": "2026-11-16T19:26:22.192Z",
+      "endedAt": "2026-11-16T19:26:23.186Z",
+      "durationMs": 994,
+      "role": "Archiver",
+      "phase": "archive",
+      "runtime": "local",
+      "agentId": "none",
+      "model": "grok-4.7-xhigh-fast",
+      "platform": "cursor",
+      "threadId": null,
+      "tasks": "15/15",
+      "sourceIds": [
+        "2f1d639f-eb60-44e4-abbb-8a997d4ebe04"
+      ],
+      "sourceTotals": {
+        "2f1d639f-eb60-44e4-abbb-8a997d4ebe04": 170951
+      },
+      "byModel": [
+        {
+          "model": "grok-4.7-xhigh-fast",
+          "platform": "cursor",
+          "inputTokens": 169604,
+          "outputTokens": 1347,
+          "totalTokens": 170951,
+          "costUsd": null,
+          "costUsdEstimated": 0.529,
+          "costSource": "api-estimate-fallback"
+        }
+      ],
+      "inputTokens": 169604,
+      "outputTokens": 1347,
+      "totalTokens": 170951,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": 0.529,
       "cacheReadTokens": null,
       "cacheCreationTokens": null,
       "spendSource": "adapter",
-      "costUsdTotal": 51.5328
+      "costUsdTotal": 0.529
     }
   ],
   "pending": null
