@@ -2,17 +2,17 @@
   "version": 2,
   "change": "add-agent-hook-runtime",
   "createdAt": "2026-11-16T09:19:34.633Z",
-  "updatedAt": "2026-11-16T13:44:16.240Z",
-  "archivedAt": null,
+  "updatedAt": "2026-11-16T14:02:29.323Z",
+  "archivedAt": "2026-11-16T14:02:29.323Z",
   "spend": {
-    "inputTokens": 7456742,
-    "outputTokens": 73879,
-    "totalTokens": 7530621,
+    "inputTokens": 7543591,
+    "outputTokens": 76372,
+    "totalTokens": 7619963,
     "costUsd": null,
-    "costUsdEstimated": 5.5825,
-    "costUsdTotal": 5.5825,
-    "cacheReadTokens": 6904236,
-    "cacheCreationTokens": 552332
+    "costUsdEstimated": 5.6691,
+    "costUsdTotal": 5.6691,
+    "cacheReadTokens": 6987039,
+    "cacheCreationTokens": 556376
   },
   "spendByPlatform": {
     "cursor": {
@@ -28,15 +28,15 @@
       "source": "none"
     },
     "claude": {
-      "inputTokens": 7456742,
-      "outputTokens": 73879,
-      "totalTokens": 7530621,
+      "inputTokens": 7543591,
+      "outputTokens": 76372,
+      "totalTokens": 7619963,
       "costUsd": null,
       "ampCredits": null,
-      "costUsdEstimated": 5.5825,
-      "costUsdTotal": 5.5825,
-      "cacheReadTokens": 6904236,
-      "cacheCreationTokens": 552332,
+      "costUsdEstimated": 5.6691,
+      "costUsdTotal": 5.6691,
+      "cacheReadTokens": 6987039,
+      "cacheCreationTokens": 556376,
       "source": "claude-jsonl"
     },
     "amp": {
@@ -69,21 +69,21 @@
     {
       "model": "claude-opus-5-5",
       "platform": "claude",
-      "inputTokens": 7428734,
-      "outputTokens": 73824,
-      "totalTokens": 7502558,
+      "inputTokens": 7515583,
+      "outputTokens": 76317,
+      "totalTokens": 7591900,
       "costUsd": null,
       "ampCredits": null,
-      "costUsdEstimated": 5.5413,
-      "costUsdTotal": 5.5413,
-      "cacheReadTokens": 6891479,
-      "cacheCreationTokens": 537087
+      "costUsdEstimated": 5.6279,
+      "costUsdTotal": 5.6279,
+      "cacheReadTokens": 6974282,
+      "cacheCreationTokens": 541131
     }
   ],
   "totals": {
-    "sessions": 9,
-    "durationMs": 4309336,
-    "leadTimeMs": 4622079,
+    "sessions": 10,
+    "durationMs": 5402419,
+    "leadTimeMs": 16974690,
     "cloudSessions": 0
   },
   "phases": {
@@ -112,14 +112,14 @@
       "startedAt": "2026-11-16T09:21:00.863Z",
       "endedAt": "2026-11-16T10:36:36.712Z",
       "leadTimeMs": 4535849,
-      "inputTokens": 7456742,
-      "outputTokens": 73879,
-      "totalTokens": 7530621,
+      "inputTokens": 7543591,
+      "outputTokens": 76372,
+      "totalTokens": 7619963,
       "costUsd": null,
-      "costUsdEstimated": 5.5825,
-      "costUsdTotal": 5.5825,
-      "cacheReadTokens": 6904236,
-      "cacheCreationTokens": 552332,
+      "costUsdEstimated": 5.6691,
+      "costUsdTotal": 5.6691,
+      "cacheReadTokens": 6987039,
+      "cacheCreationTokens": 556376,
       "agents": [
         "Spec Reviewer"
       ],
@@ -127,6 +127,25 @@
         "claude-opus-5-5",
         "claude-sonnet-5-5"
       ]
+    },
+    "archive": {
+      "sessions": 1,
+      "durationMs": 1093083,
+      "startedAt": "2026-11-16T13:44:16.240Z",
+      "endedAt": "2026-11-16T14:02:29.323Z",
+      "leadTimeMs": 1093083,
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "costUsdEstimated": null,
+      "costUsdTotal": null,
+      "cacheReadTokens": null,
+      "cacheCreationTokens": null,
+      "agents": [
+        "Archiver"
+      ],
+      "models": []
     }
   },
   "sessions": [
@@ -615,7 +634,8 @@
         "msg_011Ch6TXqxW4npMzRZ3e3Gx6",
         "msg_011Ch6TZ3dWCw4bfCwqtvwqX",
         "msg_011Ch6Taw1x62goj4pe3kHaL",
-        "msg_011Ch6Tb9azbAUrNKqLPTK3t"
+        "msg_011Ch6Tb9azbAUrNKqLPTK3t",
+        "msg_011Ch6TdwamVTLVv8nzGqoZu"
       ],
       "sourceTotals": {
         "msg_011Ch6TUZwmDtVVps8vdPhrv": 9890,
@@ -633,7 +653,8 @@
         "msg_011Ch6TXqxW4npMzRZ3e3Gx6": 97985,
         "msg_011Ch6TZ3dWCw4bfCwqtvwqX": 101919,
         "msg_011Ch6Taw1x62goj4pe3kHaL": 102374,
-        "msg_011Ch6Tb9azbAUrNKqLPTK3t": 103741
+        "msg_011Ch6Tb9azbAUrNKqLPTK3t": 103741,
+        "msg_011Ch6TdwamVTLVv8nzGqoZu": 89342
       },
       "byModel": [
         {
@@ -651,37 +672,57 @@
         {
           "model": "claude-opus-5-5",
           "platform": "claude",
-          "inputTokens": 1148892,
-          "outputTokens": 13200,
-          "totalTokens": 1162092,
+          "inputTokens": 1235741,
+          "outputTokens": 15693,
+          "totalTokens": 1251434,
           "costUsd": null,
-          "costUsdEstimated": 1.2507,
-          "cacheReadTokens": 991193,
-          "cacheCreationTokens": 157669,
+          "costUsdEstimated": 1.3373,
+          "cacheReadTokens": 1073996,
+          "cacheCreationTokens": 161713,
           "costSource": "api-estimate"
         }
       ],
-      "inputTokens": 1158764,
-      "outputTokens": 13218,
-      "totalTokens": 1171982,
+      "inputTokens": 1245613,
+      "outputTokens": 15711,
+      "totalTokens": 1261324,
       "costUsd": null,
       "ampCredits": null,
-      "costUsdEstimated": 1.2646,
-      "cacheReadTokens": 995960,
-      "cacheCreationTokens": 162772,
+      "costUsdEstimated": 1.3512,
+      "cacheReadTokens": 1078763,
+      "cacheCreationTokens": 166816,
       "spendSource": "adapter",
       "models": [
         "claude-sonnet-5-5",
         "claude-opus-5-5"
       ],
-      "costUsdTotal": 1.2646
+      "costUsdTotal": 1.3512
+    },
+    {
+      "startedAt": "2026-11-16T13:44:16.240Z",
+      "endedAt": "2026-11-16T14:02:29.323Z",
+      "durationMs": 1093083,
+      "role": "Archiver",
+      "phase": "archive",
+      "runtime": "local",
+      "agentId": "none",
+      "model": null,
+      "platform": null,
+      "threadId": null,
+      "tasks": "10/10",
+      "sourceIds": [],
+      "sourceTotals": {},
+      "byModel": [],
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null,
+      "cacheReadTokens": null,
+      "cacheCreationTokens": null,
+      "spendSource": "unreported",
+      "costUsdTotal": null
     }
   ],
-  "pending": {
-    "startedAt": "2026-11-16T13:44:16.240Z",
-    "role": "Implementer",
-    "platform": null,
-    "threadId": null,
-    "clientSource": "none"
-  }
+  "pending": null
 }
