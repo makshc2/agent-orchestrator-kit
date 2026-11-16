@@ -1218,6 +1218,11 @@ Phase bounds and non-goals: [`openspec/specs/agentic-factory-roadmap/spec.md`](o
 
 ## Changelog
 
+### 0.23.0
+- **Opt-in agent hook runtime.** `hooks enable --client cursor|claude|amp` delivers bound stack skills, a metrics-neutral recovery briefing, and a local audit. Off by default, and separate from the Git pre-commit gate. See [Agent hook runtime](#agent-hook-runtime-optional-off-by-default).
+- **Opt-in workflow commands.** `hooks verify` reuses fresh test evidence, `hooks complete --confirm-handoff` records a reviewed handoff, and `sync --owned` / `update --sync` copy managed IDE files without overwriting local edits. Policies stay disabled until enabled. No auto-approve, auto-commit, or fleet rollout.
+- Upgrade: `npx agent-orchestrator-kit@latest update`, then `sh scripts/sync-local-agent-skills.sh`. Existing projects stay unchanged until `hooks.enabled` is set.
+
 ### 0.22.1
 - **Writers explicitly read tech skills before authoring.** Code and test writers name the applicable Vue 3 skill files, use equivalent skills for other stacks, and report missing files without blocking. Both reports include `Skills:` immediately after `Status:`.
 - Upgrade: run `npx agent-orchestrator-kit update`, then `sh scripts/sync-local-agent-skills.sh` to refresh Claude/Cursor agents and Amp wrappers. No configuration changes are required.

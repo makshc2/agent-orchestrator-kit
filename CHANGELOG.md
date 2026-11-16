@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-11-16
+
+### Added
+- **Opt-in local agent hook runtime.** `hooks.enabled: false` and `hooks.mode: observe` stay the default in every profile. `hooks enable --client claude|cursor|amp` installs only kit-owned client hooks and leaves Git pre-commit (`hooks-setup`) and foreign hooks alone. Bound sessions can receive stack skills, a metrics-neutral recovery briefing, and a local audit. `hooks bind`, `hooks snapshot`, `hooks status`, and `hooks disable` complete the set. Delivery is not compliance: the manual Read fallback stays. See [docs/agent-hooks.md](docs/agent-hooks.md).
+- **Opt-in workflow checks on that runtime.** Six policies (`verification`, `completion`, `scope`, `checks`, `owned-sync`, `workflow-notifications`) ship disabled. A decision blocks or follows up only when global hooks and that policy are `enforce` and the client can carry it. `hooks verify` is the only full test run and reuses a fresh evidence record. `hooks complete --confirm-handoff` records a semantic handoff; a later substantive outcome invalidates it. Cursor and Amp may request one follow-up per work epoch and two per intent. Claude has no parent Stop follow-up, so the CLI stays the fallback. `sync --owned` and `update --sync` copy managed IDE files and keep foreign or modified files, exiting nonzero on a conflict. Notices stay local. No auto-approve, auto-commit, task ticking, publish, or fleet rollout.
+
+### Changed
+- Upgrade: `npx agent-orchestrator-kit@latest update`, then `sh scripts/sync-local-agent-skills.sh`. New `hooks.*` keys are already in the profile templates with every switch off, so existing projects keep the old behavior until `hooks.enabled` is set. `update` does not enable hooks.
+
 ## [0.22.1] - 2026-11-16
 
 ### Fixed
