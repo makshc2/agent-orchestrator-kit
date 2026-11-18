@@ -96,7 +96,7 @@ Report contract `spec-architect` SHALL містити рядок `**Gate:** gate
 Ці три правила SHALL бути в таких місцях:
 - `templates/.agents/subagents/spec-architect.md`;
 - блок Task contract у `templates/.agents/commands/opsx-propose.md` і `templates/.agents/skills/openspec-propose/SKILL.md`, з англійськими фразами «new state is present», «consistent with the code», «volatile repo values»;
-- `rules.tasks` у `templates/openspec-config.yaml.example`.
+- `rules.tasks` у `templates/openspec-config.yaml.example` і в копіях `profiles/mvp/openspec-config.yaml.example`, `profiles/vue3/openspec-config.yaml.example`.
 
 Правила лишаються текстовими інструкціями: `gate-check --tasks` і `gate-check --review` MUST NOT отримувати новий детермінований лінт якості Done-when.
 
@@ -190,3 +190,49 @@ For a change whose name starts with `fix-` or whose brief describes a bug fix, t
 - **WHEN** the kit templates are read
 - **THEN** `spec-architect.md`, `opsx-propose.md`, the propose skill and `templates/openspec-config.yaml.example` each contain the guideline
 - **AND** `gate-check --tasks` and `gate-check --review` report exactly as before for the same inputs
+
+### Requirement: Самоперевірка architect перед звітом
+
+Перед звітом `spec-architect` MUST виконати чекліст: (a) після будь-якої правки `Do:` перечитати `Done-when:` цього й залежних тасків; (b) кожне твердження «X існує / відсутнє / на рядку N» про код перевірити читанням файлу і записати `path:line` поруч у артефакті; (c) кожну grep-умову `Done-when:` прогнати проти поточного коду, очікуваний результат MUST бути досяжним. Звіт MUST мати рядок `**Self-check:** done | not applicable`. Нового детермінованого лінту немає.
+
+#### Scenario: Звіт має рядок Self-check
+
+- **GIVEN** `spec-architect` завершив change з твердженнями про код і grep-умовами
+- **WHEN** він повертає звіт за контрактом
+- **THEN** звіт містить рядок `**Self-check:** done`
+- **AND** `spec-architect.md`, `opsx-propose.md` і `openspec-propose/SKILL.md` мають ці три пункти
+
+#### Scenario: Читання для верифікації дозволене
+
+- **GIVEN** правило «Read narrowly» у `spec-architect.md`
+- **WHEN** architect перевіряє твердження про код у `src/` або `bin/`
+- **THEN** він читає потрібні діапазони рядків і не порушує правила
+
+### Requirement: Підказка розміру change
+
+Якщо change має понад 8 тасків або 4 і більше delta specs, `spec-architect` SHALL запропонувати розбиття на два changes і написати це в `**Risks:**`. Підказка MUST NOT блокувати propose і MUST NOT додавати помилку в `gate-check`.
+
+#### Scenario: Дев'ять тасків дають пропозицію розбиття
+
+- **GIVEN** `tasks.md` має дев'ять тасків
+- **WHEN** architect формує звіт
+- **THEN** `**Risks:**` пропонує розбиття на два changes
+- **AND** `**Status:**` лишається `done`, якщо gate-check має exit 0
+
+### Requirement: Поведінкові умови Done-when і приклади
+
+Done-when SHALL віддавати перевагу поведінковим умовам (запуск тесту, спостережувана поведінка); `grep` дозволений лише для нечислової наявності чи відсутності; «рівно N» і «exactly N» заборонені, якщо таск не пояснює, чому точне число гарантоване. Кожне з чотирьох місць правила (architect, Task contract у propose і SKILL, `rules.tasks` у трьох конфіг-шаблонах) MUST мати пару прикладів good/bad з англійськими словами «behavioral», «exactly N».
+
+#### Scenario: Поведінкова перевірка замість числового grep
+
+- **GIVEN** `Do:` таску обгортає всі три присвоєння функцією `applyOverlay`
+- **WHEN** architect пише `Done-when:`
+- **THEN** `Done-when:` є запуском тесту або іншою поведінковою умовою, а не «рівно два входження `applyOverlay`»
+- **AND** якщо `grep` лишився, він перевіряє нечислову наявність чи відсутність
+
+#### Scenario: Приклади good/bad в усіх конфіг-шаблонах
+
+- **GIVEN** `templates/openspec-config.yaml.example`, `profiles/mvp/openspec-config.yaml.example` і `profiles/vue3/openspec-config.yaml.example`
+- **WHEN** читається `rules.tasks` кожного файла
+- **THEN** кожен містить правило «behavioral», заборону «exactly N» і пару прикладів bad (`Do:` обгортає всі три присвоєння, `Done-when:` вимагає рівно двох збігів) та good (тест, що перевіряє всі три)
+- **AND** профілі `mvp` і `vue3` містять також правила new state is present, consistent with the code і volatile repo values

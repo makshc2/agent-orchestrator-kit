@@ -2,8 +2,8 @@
   "version": 2,
   "change": "reduce-review-cycles",
   "createdAt": "2026-11-18T15:07:54.229Z",
-  "updatedAt": "2026-11-18T19:09:52.637Z",
-  "archivedAt": null,
+  "updatedAt": "2026-11-18T19:14:02.723Z",
+  "archivedAt": "2026-11-18T19:14:02.723Z",
   "spend": {
     "inputTokens": 2764143,
     "outputTokens": 39675,
@@ -81,9 +81,9 @@
     }
   ],
   "totals": {
-    "sessions": 6,
-    "durationMs": 1146621,
-    "leadTimeMs": 14518408,
+    "sessions": 7,
+    "durationMs": 1147639,
+    "leadTimeMs": 14768494,
     "cloudSessions": 0
   },
   "phases": {
@@ -149,6 +149,25 @@
       "models": [
         "gpt-6"
       ]
+    },
+    "archive": {
+      "sessions": 1,
+      "durationMs": 1018,
+      "startedAt": "2026-11-18T19:14:01.705Z",
+      "endedAt": "2026-11-18T19:14:02.723Z",
+      "leadTimeMs": 1018,
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "costUsdEstimated": null,
+      "costUsdTotal": null,
+      "cacheReadTokens": null,
+      "cacheCreationTokens": null,
+      "agents": [
+        "Archiver"
+      ],
+      "models": []
     }
   },
   "sessions": [
@@ -383,6 +402,32 @@
       "runtime": "local",
       "agentId": "none",
       "model": "gpt-6",
+      "platform": null,
+      "threadId": null,
+      "tasks": "10/10",
+      "sourceIds": [],
+      "sourceTotals": {},
+      "byModel": [],
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "costUsd": null,
+      "ampCredits": null,
+      "costUsdEstimated": null,
+      "cacheReadTokens": null,
+      "cacheCreationTokens": null,
+      "spendSource": "unreported",
+      "costUsdTotal": null
+    },
+    {
+      "startedAt": "2026-11-18T19:14:01.705Z",
+      "endedAt": "2026-11-18T19:14:02.723Z",
+      "durationMs": 1018,
+      "role": "Archiver",
+      "phase": "archive",
+      "runtime": "local",
+      "agentId": "none",
+      "model": null,
       "platform": null,
       "threadId": null,
       "tasks": "10/10",

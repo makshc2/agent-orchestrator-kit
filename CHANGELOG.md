@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-11-18
+
 ### Added
 - **Architect self-check.** Before reporting, the architect rechecks task and dependent Done-when conditions after Do edits, verifies code claims with `path:line` evidence, and runs grep conditions against the current code. Reports include `**Self-check:** done | not applicable`.
 - **Review guidance.** Reviewers write `Task verdicts` for every task and collect all blockers in one pass. Optional `Fix During Apply` sections must be non-empty when present; approved tasks address those items within their Files/Do/Done-when contract.
