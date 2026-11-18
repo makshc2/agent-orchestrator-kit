@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Architect self-check.** Before reporting, the architect rechecks task and dependent Done-when conditions after Do edits, verifies code claims with `path:line` evidence, and runs grep conditions against the current code. Reports include `**Self-check:** done | not applicable`.
+- **Review guidance.** Reviewers write `Task verdicts` for every task and collect all blockers in one pass. Optional `Fix During Apply` sections must be non-empty when present; approved tasks address those items within their Files/Do/Done-when contract.
+- **Change size hint.** More than 8 tasks or 4 or more delta specs prompts a suggestion to split into two changes without blocking propose.
+- **Opt-in `pipeline.review_fast_fix`.** Defaults to `off`; only exact `on` enables it. An accepted Tier 2 REQUEST CHANGES with local blockers in 1–2 tasks and no design or delta spec changes may be repaired in tasks.md and apply-notes.md. After a passing review gate and explicit user approval, the recorded verdict is APPROVE and the next command is `/opsx:apply <name>`. Tier 1 records do not qualify. Risks: edit side effects are not reviewed, the independent check is skipped, and `apply-notes.md` may be stale.
+
+### Changed
+- **Done-when quality.** Architect and propose templates and all three OpenSpec config examples prefer behavioral checks, allow grep only for non-numeric presence/absence, and forbid “exactly N” unless the task explains why the count is guaranteed; bad/good examples show the difference.
+- **Repeat reviews and blockers.** Re-review checks Previous findings first, then runs the full existing Tier 2 checklist and an additional scan of the same defect classes. Blockers include unexecutable tasks, main spec or Non-goals conflicts, material contradictions between proposal/design/tasks/delta specs, and design behavior without delta or task coverage. Major/Minor items fixable within the approved task contract go to `Fix During Apply` and brief apply notes; without blockers the verdict is APPROVE.
+
 ## [0.23.0] - 2026-11-16
 
 ### Added

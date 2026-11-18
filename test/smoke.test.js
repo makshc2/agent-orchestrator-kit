@@ -225,6 +225,7 @@ test('templates/openspec-config.yaml.example is a stack-neutral fallback', () =>
   assert.match(example, /## Acceptance criteria/);
   assert.match(example, /Files:.*Do:.*Done-when:/);
   assert.match(example, /new state is present/);
+  for (const rule of [/behavioral/, /exactly N/, /bad/i, /good/i]) assert.match(example, rule);
   assert.match(example, /\{\{PROJECT_NAME\}\}/);
   assert.match(example, /\{\{LANG\}\}/);
   assert.doesNotMatch(example, /vue|pinia/i);
@@ -752,9 +753,12 @@ test('propose runs Tier 1 pre-gate before review handoff', () => {
   assert.match(architect, /Default: a spawn prompt that does not mention `\/opsx:quick`/);
   for (const text of [propose, proposeSkill, architect]) {
     assert.match(text, /new state is present/);
+    assert.match(text, /behavioral/);
     assert.match(text, /consistent with the code/);
     assert.match(text, /volatile repo values/);
   }
+  assert.match(architect, /\*\*Self-check:\*\*/);
+  assert.match(architect, /Size hint/);
   const start = skill.indexOf('### propose → review');
   const end = skill.indexOf('### review → apply');
   assert.ok(start >= 0 && end > start, 'propose → review section not found');
@@ -4999,5 +5003,15 @@ test('handoff prompt does not render "Change: - name: <x>"', () => {
     assert.doesNotMatch(out, /- Change: - name:/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+
+test('all task config examples carry behavioral Done-when quality rules and examples', () => {
+  for (const file of ['templates/openspec-config.yaml.example', 'profiles/mvp/openspec-config.yaml.example', 'profiles/vue3/openspec-config.yaml.example']) {
+    const content = readFileSync(join(KIT_ROOT, file), 'utf-8');
+    for (const phrase of ['new state is present', 'consistent with the code', 'volatile repo values', 'behavioral', 'exactly N', 'bad', 'good']) {
+      assert.ok(content.includes(phrase), `${file}: missing ${phrase}`);
+    }
   }
 });

@@ -94,3 +94,23 @@ test('the skill keeps the required statements outside its mirror blocks', () => 
     assert.ok(propose.includes(s), `openspec-propose/SKILL.md lacks ${s}`);
   }
 });
+
+
+test('architect and both propose instructions require Self-check', () => {
+  for (const rel of ['.agents/subagents/spec-architect.md', '.agents/commands/opsx-propose.md', '.agents/skills/openspec-propose/SKILL.md']) {
+    assert.ok(template(rel).includes('Self-check'), `${rel}: missing Self-check`);
+  }
+});
+
+
+test('fast-fix lifecycle appears in all four planning instruction files', () => {
+  for (const rel of ['.agents/subagents/spec-architect.md', '.agents/commands/opsx-propose.md', '.agents/skills/openspec-propose/SKILL.md', '.agents/skills/agent-orchestration/SKILL.md']) {
+    assert.ok(template(rel).includes('fast-fix'), `${rel}: missing fast-fix`);
+  }
+});
+
+test('both apply instructions read Fix During Apply', () => {
+  for (const rel of ['.agents/commands/opsx-apply.md', '.agents/skills/openspec-apply-change/SKILL.md']) {
+    assert.ok(template(rel).includes('Fix During Apply'), `${rel}: missing Fix During Apply`);
+  }
+});

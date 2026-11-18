@@ -738,6 +738,7 @@ pipeline:
   archive_after_merge: true     # policy flag: `status` shows it; `archive --if-ready` and the opt-in CI job honour it; a manual archive ignores it
   task_contract: warn           # tasks.md lint mode for gate-check: warn | strict | off
   artifact_budget: warn         # change size budget for gate-check --review: warn | strict | off (a missing key means warn)
+  review_fast_fix: off          # off | on
   src_glob: "src/"              # paths gate-check treats as product code (default for --src-glob)
 
 verifier:

@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "change": "reduce-review-cycles",
+  "seq": 10,
+  "savedAt": "2026-11-18T19:09:52.053Z",
+  "role": null,
+  "done": "npm test: 668/668 passed; npm pack --dry-run exit 0; package.json unchanged",
+  "blocked": "",
+  "next": "After merge and green CI, archive with spec sync",
+  "task": "5.2",
+  "decisions": [],
+  "snapshot": {
+    "tasks": {
+      "total": 10,
+      "done": 10
+    },
+    "review": "APPROVE",
+    "head": "058dbe599e30473f63e97d0f78e0b249d253190f",
+    "handoffSha256": "d1a923a1eb9676756a478d32e19aa380b6899b9f4f00b2e7f080463d363f9b3e"
+  },
+  "contentDigest": "20d810d8b75e8621b93101ed8a5dbaa33392a012763d3005cf580afe77bfd296",
+  "digest": "bc2d15b7d0f9b5ff3bba40061743d507e7855adf29762b5c3d94198543e289c4"
+}

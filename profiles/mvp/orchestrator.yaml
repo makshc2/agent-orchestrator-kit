@@ -21,6 +21,13 @@ pipeline:
   # commas or spaces. Widen it when code lives outside src/
   # (e.g. "src/,lib/,app/") or the review gate never fires.
   src_glob: "src/"
+  # Opt-in: when on, and review.md is an accepted Tier 2 REQUEST CHANGES (a Tier 1 record does not
+  # qualify) with local blockers in 1-2 tasks (no design.md or delta spec change), the architect may fix
+  # tasks.md and apply-notes.md only; after gate-check --review exit 0 and your explicit approval the
+  # conductor records Verdict APPROVE (fast-fix, approved by user) without a new Tier 2 review. Risks:
+  # the side effects of the edit are not reviewed, the independent check is dropped, apply-notes.md may
+  # be stale.
+  review_fast_fix: off
 
 roles:
   explorer:

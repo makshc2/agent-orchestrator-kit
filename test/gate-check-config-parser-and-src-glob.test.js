@@ -98,6 +98,7 @@ test('parsePipelineConfig reads only direct children of pipeline: and strips com
     srcGlob: 'bin/, scripts/ templates/',
     archiveAfterMerge: true,
     artifactBudget: 'warn',
+    reviewFastFix: false,
   });
 });
 
@@ -123,6 +124,7 @@ test('parsePipelineConfig does not close the pipeline: block on a column-0 comme
     srcGlob: 'lib/',
     archiveAfterMerge: true,
     artifactBudget: 'warn',
+    reviewFastFix: false,
   });
 });
 
@@ -138,6 +140,7 @@ test('parsePipelineConfig falls back to the legacy whole-file regex when no pipe
     srcGlob: 'lib/ app/',
     archiveAfterMerge: true,
     artifactBudget: 'warn',
+    reviewFastFix: false,
   });
   const defaults = parsePipelineConfig('version: 1\nroles: {}\n');
   assert.deepEqual(defaults, {
@@ -148,6 +151,7 @@ test('parsePipelineConfig falls back to the legacy whole-file regex when no pipe
     srcGlob: null,
     archiveAfterMerge: true,
     artifactBudget: 'warn',
+    reviewFastFix: false,
   });
 });
 
@@ -161,6 +165,7 @@ test('parsePipelineConfig reads the shipped template and every profile the same 
     srcGlob: 'src/',
     archiveAfterMerge: true,
     artifactBudget: 'warn',
+    reviewFastFix: false,
   });
   const mvp = parsePipelineConfig(readFileSync(join(KIT_ROOT, 'profiles/mvp/orchestrator.yaml'), 'utf-8'));
   assert.equal(mvp.requireSpecReview, false);
@@ -171,6 +176,35 @@ test('parsePipelineConfig reads the shipped template and every profile the same 
     const parsed = parsePipelineConfig(readFileSync(join(KIT_ROOT, `profiles/${profile}/orchestrator.yaml`), 'utf-8'));
     assert.equal(parsed.requireSpecReview, true, profile);
     assert.equal(parsed.srcGlob, 'src/', profile);
+  }
+});
+
+test('reviewFastFix enables only exact on in section and legacy configs', () => {
+  for (const sectioned of [true, false]) {
+    const prefix = sectioned ? 'pipeline:\n  ' : '';
+    for (const value of ['on', 'on # comment', 'off', 'maybe', 'onion', 'online', 'on-ish']) {
+      const yaml = `${prefix}review_fast_fix: ${value}\n`;
+      const config = parsePipelineConfig(yaml);
+      assert.equal(config.reviewFastFix, value === 'on' || value === 'on # comment', yaml);
+    }
+    assert.equal(parsePipelineConfig(sectioned ? 'pipeline:\n  task_contract: warn\n' : 'version: 1\n').reviewFastFix, false);
+  }
+});
+
+test('all five orchestrator configs ship review_fast_fix off inside pipeline', () => {
+  const files = [
+    'templates/orchestrator.yaml',
+    'profiles/generic/orchestrator.yaml',
+    'profiles/mvp/orchestrator.yaml',
+    'profiles/node/orchestrator.yaml',
+    'profiles/vue3/orchestrator.yaml',
+  ];
+  for (const file of files) {
+    const yaml = readFileSync(join(KIT_ROOT, file), 'utf-8');
+    const pipeline = yaml.match(/^pipeline:[^\n]*\n((?:[ \t]+[^\n]*\n|\n|#[^\n]*\n)*)/m)?.[1];
+    assert.ok(pipeline, `${file}: pipeline section missing`);
+    assert.match(pipeline, /^[ \t]+review_fast_fix: off[ \t]*$/m, file);
+    assert.equal(parsePipelineConfig(yaml).reviewFastFix, false, file);
   }
 });
 

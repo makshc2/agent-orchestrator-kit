@@ -50,6 +50,14 @@ Only after Tier 1 passes: spawn `spec-reviewer` with the complete change paths, 
 
 ### 4. Review checklist (Tier 2 — LLM-only)
 
+Required Before Apply contains blockers only: a task that cannot be executed; a conflict with main specs or proposal Non-goals; a material contradiction between proposal, design, tasks and delta specs (including an executable task that prescribes the opposite of its delta requirement); or design behavior with no delta or task coverage. Major/Minor that the apply executor can fix within an unambiguous approved Files/Do/Done-when contract go to optional `## Fix During Apply` (non-empty when present, allowed on REQUEST CHANGES too) and do not require a new propose. When no blockers remain, the verdict is APPROVE; briefly repeat those items in `apply-notes.md` (≤ 20 lines, reviewer prioritises).
+
+The reviewer MUST write a `## Task verdicts` block in `review.md`, one line per task `<id> | ✓/✗ | reason`, and list ALL blockers found in one pass. Authoring this block is mandatory; only script enforcement is optional: `gate-check --review-md` does not require the block, for backward compatibility.
+
+Re-review order: first verify each Previous finding (resolved/unresolved with evidence), then run the FULL existing Tier 2 checklist, then additionally rescan the SAME defect classes of previous findings (LLM-only). No new checklist classes. The same-class restriction applies only to the extra rescan, never to the full checklist or Tier 1 classes; Tier 1 classes NEVER enter the extra rescan.
+
+
+
 Do NOT re-check what Tier 1 already covered (strict validation, contract field presence, proposal sections, delta-spec section structure, byte-exact MODIFIED/REMOVED/RENAMED headings present in main specs and ADDED headings absent from them). Evaluate each item. Mark ✓ or ✗:
 
 **Consistency**
@@ -72,13 +80,15 @@ Do NOT re-check what Tier 1 already covered (strict validation, contract field p
 - [ ] Tasks reference concrete component/store paths under `src/`
 - [ ] No scope creep into unrelated UI refactors
 
-MUST NOT stop at the first blocking finding. Finish the full LLM checklist and a complete scan of proposal.md, design.md, tasks.md, all delta specs, and referenced main specs/repo paths before writing the verdict. One ✗ still means REQUEST CHANGES, but list every blocking issue of that pass.
+MUST NOT stop at the first blocking finding. Finish the full LLM checklist and a complete scan of proposal.md, design.md, tasks.md, all delta specs, and referenced main specs/repo paths before writing the verdict. Any blocker means REQUEST CHANGES; list every blocking issue of that pass and write Task verdicts for every task.
 
 Re-review MUST scan the same defect class — LLM-only only (another task whose `Do:` is not executable without design.md; another design behaviour with no delta requirement; another proposal↔tasks drift; another referenced heading/path that does not exist). Tier 1 classes NEVER enter this rescan. MUST NOT emit a one-item RC that names only the first leftover.
 
 ### 5. Write and report the verdict
 
-#### If all ✓ (or only minor notes):
+Write the mandatory `## Task verdicts` block and apply the blocker-only Required Before Apply and optional non-empty `## Fix During Apply` rules above. With no blockers, APPROVE and distil Fix During Apply into `apply-notes.md` (≤ 20 lines).
+
+#### If no blockers remain:
 
 ```
 ## Spec Review: APPROVE ✓
@@ -106,6 +116,9 @@ Create or update `openspec/changes/<name>/review.md`:
 **Date:** <ISO date>
 **Verdict:** APPROVE
 
+## Task verdicts
+<id> | ✓ | <reason>
+
 ## Checklist summary
 - Proposal: ✓
 - Design: ✓
@@ -131,34 +144,41 @@ The conductor verifies the subagent's `Status: done` and that the `Verdict:` lin
 
 #### If any ✗:
 
-```
-## Spec Review: REQUEST CHANGES ✗
+```markdown
+# Spec Review
 
 **Change:** <name>
+**Verdict:** REQUEST CHANGES
 
-### Checklist
-- proposal ↔ design ↔ tasks: ✓ or ✗
-- Delta specs cover design: ✓ or ✗
-- No conflicts with main specs: ✓ or ✗
-- No scope creep vs Non-goals: ✓ or ✗
-- Task self-sufficiency: ✓ or ✗
-- Vue 3 items (when `project.stack: vue3`): ✓ or ✗ each
+## Checklist
+- proposal ↔ design ↔ tasks: ✗ — <material contradiction>
+- Delta specs cover design: ✓
+- No conflicts with main specs: ✓
+- No scope creep vs Non-goals: ✓
+- Task self-sufficiency: ✓
+- Vue 3 items (when applicable): ✓ — <evidence or not applicable>
 
-### Findings
+## Findings (Blocker / Major / Minor)
 
-#### Blocker
-- <or empty>
+### Blocker
+- <task id and material contradiction with evidence>
 
-#### Major
-- <or empty>
+### Major
+none
 
-#### Minor
-- <or empty>
+### Minor
+- <item fixable within the approved task contract>
 
-### Required Before Apply
-- <blocking only>
+## Required Before Apply
+- <task id and blocking repair>
 
-### Previous findings
+## Task verdicts
+<id> | ✗ | <blocker reason>
+
+## Fix During Apply
+- <non-blocking item and affected task id; omit this optional section when there are no items>
+
+## Previous findings
 none — first review cycle
 ```
 

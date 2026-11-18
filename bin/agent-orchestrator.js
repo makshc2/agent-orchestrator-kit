@@ -3388,6 +3388,7 @@ function parsePipelineLegacy(content) {
   pick('max_active_changes', /max_active_changes:\s*(\d+)/);
   pick('task_contract', /task_contract:\s*(warn|strict|off)/);
   pick('artifact_budget', /artifact_budget:\s*(warn|strict|off)/);
+  pick('review_fast_fix', /^[ \t]*review_fast_fix:[ \t]*(on|off)[ \t]*(?:#.*)?$/m);
   pick('archive_after_merge', /archive_after_merge:\s*(true|false)/);
   // Quoted values may contain spaces or commas (multi-path lists); a bare
   // value runs to the end of the line, minus a trailing `# comment`.
@@ -3408,6 +3409,7 @@ function parsePipelineConfig(content) {
     maxActiveChanges: /^\d+$/.test(values.max_active_changes || '') ? parseInt(values.max_active_changes, 10) : null,
     taskContract: ['warn', 'strict', 'off'].includes(values.task_contract) ? values.task_contract : 'warn',
     artifactBudget: ['warn', 'strict', 'off'].includes(values.artifact_budget) ? values.artifact_budget : 'warn',
+    reviewFastFix: values.review_fast_fix === 'on',
     srcGlob: srcGlob || null,
     // Policy flag, default true (the shipped templates). Read by `status` and `archive --if-ready`.
     archiveAfterMerge: bool(values.archive_after_merge, true),
@@ -3668,6 +3670,9 @@ function checkReviewMd(changeDir) {
   }
 
   if (reviewSectionBody(lines, 'Previous findings') === null) errors.push('review.md: missing "Previous findings" section');
+
+  const fixDuringApply = reviewSectionBody(lines, 'Fix During Apply');
+  if (fixDuringApply !== null && !fixDuringApply.some((line) => line.trim())) errors.push('review.md: "Fix During Apply" section is empty');
 
   if (verdict === 'REQUEST CHANGES') {
     for (const name of ['Checklist', 'Findings', 'Required Before Apply']) {

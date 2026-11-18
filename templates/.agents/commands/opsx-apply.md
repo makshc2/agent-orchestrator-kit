@@ -70,7 +70,7 @@ Report `Skills:` immediately after `Status:` as read (paths), injected (paths), 
 
 4. **Read the working set**
 
-   Read `tasks.md` and `apply-notes.md` — they are the primary input for apply. Open `design.md`, `proposal.md`, or delta specs only when a task explicitly references them or a contract field is incomplete. For non-spec-driven schemas, follow `contextFiles` from the CLI output.
+   Read `tasks.md` and `apply-notes.md` — they are the primary input for apply. Also read the `## Fix During Apply` section of `review.md` when present; fix those items during the tasks they touch. An item that cannot be fixed within Files/Do/Done-when goes to the Escape valve (STOP, next command `/opsx:propose <name>`). Open `design.md`, `proposal.md`, or delta specs only when a task explicitly references them or a contract field is incomplete. For non-spec-driven schemas, follow `contextFiles` from the CLI output.
 
 5. **Show current progress**
 

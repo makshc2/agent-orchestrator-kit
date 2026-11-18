@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -132,6 +132,47 @@ test('a Tier 2 REQUEST CHANGES with every required section passes, extra section
     .replace('### Major', '**Major** (none)')
     .replace('## Previous findings', '# PREVIOUS FINDINGS');
   assert.deepEqual(check(loose), { pass: true, errors: [] });
+});
+
+for (const [verdict, fixture, applyNotes] of [
+  ['APPROVE', APPROVE, notes(3)],
+  ['REQUEST CHANGES', REQUEST_CHANGES, undefined],
+]) {
+  test(`${verdict} accepts an optional non-empty Fix During Apply section`, () => {
+    const review = text([...fixture, '## Fix During Apply', '- Fix the task-local typo.', '']);
+    assert.deepEqual(check(review, applyNotes), { pass: true, errors: [] });
+    assert.deepEqual(check(text(fixture), applyNotes), { pass: true, errors: [] });
+  });
+
+  test(`${verdict} rejects an empty Fix During Apply section`, () => {
+    const review = text([...fixture, '## Fix During Apply', '  ', '', '## Other notes', 'Not part of Fix During Apply.']);
+    assert.deepEqual(check(review, applyNotes), {
+      pass: false,
+      errors: ['review.md: "Fix During Apply" section is empty'],
+    });
+  });
+}
+
+const FAST_FIX = text(REQUEST_CHANGES)
+  .replace('**Verdict:** REQUEST CHANGES', '**Verdict:** APPROVE (fast-fix, approved by user)')
+  + text(['', '## Fast-fix', '- Date: 2026-11-18', '- Repaired tasks: 2.1', '- gate-check --review exit 0', '- Tier 2 пропущено', '']);
+
+test('an accepted Tier 2 fast-fix APPROVE conforms', () => {
+  assert.deepEqual(check(FAST_FIX, notes(3)), { pass: true, errors: [] });
+  // parseReviewVerdict is not exported; its direct prefix assertion is omitted.
+});
+
+test('a fast-fix APPROVE still requires apply-notes.md with at most 20 lines', () => {
+  assert.deepEqual(check(FAST_FIX), { pass: false, errors: ['apply-notes.md not found (required on APPROVE)'] });
+  assert.deepEqual(check(FAST_FIX, notes(21)), { pass: false, errors: ['apply-notes.md has 21 lines (max 20)'] });
+});
+
+test('a Tier 1 record cannot become an approved fast-fix', () => {
+  const review = text(TIER1_RECORD).replace('REQUEST CHANGES', 'APPROVE (fast-fix, approved by user)');
+  assert.deepEqual(check(review, notes(3)), {
+    pass: false,
+    errors: ['review.md: a Tier 1 record (**Source:** gate-check) must have Verdict REQUEST CHANGES'],
+  });
 });
 
 test('a Tier 1 record is held to its verdict only', () => {
@@ -271,4 +312,13 @@ test('archived review.md files conform, except the listed ones that predate the 
       assert.deepEqual(result, { pass: true, errors: [] }, `${name}: ${result.errors.join('; ')}`);
     }
   }
+});
+
+
+test('the opsx-review REQUEST CHANGES example conforms to the review schema', () => {
+  const instructions = readFileSync(join(KIT_ROOT, 'templates/.agents/commands/opsx-review.md'), 'utf-8');
+  const example = instructions.slice(instructions.indexOf('#### If any ✗:')).match(/```(?:markdown)?\n([\s\S]*?)```/);
+  assert.ok(example, 'REQUEST CHANGES example missing');
+  const review = example[1].replace(/<[^>]+>/g, 'example value');
+  assert.deepEqual(check(review), { pass: true, errors: [] });
 });

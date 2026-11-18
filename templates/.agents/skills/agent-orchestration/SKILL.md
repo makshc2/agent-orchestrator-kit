@@ -118,6 +118,8 @@ Before apply, check `.agents/orchestrator.yaml`:
 
 If Request Changes — run `/opsx:propose <name>` to fix the punch list, then a new `/opsx:review`.
 
+Exception: with `pipeline.review_fast_fix: on` and an eligible accepted Tier 2 RC, the route is `/opsx:propose <name>` → explicit user approval → `/opsx:apply <name>` per the fast-fix protocol in `opsx-propose.md`; otherwise unchanged.
+
 This is no longer only a chat convention: `npx agent-orchestrator-kit gate-check` runs in CI (both `agent-verify.yml` fragments) and fails the pipeline if `src/` changed without an approved `review.md` — a forgotten or skipped review is caught at merge time, not just at apply time. When `require_design_brief: true`, the same command also requires `design-brief.md` (or `Design: none` in `proposal.md`).
 
 ### apply → verify

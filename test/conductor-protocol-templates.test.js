@@ -104,3 +104,20 @@ test('spec-architect.md reads main specs narrowly, spec-reviewer.md reads the to
   ]);
   assert.ok(!template(reviewer).includes('never a whole large spec'), `${reviewer}: the narrow main-spec rule is back`);
 });
+
+
+test('fast-fix instructions require approval and preserve both exit routes', () => {
+  for (const rel of PROPOSE_FILES) {
+    assertIncludes(rel, template(rel), ['APPROVE (fast-fix, approved by user)', 'explicit approval', '--review-md', 'Tier 1 record', '/opsx:apply <name>', '/opsx:review <name>', 'ineligible']);
+  }
+  const architect = '.agents/subagents/spec-architect.md';
+  assertIncludes(architect, template(architect), ['**Fast-fix:**', 'apply-notes.md']);
+  const orchestration = '.agents/skills/agent-orchestration/SKILL.md';
+  assertIncludes(orchestration, template(orchestration), ['review_fast_fix']);
+});
+
+test('review instructions retain full re-review and distinguish blockers from apply fixes', () => {
+  for (const rel of ['.agents/subagents/spec-reviewer.md', '.agents/commands/opsx-review.md']) {
+    assertIncludes(rel, template(rel), ['Task verdicts', 'Fix During Apply', 'FULL', 'material contradiction']);
+  }
+});
